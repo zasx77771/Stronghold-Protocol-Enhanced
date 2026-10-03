@@ -26,9 +26,10 @@ function realFinalAssault({ bossId, seed, clientCombat = true }) {
   h.setStage('act2autochess_m01');
   const m = h.m;
   m.bossId = bossId;
-  // the autoplay lineups cannot clear a full 绝境 pool: 5 % of it (the tuning knob GameData.bossHpMul) — the pool's
-  // arithmetic, not its size, stalled the fight
-  m.gd.bossHpMul = () => 0.05;
+  // The enhanced HARD rule applies a final 90% leader reduction. Use 0.5% of the official pool so this regression
+  // keeps the original effective time-to-kill (0.5% / 10% intake = the former 5%) and still tests float-dust handling,
+  // not the separate overtime mechanic.
+  m.gd.bossHpMul = () => 0.005;
   h.autoHumans();
   m.start();
   let last = '';

@@ -1,13 +1,15 @@
 # 上游更新后的增强版重新部署
 
-本仓库用两个明确的 Git 标签保存改造范围：
+本仓库用明确的 Git 分支与标签保存上游快照和增强版本：
 
 - `upstream-v0.1.0`：用户提供的 `Stronghold-Protocol-v0.1.0.zip` 原始源码基线。
-- `enhanced-v0.2.3-vc10`：当前完整增强版（Android versionCode 10）；从上述基线到该标签的有序提交范围，就是本次从头到尾的全部源码改动。`enhanced-v0.2.3` 保留为上一版历史节点。
+- `upstream-v0.1.1`：用户提供的 `Stronghold-Protocol-v0.1.1.zip` 上游快照；提交 `1fd75dd` 从 `upstream-v0.1.0` 演进而来。
+- `enhanced-v0.2.4-vc11`：基于上游 0.1.1 的当前完整增强版（Android versionCode 11）。
+- `enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：上一轮增强版历史节点，保留用于审计和回退。
 
 `成果文件`、Node 依赖、游戏素材、Android SDK/Gradle 缓存和打包产物不进入 Git。它们可由源码和现有构建脚本重新生成。
 
-## 推荐：把增强提交重放到新版上游
+## 推荐：把下一版上游合并进增强主线
 
 先保存现有工作，再获取上游：
 
@@ -17,12 +19,15 @@ git remote add upstream https://github.com/sganggs/Stronghold-Protocol.git
 git fetch upstream --tags
 ```
 
-如果已经存在名为 `upstream` 的 remote，跳过 `remote add`。随后从新版上游分支建立部署分支，并重放增强提交：
+如果已经存在名为 `upstream` 的 remote，跳过 `remote add`。随后为新上游建立独立快照分支，再合并到增强主线：
 
 ```powershell
-git switch -c redeploy/latest upstream/main
-git cherry-pick upstream-v0.1.0..enhanced-v0.2.3-vc10
+git switch -c upstream-vNEXT upstream/main
+git switch main
+git merge --no-ff upstream-vNEXT
 ```
+
+若拿到的是 zip 而不是远端仓库，应从最近的 `upstream-v*` 标签建立新分支，把 zip 的源码完整导入并提交，再执行同样的 `merge --no-ff`。不要把压缩包附带的 `node_modules`、构建缓存或产物导入 Git。
 
 出现冲突时，优先保留新版上游的游戏逻辑，再把增强版的连接入口、剪贴板/邀请链接、桌面与 Android 壳、移动端布局和详情面板交互逐项合并。常见冲突位置为：
 
@@ -36,12 +41,12 @@ git cherry-pick upstream-v0.1.0..enhanced-v0.2.3-vc10
 
 ```powershell
 git add <已解决的文件>
-git cherry-pick --continue
+git merge --continue
 ```
 
 ## 使用导出的补丁
 
-如果目标仓库没有本仓库历史，可将目标仓库切到对应的新上游版本，再应用 `成果文件/07-Git迁移包` 中的补丁：
+如果目标仓库没有本仓库历史，可将目标仓库切到对应的新上游版本，再应用 `成果文件/07-Git迁移包` 中与该基线匹配的补丁：
 
 ```powershell
 git am --3way 000*.patch

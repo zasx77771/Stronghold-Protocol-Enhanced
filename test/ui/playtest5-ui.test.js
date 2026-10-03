@@ -157,14 +157,14 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
     });
   });
 
-  test('packaged Android collapse selects the no-shop camera and releases the bottom HUD band', () => {
+  test('packaged Android collapse selects the no-shop camera and keeps folded controls clear', () => {
     const base = { side: 'L' };
     assert.deepEqual(prepCameraShopOptions(base, { android: true, collapsed: false }), { side: 'L', shop: true });
     assert.deepEqual(prepCameraShopOptions(base, { android: true, collapsed: true }), { side: 'L', shop: false });
     assert.equal(prepCameraShopOptions(base, { android: false, collapsed: true }), base, 'desktop camera stays unchanged');
     assert.equal(prepCameraShopOptions(base, { android: true, collapsed: true, shopVisible: false }), base, 'no hidden shop, no reframe');
     withDom(40, 0, () => {
-      assert.deepEqual(hudBands('prep', { width: 756, height: 366 }, { android: true, shop: false }), { top: 86.4, bottom: 0 });
+      assert.deepEqual(hudBands('prep', { width: 756, height: 366 }, { android: true, shop: false }), { top: 86.4, bottom: 35 });
       assert.deepEqual(hudBands('prep', { width: 756, height: 366 }, { android: false, shop: false }), { top: 86.4, bottom: 152 });
     });
   });
@@ -187,11 +187,12 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
   test('wiring: the game hands hudBands to the view, the view to the prep cameras', () => {
     assert.match(read('public/js/ui/fieldHost.js'), /padding: hudPadding, hud: hudBands \}/);
     const app = read('public/js/render/app.js');
-    assert.match(app, /hud: hudBands\(vk, sz, o\),/);
+    // (the folded shop's band since public issue #5: test/ui/issue5-fold-camera.test.js)
+    assert.match(app, /hud: hudBands\(vk, sz, \{ shop: o\.shop !== false \}\),/);
     assert.match(app, /presetCamera\('prep', \{ width: s0\.width, height: s0\.height, padding: defaultPadding\('prep', s0\) \}, \{ hud: hudBands\('prep', s0\) \}\)/);
     const game = read('public/js/screens/game.js');
-    assert.match(game, /prepCameraShopOptions\(prepCam\.opts, \{ collapsed, shopVisible: showShop \}\)/);
-    assert.match(game, /prepCamOpts\.shop \?\? 'fixed'/);
+    assert.match(game, /prepCameraShopOptions\(prepCam\.opts, \{ collapsed: shopFolded, shopVisible: showShop \}\)/);
+    assert.match(game, /cameraFolded \? 'folded' : 'fixed'/);
   });
 
   // phones in landscape (CSS px) incl. the user's Android: its 2772×1272 px screenshot shows the page right of a 141 px
