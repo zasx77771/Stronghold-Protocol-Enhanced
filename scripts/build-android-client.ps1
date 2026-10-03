@@ -8,6 +8,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
+$PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
+$Version = [string]$PackageInfo.version
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
 if (-not $CacheRoot) { $CacheRoot = Join-Path $WorkspaceRoot '成果文件\06-构建环境与缓存' }
 $CacheRoot = [IO.Path]::GetFullPath($CacheRoot)
 if (-not $ToolchainDir) { $ToolchainDir = Join-Path $CacheRoot 'android-toolchain' }
@@ -67,7 +70,7 @@ try {
 
 $BuiltApk = Join-Path $BuildOutputDir 'outputs\apk\debug\app-debug.apk'
 if (-not (Test-Path -LiteralPath $BuiltApk -PathType Leaf)) { throw 'Gradle completed but the APK was not found' }
-$OutputApk = Join-Path $OutputDir 'Stronghold-Protocol-Client-android-debug.apk'
+$OutputApk = Join-Path $OutputDir "Stronghold-Protocol-Client-v$Version-android-debug.apk"
 Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
 $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $OutputApk).Hash
 $Size = (Get-Item -LiteralPath $OutputApk).Length

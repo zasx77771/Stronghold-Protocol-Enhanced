@@ -9,9 +9,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
+$PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
+$Version = [string]$PackageInfo.version
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
+$ArtifactName = "Stronghold-Protocol-Client-v$Version-win-x64"
 if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot '成果文件\02-Windows客户端' }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
-$OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot 'Stronghold-Protocol-Client-win-x64'))
+$OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))
 if (-not $CacheDir) { $CacheDir = Join-Path $WorkspaceRoot '成果文件\06-构建环境与缓存\electron-download-cache' }
 $CacheDir = [IO.Path]::GetFullPath($CacheDir)
 
@@ -82,7 +86,7 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'NOTICE.md') -Destination $Output
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'THIRD-PARTY-NOTICES.md') -Destination $OutputDir
 
 if (-not $NoArchive) {
-  $Archive = Join-Path $DistRoot 'Stronghold-Protocol-Client-win-x64.zip'
+  $Archive = Join-Path $DistRoot "$ArtifactName.zip"
   if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
   Write-Host 'Creating portable ZIP (this may take several minutes)...'
   Compress-Archive -LiteralPath $OutputDir -DestinationPath $Archive -CompressionLevel Optimal

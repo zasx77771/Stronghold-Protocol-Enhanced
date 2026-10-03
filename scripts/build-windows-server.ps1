@@ -7,9 +7,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
+$PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
+$Version = [string]$PackageInfo.version
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
+$ArtifactName = "Stronghold-Protocol-Server-v$Version-win-x64"
 if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot '成果文件\04-Windows服务端' }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
-$OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot 'Stronghold-Protocol-Server-win-x64'))
+$OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))
 
 if (-not $OutputDir.StartsWith($DistRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
   throw "Unsafe output path: $OutputDir"
@@ -70,7 +74,7 @@ foreach ($ForbiddenFile in @('assets.json', 'local-assets.json', 'emotes.json'))
 }
 
 if (-not $NoArchive) {
-  $Archive = Join-Path $DistRoot 'Stronghold-Protocol-Server-win-x64.zip'
+  $Archive = Join-Path $DistRoot "$ArtifactName.zip"
   if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
   Write-Host 'Creating portable server ZIP...'
   Compress-Archive -LiteralPath $OutputDir -DestinationPath $Archive -CompressionLevel Optimal

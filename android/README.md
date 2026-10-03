@@ -11,6 +11,8 @@
 
 工具链安装在项目的 `.android-toolchain/` 内，不修改系统 PATH。生成物位于：
 
-`dist/Stronghold-Protocol-Client-android-debug.apk`
+`成果文件/03-Android客户端/Stronghold-Protocol-Client-v0.2.4-android-debug.apk`
+
+文件名中的版本号会从根目录 `package.json` 自动读取，后续升级版本时无需手工修改打包脚本。
 
 调试 APK 使用 Android 默认调试证书签名，可直接侧载测试。正式发布需要创建并妥善保管自己的发布签名密钥。
