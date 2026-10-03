@@ -26,10 +26,10 @@ function realFinalAssault({ bossId, seed, clientCombat = true }) {
   h.setStage('act2autochess_m01');
   const m = h.m;
   m.bossId = bossId;
-  // The enhanced HARD rule applies a final 90% leader reduction. Use 0.5% of the official pool so this regression
-  // keeps the original effective time-to-kill (0.5% / 10% intake = the former 5%) and still tests float-dust handling,
+  // The enhanced HARD rule applies a final 85% leader reduction. Use 0.75% of the official pool so this regression
+  // keeps the original effective time-to-kill (0.75% / 15% intake = the former 5%) and still tests float-dust handling,
   // not the separate overtime mechanic.
-  m.gd.bossHpMul = () => 0.005;
+  m.gd.bossHpMul = () => 0.0075;
   h.autoHumans();
   m.start();
   let last = '';

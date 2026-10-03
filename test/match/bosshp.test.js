@@ -116,9 +116,9 @@ test('绝境 Final Assault: both pair fields drain the one pool, every hit exact
   m.dispose();
 });
 
-test('终极 Final Assault vs 假想敌：胄 (seeded bot match): 奥术 never multiply; a drone link receives the 95% final reduction', () => {
+test('终极 Final Assault vs 假想敌：胄 (seeded bot match): 奥术 never multiply; a drone link receives the 90% final reduction', () => {
   // DESIGN §20.10: one 奥术 instance per target (the strongest — PRTS 作战机制 同名buff, 巴哈姆特 12316 "共享型buff會跟對面搶");
-  // 死亡集群's raw "最大生命值2%" = 72 000 at 终极, then the leader's 95 % final reduction leaves 3 600.
+  // 死亡集群's raw "最大生命值2%" = 72 000 at 终极, then the leader's 90 % final reduction leaves 7 200.
   // the bots' boards follow every draw of the match (the elite-to-board merge, DESIGN §20.11, moved seed 7 to 12; the
   // 战术决策 drawn with replacement moved 12 on): the first of these seeds whose bots pair two 奥术 players
   const pairOf = (m) => m.fields.filter((f) => f.battle).find((f) => f.players.length === 2 && f.players.every((pid) => f.battle.getPlayer(pid).bonds.arcaneShip?.active));
@@ -161,11 +161,11 @@ test('终极 Final Assault vs 假想敌：胄 (seeded bot match): 奥术 never m
   }
   assert.ok(withArcane > 100, `the leader carried 奥术 (${withArcane} samples)`);
   assert.ok(links.length >= 1, 'drones were shot down');
-  for (const x of links) assert.equal(x, DATA.bosses.boss_1.bloodPoint.ABYSS * 0.02 * bossFinalDamageTakenMul(m.modeId), 'drone link = 2 % of pool × 5 % final intake');
+  for (const x of links) assert.equal(x, DATA.bosses.boss_1.bloodPoint.ABYSS * 0.02 * bossFinalDamageTakenMul(m.modeId), 'drone link = 2 % of pool × 10 % final intake');
   m.dispose();
 });
 
-test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): spring transfer is 无来源 and receives the 90% final reduction', () => {
+test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): spring transfer is 无来源 and receives the 85% final reduction', () => {
   // DESIGN §20.10: PRTS 碎铳之簧 "受到伤害时令…假想敌：铳受到等量的无来源生命流失" (v2.5: half); real match → Hidden Core specs
   const seats = [0, 1, 2, 3].map((i) => ({ seat: i, playerId: `ai_${i}`, name: `AI${i}`, isBot: true, connected: true }));
   const h = makeMatch({ mode: 'coop', difficulty: 'HARD', seats, seed: 7, captureFrames: false, instant: false, clientCombat: true });

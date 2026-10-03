@@ -133,13 +133,13 @@ function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0, mo
 }
 const capEvents = (h) => h.eventsOf('fx').filter((e) => e[1] === 'hitCap');
 
-test('Boss最终减伤: 标准0%, 险境80%, 绝境90%, 终极95%; 同时适用于直接伤害和传递生命流失', () => {
-  assert.deepEqual(BOSS_FINAL_DAMAGE_REDUCTION, { FUNNY: 0, NORMAL: 0.8, HARD: 0.9, ABYSS: 0.95 });
+test('Boss最终减伤: 标准0%, 险境80%, 绝境85%, 终极90%; 同时适用于直接伤害和传递生命流失', () => {
+  assert.deepEqual(BOSS_FINAL_DAMAGE_REDUCTION, { FUNNY: 0, NORMAL: 0.8, HARD: 0.85, ABYSS: 0.9 });
   const cases = [
     ['mode_multi_funny', 1],
     ['mode_single_normal', 0.2],
-    ['mode_multi_hard', 0.1],
-    ['mode_multi_abyss', 0.05],
+    ['mode_multi_hard', 0.15],
+    ['mode_multi_abyss', 0.1],
   ];
   for (const [modeId, mul] of cases) {
     assert.ok(Math.abs(bossFinalDamageTakenMul(modeId) - mul) < 1e-12, modeId);

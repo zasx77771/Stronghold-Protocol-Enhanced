@@ -3,7 +3,7 @@
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '0.2.4';
+export const APP_VERSION = '0.2.5';
 
 export const MAX_SEATS = 4;
 export const ROOM_CODE_LEN = 4;
@@ -113,8 +113,8 @@ export const BOSS_HIT_LIMIT = 300000;
 export const BOSS_FINAL_DAMAGE_REDUCTION = Object.freeze({
   FUNNY: 0,
   NORMAL: 0.8,
-  HARD: 0.9,
-  ABYSS: 0.95,
+  HARD: 0.85,
+  ABYSS: 0.9,
 });
 
 /** Remaining final damage multiplier for a mode id (`mode_single_normal`, `mode_multi_abyss`, …). */

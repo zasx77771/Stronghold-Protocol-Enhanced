@@ -625,7 +625,7 @@ draws nothing; research 11) → shields → HP loss
 unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `death`.
 
 Before `leaderHitCancelled`, a Final Assault / Hidden Core leader applies the difficulty final-damage multiplier from
-`BOSS_FINAL_DAMAGE_REDUCTION`: 标准 1, 险境 0.2, 绝境 0.1, 终极 0.05. Parts and escorts do not receive it. `loseHp`
+`BOSS_FINAL_DAMAGE_REDUCTION`: 标准 1, 险境 0.2, 绝境 0.15, 终极 0.1. Parts and escorts do not receive it. `loseHp`
 transfers to the leader use the same multiplier, and the reduced value is what the 300000 limit checks.
 
 `battle.heal(source, target, amount, { overheal=false, self, silent })`: no-op on `noHeal` targets (unless self — 禁疗 /
