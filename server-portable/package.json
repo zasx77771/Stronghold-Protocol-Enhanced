@@ -1,0 +1,11 @@
+{
+  "name": "stronghold-protocol-network-server",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

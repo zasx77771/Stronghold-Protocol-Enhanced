@@ -102,11 +102,12 @@ npm start          # 启动服务器：http://localhost:3000
 
 ### 端口与配置
 
-默认监听 **TCP 3000**。换端口：启动脚本加 `--port 3001`，或设置环境变量 `PORT`。
+默认监听 **WebSocket/HTTP 3000**，打包客户端还可通过 **原生 TCP 3001** 直连。换端口可设置 `PORT` / `TCP_PORT`。
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `3000` | 监听端口 |
+| `TCP_PORT` | `PORT + 1` | Windows/Android 客户端的原生 TCP 直连端口 |
 | `HOST` | `0.0.0.0` | 监听地址（`127.0.0.1` = 只允许本机，放在反向代理后面时使用） |
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
@@ -138,7 +139,7 @@ npm start          # 启动服务器：http://localhost:3000
 
 通用注意事项：
 
-- 游戏是**单个常驻 Node.js 进程 + WebSocket**（路径 `/ws`），只能跑一个实例，必须部署在域名根路径；Vercel 之类的 Serverless 平台和 GitHub Pages 之类的静态托管都不适用。反向代理要转发 WebSocket 升级。
+- 游戏是**单个常驻 Node.js 进程**，同时提供 WebSocket（路径 `/ws`）和供打包客户端使用的原生 TCP；只能跑一个实例。Vercel 之类的 Serverless 平台和 GitHub Pages 之类的静态托管都不适用。HTTP 反向代理要转发 WebSocket 升级，原生 TCP 则需要四层转发或直接开放端口。
 - 游戏没有账号系统，**知道地址的人都能进来**。请只把地址发给朋友，不要公开发布，也不要搭建公开大厅；这同时能降低素材版权方面的风险。
 - 有公网 IPv4 时也可以在路由器上做端口转发，但这会把家里的电脑直接暴露在公网上，优先考虑上面的方式。
 
@@ -191,7 +192,7 @@ RENDER_E2E=1 node --test 'test/render/*.browser.test.js'   # 渲染测试，部�
 
 | 路径 | 内容 |
 |---|---|
-| `server/` | Node HTTP 静态服务 + WebSocket（`/ws`）、大厅、对局引擎（`match/`）、战斗模拟（`sim/`，浏览器与服务器共用） |
+| `server/` | Node HTTP 静态服务 + WebSocket（`/ws`）+ 原生 TCP、大厅、对局引擎（`match/`）、战斗模拟（`sim/`，浏览器与服务器共用） |
 | `shared/` | 前后端共用的常量与网络协议 |
 | `public/` | 浏览器客户端（原生 ES 模块，PixiJS + pixi-spine、three.js 3D 棋盘、Preact + htm UI） |
 | `data/` | 由官方数据表生成的游戏数据与素材清单 `assets.json` |

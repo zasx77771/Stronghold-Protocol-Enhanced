@@ -45,6 +45,7 @@ import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
 import { installLoadoutSync } from './ui/loadoutSync.js';
+import { loadServerAddress, normalizeServerAddress } from './serverAddress.js';
 
 const RESTORE_GRACE_MS = 1500;
 const JOIN_DELAY_MS = 350;
@@ -313,6 +314,7 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
+  const savedServer = normalizeServerAddress(loadServerAddress());
   const entered = identity.wasEntered() && !!savedName;
   store.set((s) => ({
     me: { ...s.me, name: savedName },
@@ -321,6 +323,7 @@ async function boot() {
   }));
 
   wireNet();
+  net.setUrl(savedServer.wsUrl);
   installLoadoutSync({ net });
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
@@ -333,7 +336,6 @@ async function boot() {
 
   const connectWhenReady = identityReady.then(() => {
     if (entered) net.setName(savedName);
-    else net.connect();
   });
   await Promise.all([waitForFonts(1200), connectWhenReady]);
   const root = document.getElementById('app');

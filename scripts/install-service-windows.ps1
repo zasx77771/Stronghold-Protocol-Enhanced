@@ -2,17 +2,19 @@
   卫戍协议：盟约 · 开机自动在后台运行服务器（Windows 任务计划程序）+ 防火墙规则。文档：docs\DEPLOY.md
   用法（会自动请求管理员权限）：
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1              # 安装并立即启动
-    powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Port 8080 -Verify sample
+    powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Port 8080 -TcpPort 8081 -Verify sample
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Status     # 查看状态
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Restart    # 更新代码后重启
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Stop
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Uninstall  # 删除任务和防火墙规则
-  做的事：写入 scripts\service.env.cmd（node.exe 路径、PORT、HOST、SP_COMBAT、SP_VERIFY）→ 注册计划任务
+  做的事：写入 scripts\service.env.cmd（node.exe 路径、PORT、TCP_PORT、HOST、SP_COMBAT、SP_VERIFY）→ 注册计划任务
   「StrongholdProtocol」（开机时以 SYSTEM 身份运行 scripts\run-server.cmd，无需登录；进程退出 5 秒后自动重启；
-  日志 logs\server.log）→ 添加入站防火墙规则「Stronghold Protocol」（TCP 端口，专用/域网络；-AllowPublicNetwork 也放行公用网络）。
+  日志 logs\server.log）→ 为 HTTP/WebSocket 与原始 TCP 两个端口添加入站防火墙规则
+  「Stronghold Protocol」（专用/域网络；-AllowPublicNetwork 也放行公用网络）。
 #>
 param(
   [int]$Port = 3000,
+  [int]$TcpPort = 0,
   [string]$BindHost = '0.0.0.0',
   [ValidateSet('client', 'server')][string]$Combat = 'client',
   [ValidateSet('off', 'sample', 'all')][string]$Verify = 'off',
@@ -58,13 +60,16 @@ function Show-Status {
     Write-Host "计划任务「$TaskName」：$($t.State)，上次运行 $($info.LastRunTime)，结果 $($info.LastTaskResult)"
   }
   $p = $Port
+  $tcp = if ($TcpPort -gt 0) { $TcpPort } elseif ($Port -lt 65535) { $Port + 1 } else { 3001 }
   if (Test-Path $EnvFile) {
     $m = Select-String -Path $EnvFile -Pattern 'set "PORT=(\d+)"' | Select-Object -First 1
     if ($m) { $p = [int]$m.Matches[0].Groups[1].Value }
+    $tm = Select-String -Path $EnvFile -Pattern 'set "TCP_PORT=(\d+)"' | Select-Object -First 1
+    if ($tm) { $tcp = [int]$tm.Matches[0].Groups[1].Value }
   }
   try {
     $h = Invoke-RestMethod -Uri "http://127.0.0.1:$p/healthz" -TimeoutSec 3
-    Write-Host "服务器正在运行：端口 $p，房间 $($h.rooms)，对局 $($h.matches)，连接 $($h.sockets)" -ForegroundColor Green
+    Write-Host "服务器正在运行：HTTP/WebSocket $p，TCP $tcp，房间 $($h.rooms)，对局 $($h.matches)，连接 $($h.sockets)" -ForegroundColor Green
   } catch { Write-Host "端口 $p 上没有响应（刚启动时请等几秒；日志：$Log）" -ForegroundColor Yellow }
   & netsh advfirewall firewall show rule name="$RuleName" | Out-Null
   if ($LASTEXITCODE -eq 0) { Write-Host "防火墙规则「$RuleName」已存在。" } else { Write-Host "防火墙规则「$RuleName」不存在。" -ForegroundColor Yellow }
@@ -128,10 +133,16 @@ try {
   & $nodeExe tools\setup.mjs --quiet
   if ($LASTEXITCODE -ne 0) { throw 'setup 失败，请先解决上面的问题（node tools\doctor.mjs 可诊断）。' }
 
+  $ResolvedTcpPort = if ($TcpPort -gt 0) { $TcpPort } elseif ($Port -lt 65535) { $Port + 1 } else { 3001 }
+  if ($Port -lt 1 -or $Port -gt 65535) { throw "无效的 HTTP/WebSocket 端口：$Port" }
+  if ($ResolvedTcpPort -lt 1 -or $ResolvedTcpPort -gt 65535) { throw "无效的 TCP 端口：$ResolvedTcpPort" }
+  if ($ResolvedTcpPort -eq $Port) { throw 'TCP 端口不能与 HTTP/WebSocket 端口相同。' }
+
   @(
     '@rem Written by scripts\install-service-windows.ps1 - re-run it to change these values.',
     "set `"NODE_EXE=$nodeExe`"",
     "set `"PORT=$Port`"",
+    "set `"TCP_PORT=$ResolvedTcpPort`"",
     "set `"HOST=$BindHost`"",
     "set `"SP_COMBAT=$Combat`"",
     "set `"SP_VERIFY=$Verify`""
@@ -155,8 +166,8 @@ try {
   if (-not $NoFirewall) {
     & netsh advfirewall firewall delete rule name="$RuleName" | Out-Null
     $profiles = if ($AllowPublicNetwork) { 'private,domain,public' } else { 'private,domain' }
-    & netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport=$Port profile=$profiles | Out-Null
-    Write-Host "已添加防火墙入站规则「$RuleName」：TCP $Port（$profiles）。" -ForegroundColor Green
+    & netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport="$Port,$ResolvedTcpPort" profile=$profiles | Out-Null
+    Write-Host "已添加防火墙入站规则「$RuleName」：HTTP/WebSocket $Port，原始 TCP $ResolvedTcpPort（$profiles）。" -ForegroundColor Green
   }
 
   Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
@@ -164,6 +175,7 @@ try {
   Show-Status
   Write-Host "`n朋友访问地址（局域网）："
   & $nodeExe tools\doctor.mjs --port $Port | Select-String -Pattern 'http://\d' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+  Write-Host "  TCP 直连端口：$ResolvedTcpPort"
   Write-Host "`n停止：-Stop   重启：-Restart   状态：-Status   卸载：-Uninstall   日志：$Log"
 } catch {
   Write-Host "`n出错：$($_.Exception.Message)" -ForegroundColor Red

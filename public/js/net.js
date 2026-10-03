@@ -31,6 +31,7 @@
 
 import { PROTOCOL_VERSION, ERR_TEXT } from '../../shared/constants.js';
 import { validateC2S } from '../../shared/protocol.js';
+import { TcpSocket, parseTcpUrl } from './tcpSocket.js';
 
 export const REQUEST_TIMEOUT_MS = 8000;
 export const HELLO_TIMEOUT_MS = 8000;
@@ -161,6 +162,63 @@ export class Net {
     this._clockSamples = [];   // [{ offset, rtt }]
   }
 
+  /**
+   * Select a socket endpoint.  Changing servers drops the old connection and all in-flight
+   * requests, but does not connect until connect() / setName() is called.
+   * @param {string} url absolute ws://, wss:// or packaged-client tcp:// URL
+   * @returns {boolean} true when the endpoint changed
+   */
+  setUrl(url) {
+    const raw = String(url);
+    if (/^tcp:\/\//i.test(raw)) {
+      const next = parseTcpUrl(raw).url;
+      if (this.url === next) { this._manualClose = false; return false; }
+      const ws = this.ws;
+      this._teardownSocket();
+      this._clearTimer('_reconnectTimer', 'clearTimeout');
+      try { ws?.close(4000, 'server changed'); } catch { /* ignore */ }
+      this._failPending('DISCONNECTED', false);
+      this.url = next;
+      this._manualClose = false;
+      this._quietSwap = false;
+      this.attempt = 0;
+      this.retryAt = 0;
+      this.ping = null;
+      this.playerId = null;
+      this.serverName = null;
+      this.helloName = null;
+      this.lastError = null;
+      this._setStatus('idle');
+      return true;
+    }
+    let parsed;
+    try { parsed = new URL(raw); } catch { throw new TypeError('invalid WebSocket URL'); }
+    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) throw new TypeError('invalid socket URL');
+    const next = parsed.href;
+    if (this.url === next) {
+      // close() is a permanent stop; selecting the same server explicitly makes it usable again.
+      this._manualClose = false;
+      return false;
+    }
+    const ws = this.ws;
+    this._teardownSocket();
+    this._clearTimer('_reconnectTimer', 'clearTimeout');
+    try { ws?.close(4000, 'server changed'); } catch { /* ignore */ }
+    this._failPending('DISCONNECTED', false);
+    this.url = next;
+    this._manualClose = false;
+    this._quietSwap = false;
+    this.attempt = 0;
+    this.retryAt = 0;
+    this.ping = null;
+    this.playerId = null;
+    this.serverName = null;
+    this.helloName = null;
+    this.lastError = null;
+    this._setStatus('idle');
+    return true;
+  }
+
   // ---- events ----------------------------------------------------------------------------------
 
   /**
@@ -215,8 +273,8 @@ export class Net {
     this._manualClose = false;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
     this.retryAt = 0;
-    const WS = this.WS || globalThis.WebSocket;
     const url = this.url || defaultWsUrl();
+    const WS = this.WS || (url.startsWith('tcp:') ? TcpSocket : globalThis.WebSocket);
     let ws;
     try {
       ws = new WS(url);
@@ -657,6 +715,7 @@ export class Net {
 // its own token (never another tab's), so it can't steal a live session either.
 
 const K_NAME = 'sp.name';
+const K_REMEMBER_NAME = 'sp.rememberName';
 const K_TOKEN = 'sp.token';      // sessionStorage: this tab's token
 const K_RECENT = 'sp.tokens';    // localStorage: this browser's recent tokens, most recent first
 const K_ENTERED = 'sp.entered';  // sessionStorage: this tab passed the title screen
@@ -800,6 +859,14 @@ export function createIdentity(deps = {}) {
     loadName: () => (sget(local, K_NAME) || '').slice(0, 64),
     /** @param {string} name */
     saveName: (name) => sset(local, K_NAME, String(name)),
+    clearName: () => sdel(local, K_NAME),
+    /** Remembering is enabled by default for existing installs. */
+    loadRememberName: () => sget(local, K_REMEMBER_NAME) !== '0',
+    /** @param {boolean} on */
+    setRememberName(on) {
+      sset(local, K_REMEMBER_NAME, on ? '1' : '0');
+      if (!on) sdel(local, K_NAME);
+    },
     /** Token for `hello` (null ⇒ new session). Before init() only this tab's own token is used. */
     getToken() {
       if (current) return current;

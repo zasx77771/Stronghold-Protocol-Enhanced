@@ -15,6 +15,12 @@ const cx = (...p) => p.flat().filter(Boolean).join(' ');
 export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands', 'enemies', 'bosses', 'stages', 'tokens',
   'choices', 'effects', 'garrisons', 'factions', 'local'];
 
+/** Android's packaged WebView defers `loading=lazy` images until they are scrolled or tapped into view. */
+export function isPackagedAndroid(loc = globalThis.location, bridge = globalThis.StrongholdAndroid) {
+  if (bridge) return true;
+  try { return new URLSearchParams(loc?.search || '').get('android') === '1'; } catch { return false; }
+}
+
 /**
  * Load every in-match data file; returns lookups (sync, null until loaded).
  * @returns {{ ready: boolean, m: any, config: any, chess: (id:string)=>any, bond: (id:string)=>any, item: (id:string)=>any,
@@ -55,7 +61,12 @@ export function makeLookups(ready = true) {
 export function Img({ src, class: cls, alt = '', fallback = null, style }) {
   const [bad, setBad] = useState(null);
   if (!src || bad === src) return fallback;
-  return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style} onError=${() => setBad(src)} />`;
+  // The standalone Android client contains the assets locally. Eager loading there avoids a Chromium WebView quirk
+  // where off-screen draft/shop images remain blank until the first pointer or scroll event. Browsers keep the
+  // bandwidth-friendly lazy behaviour.
+  const loading = isPackagedAndroid() ? 'eager' : 'lazy';
+  return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading=${loading} decoding="async"
+    style=${style} onError=${() => setBad(src)} />`;
 }
 
 /** Official UI sprite by 'group/key' with a fallback. */

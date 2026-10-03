@@ -40,11 +40,22 @@ export function hudPadding(kind, size) {
 /**
  * HUD geometry (rem) the prep cameras keep clear (they mirror the CSS; test/ui/playtest5-ui.test.js checks the rules):
  * the bond strip's bottom edge (css/screens/game.css .gm__bonds top 1.36rem + a .bslot: disc .52rem + name ≈
- * 2.15rem measured) and the shop bar's top edge above the viewport's bottom (css/screens/game-shop.css .shopbar
- * bottom .2rem + .shopbar__row padding .1rem ×2 + card height 2.24rem, plus its 2 px + 1 px borders). The shop bar
- * sits on the viewport's bottom edge even on a notched phone (css/devices.css, DESIGN §18.1).
+ * 2.15rem measured) and a conservative fallback for the complete shop bar (tools + gap + card row). hudBands reads
+ * the live bar rectangle when it exists, so future CSS changes cannot silently put the bench behind the controls.
  */
-export const HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3 });
+export const HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 3.8, shopBarBorderPx: 0 });
+
+/**
+ * The packaged Android client keeps the original prep-camera framing. Measuring the whole shop bar made the board
+ * noticeably too small on phones with shorter/wider landscape viewports. This is intentionally Android-only: desktop
+ * and ordinary browser clients retain the measured HUD avoidance above.
+ */
+export const ANDROID_LEGACY_HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3 });
+
+export function isPackagedAndroidHost(loc = globalThis.location, bridge = globalThis.StrongholdAndroid) {
+  if (bridge) return true;
+  try { return new URLSearchParams(loc?.search || '').get('android') === '1'; } catch { return false; }
+}
 
 /**
  * CSS px of HUD along the top edge (top bar + bond strip) and the bottom edge (the shop bar) of the viewport during
@@ -60,21 +71,33 @@ export const HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 2.64, 
  * above the bar, ≈ 11 px over the pads).
  * @param {string} kind
  * @param {{ width: number, height: number }} size
+ * @param {{ android?: boolean }} [runtime] explicit runtime override for tests
  * @returns {{ top: number, bottom: number }|null}
  */
-export function hudBands(kind, size) {
+export function hudBands(kind, size, runtime) {
   if (kind !== 'prep' && kind !== 'bossPrep') return null;
+  const android = runtime?.android ?? isPackagedAndroidHost();
   let rem = 100;
   let safeTop = 0;
+  let measuredBottom = 0;
   try {
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 100;
     // the HUD layer starts below the top safe-area inset (css/devices.css .gm__hud)
     safeTop = Math.max(0, document.querySelector('.gm__hud')?.getBoundingClientRect().top || 0);
+    if (!android) {
+      const fieldRect = document.querySelector('.gm__field')?.getBoundingClientRect();
+      const shopRect = document.querySelector('.gm__hud > .shopbar')?.getBoundingClientRect();
+      if (fieldRect && shopRect && shopRect.width > 0 && shopRect.height > 0) {
+        measuredBottom = Math.max(0, fieldRect.bottom - shopRect.top);
+      }
+    }
   } catch { /* ignore */ }
   const h = size?.height || 1080;
+  const geometry = android ? ANDROID_LEGACY_HUD_REM : HUD_REM;
+  const shopBottom = measuredBottom || rem * geometry.shopBarTop + geometry.shopBarBorderPx;
   return {
-    top: Math.min(h * 0.4, safeTop + rem * HUD_REM.bondStripBottom),
-    bottom: Math.min(h * 0.4, rem * HUD_REM.shopBarTop + HUD_REM.shopBarBorderPx),
+    top: Math.min(h * 0.4, safeTop + rem * geometry.bondStripBottom),
+    bottom: Math.min(h * (android ? 0.4 : 0.49), shopBottom),
   };
 }
 

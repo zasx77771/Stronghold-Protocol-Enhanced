@@ -361,7 +361,17 @@ export async function createFieldView(host, options = {}) {
   // web fonts for the bitmap damage numbers / tier chips (never block long)
   try { if (document.fonts?.load) await withTimeout(Promise.all([document.fonts.load('700 40px Bender'), document.fonts.load('700 40px Oxanium')]), 1500); } catch { /* ignore */ }
 
-  const size = () => ({ width: Math.max(1, host.clientWidth || 1), height: Math.max(1, host.clientHeight || 1) });
+  // Android density conversion often gives the WebView a fractional CSS width (for example 1067.333 px at DPR
+  // 1.5). clientWidth truncates that to 1067, making Pixi allocate a 1600 px buffer while the 3D layer allocates
+  // 1601 px; CSS then stretches one layer and both the art and hit projection drift. Keep the exact layout size.
+  const size = () => {
+    let r = null;
+    try { r = host.getBoundingClientRect?.(); } catch { r = null; }
+    return {
+      width: Math.max(1, Number(r?.width) || host.clientWidth || 1),
+      height: Math.max(1, Number(r?.height) || host.clientHeight || 1),
+    };
+  };
   const dpr = () => Math.min(globalThis.devicePixelRatio || 1, QUALITY_RES[settings.quality] || 2);
   const boardDpr = () => Math.min(globalThis.devicePixelRatio || 1, BOARD_RES[settings.quality] || 2);
   const s0 = size();

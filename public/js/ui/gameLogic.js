@@ -1234,11 +1234,19 @@ export function shortcutFor(e) {
 }
 
 /**
- * Whether a press on the field closes the open detail card: a card opened from the field itself (an own piece — tap,
- * right-click or long press — or a battle / teammate unit). Shop, reward, bond-member and intel (enemy) cards stay.
+ * Whether a press on the field closes the open detail card. Every detail type is dismissible by pressing outside it;
+ * source-specific exceptions made shop/reward/intel cards feel stuck and forced touch users to reach for ×.
  * @param {{ kind?: string }|null|undefined} detail
  */
-export const closesOnFieldPress = (detail) => detail?.kind === 'piece' || detail?.kind === 'unit';
+export const closesOnFieldPress = (detail) => !!detail;
+
+/**
+ * Controls that belong to an open detail/selection must survive the capture-phase click-away listener. In particular,
+ * removing the selected piece's underframe on pointerdown prevents touch browsers from ever delivering the button's
+ * click, which made 撤退 / 出售 look present but inert on both packaged Android and touch-capable Windows clients.
+ * @param {Element|{ closest?: Function }|null|undefined} target
+ */
+export const detailPressIsInternal = (target) => !!target?.closest?.('.dpanel, .uframe');
 
 /**
  * Whether an open overlay swallows a game shortcut: a modal / the guide own the keyboard (Esc included — they close

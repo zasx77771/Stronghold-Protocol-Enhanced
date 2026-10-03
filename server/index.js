@@ -15,7 +15,8 @@
 //     single byte-range requests (206/416, used by <audio>); traversal & dotfile protection; 404 page.
 //   * GET /healthz → JSON status (protocol `version`, release `app`, rooms, matches, sessions, sockets).
 //   * WebSocket (ws) at /ws, maxPayload 64 KB → server/net.js Network → server/lobby.js Lobby.
-//   * Env: PORT (default 3000), HOST (default 0.0.0.0), TRUST_PROXY ('auto' default: honour CF-Connecting-IP /
+//   * Env: PORT (default 3000), HOST (default 0.0.0.0), SP_SERVER_ONLY=1 (disable all client/static HTTP),
+//     TRUST_PROXY ('auto' default: honour CF-Connecting-IP /
 //     X-Real-IP / X-Forwarded-For only from loopback/private peers such as a local cloudflared; '1' always; '0' never).
 //     Prints LAN URLs on boot.
 //   * Per-network limits for internet clients (see net.js clientAddress; local/LAN peers are exempt): open sockets
@@ -36,6 +37,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
+import { startTcpServer } from './tcp.js';
 import { Lobby } from './lobby.js';
 import { getData, loadData } from './data.js';
 import { PROTOCOL_VERSION, APP_VERSION } from '../shared/constants.js';
@@ -468,6 +470,11 @@ export function parseTrustProxy(v) {
   return 'auto';
 }
 
+/** Common truthy environment values. @param {unknown} v */
+function envEnabled(v) {
+  return ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
+}
+
 function makeLogger(quiet) {
   if (quiet) return noopLog;
   return {
@@ -482,14 +489,14 @@ function makeLogger(quiet) {
  * Build and start the HTTP + WebSocket server.
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object,
- *   publicDir?: string, dataDir?: string, sharedDir?: string,
+ *   publicDir?: string, dataDir?: string, sharedDir?: string, serveClient?: boolean,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  * }} [opts]
- * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: WebSocketServer,
+ * @returns {Promise<{ port: number, host: string, url: string, serveClient: boolean, server: http.Server, wss: WebSocketServer,
  *                     lobby: Lobby, network: Network, registry: SessionRegistry, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -500,6 +507,11 @@ export async function startServer(opts = {}) {
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
+  const serveClient = opts.serveClient ?? !envEnabled(process.env.SP_SERVER_ONLY);
+  const tcpPortValue = opts.tcpPort ?? (process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT) : null);
+  if (tcpPortValue != null && (!Number.isInteger(tcpPortValue) || tcpPortValue < 0 || tcpPortValue > 65535)) {
+    throw new RangeError(`invalid TCP_PORT ${tcpPortValue}`);
+  }
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
@@ -516,7 +528,10 @@ export async function startServer(opts = {}) {
   }
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
+  let tcpListener = null;
+  // In network-only distributions public/ does not exist. Do not even construct the
+  // static handler in that mode: game data remains server-private and only /ws is exposed.
+  const serveStatic = serveClient ? createStaticHandler({ publicDir, dataDir, sharedDir, log }) : null;
   const startedAt = Date.now();
 
   const server = http.createServer((req, res) => {
@@ -540,9 +555,15 @@ export async function startServer(opts = {}) {
     }
     if (parts.rawPath === '/healthz') {
       sendJson(req, res, 200, {
-        ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-        sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+        ok: true, version: PROTOCOL_VERSION, app: APP_VERSION,
+        mode: serveClient ? 'integrated' : 'network-only', clientAssets: serveClient,
+        uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+        sockets: network.connectionCount, tcpPort: tcpListener?.port ?? null, sessions: registry.size, ...lobby.stats(),
       });
+      return;
+    }
+    if (!serveStatic) {
+      sendJson(req, res, 404, { ok: false, error: 'not_found' });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);
@@ -595,6 +616,15 @@ export async function startServer(opts = {}) {
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
   const url = `http://${host === '0.0.0.0' || host === '::' ? 'localhost' : host}:${actualPort}`;
+  if (tcpPortValue != null) {
+    try {
+      tcpListener = await startTcpServer({ network, host, port: tcpPortValue, log });
+    } catch (e) {
+      network.close();
+      await new Promise((resolve) => server.close(() => resolve()));
+      throw e;
+    }
+  }
 
   let closing = null;
   async function close() {
@@ -602,6 +632,7 @@ export async function startServer(opts = {}) {
     closing = (async () => {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
+      await tcpListener?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();
@@ -612,7 +643,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host, url, server, wss, lobby, network, registry, close };
+  return { port: actualPort, tcpPort: tcpListener?.port ?? null, host, url, serveClient, server, tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, close };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -633,16 +664,27 @@ async function main() {
   process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
   let srv;
   try {
-    srv = await startServer();
+    const httpPort = process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000;
+    const tcpPort = process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT)
+      : (Number.isInteger(httpPort) && httpPort >= 0 && httpPort < 65535 ? httpPort + 1 : 3001);
+    srv = await startServer({ tcpPort });
   } catch (e) {
-    if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
+    if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Set PORT=3001 and restart.`);
     else console.error('[boot] failed to start', e);
     process.exit(1);
   }
+  if (srv.tcpPort != null) console.log(`  TCP:     tcp://${srv.host === '0.0.0.0' || srv.host === '::' ? 'localhost' : srv.host}:${srv.tcpPort}`);
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Covenant v${APP_VERSION}`);
-  console.log(`  Local:   ${srv.url}`);
+  if (srv.serveClient) console.log(`  Local:   ${srv.url}`);
+  else {
+    console.log('  Mode:    network-only (client assets disabled)');
+    console.log(`  Health:  ${srv.url}/healthz`);
+    console.log(`  WebSocket: ${srv.url.replace(/^http/, 'ws')}/ws`);
+  }
   if (srv.host === '0.0.0.0' || srv.host === '::') {
-    for (const u of lanUrls(srv.port)) console.log(`  LAN:     ${u}`);
+    for (const u of lanUrls(srv.port)) {
+      console.log(srv.serveClient ? `  LAN:     ${u}` : `  LAN WebSocket: ${u.replace(/^http/, 'ws')}/ws`);
+    }
   }
   console.log('  Internet: cloudflared tunnel --url ' + `http://localhost:${srv.port}` + '\n');
 

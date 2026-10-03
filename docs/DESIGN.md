@@ -41,7 +41,8 @@ Run: `npm install && npm run assets && npm start` → `http://localhost:3000`. F
 
 ```
 server/
-  index.js                 HTTP static server (gzip for .skel/.atlas/.json/.js/.css), WebSocket upgrade at /ws, boot
+  index.js                 HTTP static server, WebSocket upgrade at /ws, raw TCP listener boot
+  tcp.js                   4-byte big-endian length-prefixed JSON TCP adapter (desktop / Android packaged clients)
   net.js                   session registry, send helpers, per-connection rate limit, message validation (uses shared/protocol.js)
   lobby.js                 rooms (4-letter codes), seats, host, AI seats, ready/start, reconnect tokens, room→Match wiring
   data.js                  loads data/*.json once, builds indexes (getChess, getBond, …); frozen objects
@@ -95,7 +96,8 @@ public/
   css/                     theme.css (tokens, fonts), components.css, screens/*.css
   js/
     main.js                boot, router between screens, global store
-    net.js                 WebSocket client, reconnect, request/response helpers
+    net.js                 WebSocket/TCP transport selection, reconnect, request/response helpers
+    tcpSocket.js           WebSocket-compatible adapter over the desktop / Android native TCP bridge
     store.js               tiny observable store (state from server + local UI state)
     data.js                fetches /data/*.json, same indexes as server/data.js
     audio.js               BGM/SFX manager (Web Audio), volume settings
@@ -400,7 +402,7 @@ Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies
 
 ## 8. Network protocol (shared/protocol.js is normative)
 
-Transport: one WebSocket per tab at `/ws`, JSON text frames `{ t: '<type>', ...payload }`. Client requests may carry `rid` (request id); the server's direct reply echoes `rid` (`ok` or `error`). Server pushes have no `rid`. Max frame 64 KB inbound; rate limit 40 msgs/s per connection (excess dropped with `error RATE`).
+Transport: browsers use one WebSocket per tab at `/ws`. Packaged Windows/Android clients may instead use raw TCP; each TCP message is UTF-8 JSON prefixed by a 4-byte unsigned big-endian byte length. Both transports carry the same `{ t: '<type>', ...payload }` messages and enter the same session, rate-limit, lobby and match code. Client requests may carry `rid` (request id); the server's direct reply echoes `rid` (`ok` or `error`). Server pushes have no `rid`. Max frame 64 KB inbound; rate limit 40 msgs/s per connection (excess dropped with `error RATE`).
 
 ### 8.1 Session & lobby
 C→S: `hello {name, token?, version}` · `room.create {mode:'solo'|'coop', difficulty}` · `room.join {code}` · `room.leave` · `room.ready {ready}` · `room.setDifficulty {difficulty}` (host) · `room.addBot` / `room.removeBot {seat}` (host) · `room.start` (host) · `room.loadout {entries}` (§16: any time in the lobby / room and during INFO_CHECK, then `WRONG_PHASE`; heavy rate-limit bucket; the match exposes it as `m.private.loadout`) · `ping {c}`

@@ -326,6 +326,8 @@ describe('static http server', () => {
     assert.equal(health.status, 200);
     const h = JSON.parse(health.body.toString());
     assert.equal(h.ok, true);
+    assert.equal(h.mode, 'integrated');
+    assert.equal(h.clientAssets, true);
     assert.equal(typeof h.rooms, 'number');
     assert.equal(health.headers['cache-control'], 'no-store');
   });
@@ -353,6 +355,42 @@ describe('static http server', () => {
     assert.equal(acceptsGzip('*;q=0'), false);
     assert.equal(acceptsGzip('br'), false);
     assert.equal(acceptsGzip(undefined), false);
+  });
+});
+
+describe('network-only server', () => {
+  let srv;
+  before(async () => {
+    srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, serveClient: false });
+  });
+  after(async () => { await srv?.close(); });
+
+  test('exposes health and WebSocket but no client, assets or game-data HTTP routes', async () => {
+    assert.equal(srv.serveClient, false);
+    const health = await httpReq(srv.port, '/healthz');
+    assert.equal(health.status, 200);
+    const h = JSON.parse(health.body.toString());
+    assert.equal(h.ok, true);
+    assert.equal(h.mode, 'network-only');
+    assert.equal(h.clientAssets, false);
+
+    for (const p of ['/', '/index.html', '/assets/example.png', '/data/config.json', '/shared/constants.js', '/sim/index.js', '/data.js']) {
+      const r = await httpReq(srv.port, p);
+      assert.equal(r.status, 404, p);
+      assert.match(r.headers['content-type'], /^application\/json/);
+      assert.deepEqual(JSON.parse(r.body.toString()), { ok: false, error: 'not_found' });
+    }
+
+    const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
+    try {
+      const welcome = await c.hello('Portable');
+      assert.equal(welcome.t, 'welcome');
+      const pong = await c.request({ t: 'ping', c: 42 });
+      assert.equal(pong.t, 'pong');
+      assert.equal(pong.c, 42);
+    } finally {
+      await c.terminate();
+    }
   });
 });
 

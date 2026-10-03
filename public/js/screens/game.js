@@ -85,7 +85,7 @@ import { pauseAvailable, isPaused, frozenNow } from '../ui/matchStatus.js';
 import { pieceTile } from '../render/drag.js';
 import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
-  snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
+  snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, detailPressIsInternal, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, chessLoadout, unitLoadout, mergeTarget,
 } from '../ui/gameLogic.js';
@@ -941,6 +941,31 @@ function MatchScreen() {
   }, [detail, field]);
   const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces), [detailTarget, placeCtx]);
   useEffect(() => { if (detail && !resolved && detail.kind === 'piece') setDetail(null); }, [resolved]);
+  // Click-away dismissal for every detail source (field, shop, reward, bond member and enemy intel). The listener is
+  // attached only after a panel exists, so the pointer event which opened it cannot immediately close it. Capture
+  // makes blank HUD areas behave consistently even when a child stops propagation. The selected piece's underframe
+  // is part of the active interaction: dismissing it on pointerdown would remove 撤退 / 出售 before their click fires.
+  useEffect(() => {
+    if (!resolved) return undefined;
+    const onOutside = (e) => {
+      if (detailPressIsInternal(e.target)) return;
+      setDetail(null);
+      setSel(null);
+    };
+    document.addEventListener('pointerdown', onOutside, true);
+    return () => document.removeEventListener('pointerdown', onOutside, true);
+  }, [!!resolved]);
+  // The bond popup is a separate overlay/state from DetailPanel and needs the same touch-friendly click-away rule.
+  // Keep member buttons and its scrollable content interactive; anything outside dismisses it.
+  useEffect(() => {
+    if (!bondOpen) return undefined;
+    const onBondOutside = (e) => {
+      if (e.target?.closest?.('.bpop')) return;
+      setBondOpen(null);
+    };
+    document.addEventListener('pointerdown', onBondOutside, true);
+    return () => document.removeEventListener('pointerdown', onBondOutside, true);
+  }, [!!bondOpen]);
   const snapHp = (() => {
     const id = resolved?.unitId;
     const t = id != null ? snapUnitsRef.current.get(id) : null;
@@ -1230,4 +1255,3 @@ function MatchScreen() {
     <${ExitModal} open=${exitOpen} onClose=${() => setExitOpen(false)} solo=${solo} />
   </div>`;
 }
-

@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+def externalBuildDirectory = System.getenv('SP_ANDROID_BUILD_DIR')
+if (externalBuildDirectory) {
+    layout.buildDirectory.set(file(externalBuildDirectory))
+}
+
+android {
+    namespace 'com.strongholdprotocol.covenant'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.strongholdprotocol.covenant'
+        minSdk 26
+        targetSdk 35
+        versionCode 9
+        versionName '0.2.3'
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    androidResources {
+        noCompress += ['skel', 'atlas', 'mp3', 'ogg', 'oga', 'opus', 'wav', 'm4a', 'aac', 'webm', 'mp4']
+    }
+
+    packaging {
+        resources.excludes += ['/META-INF/{AL2.0,LGPL2.1}']
+    }
+
+    def externalAssetsDirectory = System.getenv('SP_ANDROID_ASSETS_DIR')
+    if (externalAssetsDirectory) {
+        sourceSets.main.assets.srcDirs = [file(externalAssetsDirectory)]
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.14.0'
+}

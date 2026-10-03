@@ -624,6 +624,42 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     });
   }
 
+  test('a shop operator detail stays interactive and closes on a blank field press', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    await page.waitForSelector('.scard:not(.scard--sold)');
+    await page.click('.scard:not(.scard--sold)', { button: 'right' });
+    await page.waitForSelector('.dpanel', { timeout: 3000 });
+    await page.click('.dpanel__scroll');
+    assert.ok(await page.$('.dpanel'), 'interacting inside the shop detail keeps it open');
+    const blank = await page.evaluate(() => {
+      const v = globalThis.__SP_VIEW__;
+      const p = v.raw.tileScreen(10, 9);
+      return { x: p.x, y: p.y };
+    });
+    await page.mouse.click(blank.x, blank.y);
+    await sleep(250);
+    assert.equal(await page.$('.dpanel'), null, 'a blank field press closes the shop detail');
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
+
+  test('a covenant popup stays interactive and closes on a blank field press', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    await page.click('.bslot .bond');
+    await page.waitForSelector('.bpop', { timeout: 3000 });
+    await page.click('.bpop__desc');
+    assert.ok(await page.$('.bpop'), 'interacting inside the covenant popup keeps it open');
+    const blank = await page.evaluate(() => {
+      const p = globalThis.__SP_VIEW__.raw.tileScreen(10, 9);
+      return { x: p.x, y: p.y };
+    });
+    await page.mouse.click(blank.x, blank.y);
+    await sleep(250);
+    assert.equal(await page.$('.bpop'), null, 'a blank field press closes the covenant popup');
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
+
   test('an eliminated player sees one elimination banner during SETTLE', async () => {
     for (const phase of ['SETTLE', 'PREP']) {
       const { page, problems } = await open(`phase=${phase}&variant=dead`, { render: 'fallback' });

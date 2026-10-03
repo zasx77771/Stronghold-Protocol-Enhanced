@@ -19,7 +19,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 
 const { GLYPHS, gearPath, GIcon } = await import('../../public/js/ui/gameComponents.js');
-const { hudBands, HUD_REM } = await import('../../public/js/ui/fieldHost.js');
+const { hudBands, HUD_REM, ANDROID_LEGACY_HUD_REM, isPackagedAndroidHost } = await import('../../public/js/ui/fieldHost.js');
 const { presetCamera, tileQuad } = await import('../../public/js/render/projection.js');
 
 // ---- 8: the gear ----------------------------------------------------------------------------------------------------
@@ -121,13 +121,14 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
     assert.match(game, /\.gm__bonds \{ position: absolute; left: 1\.56rem; top: 1\.36rem;/);
     assert.match(game, /\.bslot \.bond \{ --disc: \.52rem; \}/);
     assert.equal(HUD_REM.bondStripBottom, 2.16);
-    // shop bar: bottom .2rem + row padding .1rem × 2 + 2.24rem cards (level / operator / item) + 2 px + 1 px borders
+    // The complete bar also includes its two-row tools block. Its live DOM rectangle is authoritative; 3.8rem is the
+    // conservative fallback used while the bar has not mounted yet.
     assert.match(shop, /\.shopbar \{\n {2}position: absolute; right: \.26rem; bottom: \.2rem;/);
     assert.match(shop, /\.shopbar__row \{\n {2}position: relative; display: flex; align-items: stretch; gap: \.08rem; padding: \.1rem;\n[^}]*border: 1px solid var\(--line-2\); border-top: 2px solid var\(--mint-700\);/);
     assert.match(shop, /\.lvcard \{\n {2}position: relative; width: 1\.24rem; height: 2\.24rem;/);
     assert.match(shop, /\.scard \{\n {2}--tc: var\(--tier-1\);\n {2}position: relative; width: 1\.56rem; height: 2\.24rem;/);
-    assert.equal(HUD_REM.shopBarTop, 0.2 + 0.1 * 2 + 2.24);
-    assert.equal(HUD_REM.shopBarBorderPx, 3);
+    assert.equal(HUD_REM.shopBarTop, 3.8);
+    assert.equal(HUD_REM.shopBarBorderPx, 0);
     // the bar stays on the viewport's bottom edge on a notched phone (DESIGN §18.1): no bottom inset to add
     assert.match(read('public/css/devices.css'), /\.gm__hud > \.shopbar \{ bottom: calc\(\.2rem - var\(--sa-b\)\); \}/);
   });
@@ -137,12 +138,23 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
       for (const k of ['normal', 'unite', 'boss', 'hidden', 'pen']) assert.equal(hudBands(k, { width: 844, height: 390 }), null, k);
       for (const k of ['prep', 'bossPrep']) {
         const b = hudBands(k, { width: 844, height: 390 });
-        assert.ok(Math.abs(b.top - 86.4) < 1e-9 && Math.abs(b.bottom - 108.6) < 1e-9, `${k} ${JSON.stringify(b)}`);
+        assert.ok(Math.abs(b.top - 86.4) < 1e-9 && Math.abs(b.bottom - 152) < 1e-9, `${k} ${JSON.stringify(b)}`);
       }
     });
-    withDom(100, 0, () => assert.deepEqual(hudBands('prep', { width: 1920, height: 1080 }), { top: 216, bottom: 267 }));
+    withDom(100, 0, () => assert.deepEqual(hudBands('prep', { width: 1920, height: 1080 }), { top: 216, bottom: 380 }));
     withDom(40, 12, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: 390 }).top - 98.4) < 1e-9, 'top inset'));
-    withDom(40, 0, () => assert.deepEqual(hudBands('prep', { width: 640, height: 200 }), { top: 80, bottom: 80 }), 'clamped at 40 % of the height');
+    withDom(40, 0, () => assert.deepEqual(hudBands('prep', { width: 640, height: 200 }), { top: 80, bottom: 98 }), 'bottom can use 49 % of a very short screen');
+  });
+
+  test('packaged Android restores the original, larger prep-camera framing without changing desktop', () => {
+    assert.deepEqual(ANDROID_LEGACY_HUD_REM, { bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3 });
+    assert.equal(isPackagedAndroidHost({ search: '?desktop=1&android=1' }, null), true);
+    assert.equal(isPackagedAndroidHost({ search: '?desktop=1' }, null), false);
+    withDom(40, 0, () => {
+      const android = hudBands('prep', { width: 844, height: 390 }, { android: true });
+      assert.ok(Math.abs(android.top - 86.4) < 1e-9 && Math.abs(android.bottom - 108.6) < 1e-9, JSON.stringify(android));
+      assert.deepEqual(hudBands('prep', { width: 844, height: 390 }, { android: false }), { top: 86.4, bottom: 152 });
+    });
   });
 
   test('wiring: the game hands hudBands to the view, the view to the prep cameras', () => {
@@ -169,7 +181,7 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
     assert.ok(stage, 'stage act2autochess_m01');
     for (const [w, h] of PHONES) {
       const rem = remAt(w, h);
-      const shopTop = h - (HUD_REM.shopBarTop * rem + 3);
+      const shopTop = h - (HUD_REM.shopBarTop * rem + HUD_REM.shopBarBorderPx);
       for (const [kind, rows] of [['prep', { bench: 7, temp: 8, back: 12 }], ['bossPrep', { bench: 0, temp: 1, back: 5 }]]) {
         const hud = withDom(rem, 0, () => hudBands(kind, { width: w, height: h }));
         const before = extents(presetCamera(kind, { width: w, height: h }), rows);

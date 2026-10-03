@@ -41,7 +41,7 @@
 - 第一次启动时 Windows 会弹出「Windows 安全中心警报」：勾选**专用网络**并点「允许访问」。
 - 没弹窗或点错了，用**管理员** PowerShell 添加规则（下面的开机自启脚本也会自动添加）：
   ```powershell
-  netsh advfirewall firewall add rule name="Stronghold Protocol" dir=in action=allow protocol=TCP localport=3000 profile=private,domain
+  netsh advfirewall firewall add rule name="Stronghold Protocol" dir=in action=allow protocol=TCP localport=3000,3001 profile=private,domain
   ```
 - 家里的网络要是「公用网络」，Windows 会拦截入站连接。改成专用（管理员 PowerShell；网卡名用 `Get-NetConnectionProfile` 查看）：
   ```powershell
@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1
 
 | 需求 | 命令（都加在 `powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1` 之后） |
 |---|---|
-| 换端口 / 其他设置 | `-Port 8080`、`-Verify sample`、`-Combat server`、`-BindHost 127.0.0.1`（只给反向代理用） |
+| 换端口 / 其他设置 | `-Port 8080 -TcpPort 8081`、`-Verify sample`、`-Combat server`、`-BindHost 127.0.0.1`（只给反向代理用） |
 | 公用网络也放行 | `-AllowPublicNetwork`（一般不需要；Tailscale 网卡被识别为公用网络时可能需要） |
 | 查看状态和最近日志 | `-Status` |
 | 重启（更新代码后） | `-Restart` |
@@ -128,14 +128,15 @@ cloudflared tunnel --url http://localhost:3000
 仅当你有**公网 IPv4**（很多宽带是运营商级 NAT，没有公网 IP，此时请用 2.1 / 2.2）：
 
 1. 先按 1.3 固定主机的局域网 IP。
-2. 路由器「虚拟服务器 / 端口转发」：外部端口 3000（或任意端口）→ 内部 `主机IP:3000`，TCP。
-3. 朋友访问 `http://<你的公网 IP>:外部端口`。
+2. WebSocket/网页方式：把外部 TCP 端口 3000（或任意端口）转发到 `主机IP:3000`。
+3. Windows/Android 打包客户端若使用 TCP 直连，再把另一个外部 TCP 端口转发到 `主机IP:3001`；客户端填写 `tcp://<公网 IP>:外部端口`。浏览器不能使用原始 TCP。
+4. WebSocket 客户端填写 `http://<你的公网 IP>:外部端口`。
 
 注意：游戏没有账号系统，知道地址的人都能进来。服务器对来自互联网的连接有按网络的数量限制（每个网络最多 64 个连接，房间 / 对局数量也有上限），但仍建议不玩时关掉转发，或优先用 Tailscale。
 
 ### 2.4 反向代理与 HTTPS（有域名时）
 
-必须部署在**域名根路径**（客户端使用 `/data/`、`/vendor/`、`/ws` 等绝对路径，不支持挂在子路径下）。代理需要转发 WebSocket 升级（路径 `/ws`）。建议让服务器只监听本机：`HOST=127.0.0.1`（Windows 自启：`-BindHost 127.0.0.1`）。
+必须部署在**域名根路径**（客户端使用 `/data/`、`/vendor/`、`/ws` 等绝对路径，不支持挂在子路径下）。代理需要转发 WebSocket 升级（路径 `/ws`）。建议让服务器只监听本机：`HOST=127.0.0.1`（Windows 自启：`-BindHost 127.0.0.1`）。普通 HTTP 反向代理不会转发原始 TCP；如需 TCP 直连，应直接开放 `TCP_PORT`，或使用四层 TCP 转发。
 
 **Caddy**（自动申请 HTTPS 证书，WebSocket 无需额外配置）：
 
@@ -217,7 +218,7 @@ services:
   [Service]
   WorkingDirectory=/opt/Stronghold-Protocol
   ExecStart=/usr/bin/node server/index.js
-  Environment=PORT=3000 HOST=0.0.0.0
+  Environment=PORT=3000 TCP_PORT=3001 HOST=0.0.0.0
   Restart=always
   RestartSec=5
   User=stronghold
@@ -226,7 +227,7 @@ services:
   WantedBy=multi-user.target
   ```
 
-  `sudo systemctl daemon-reload && sudo systemctl enable --now stronghold`；日志 `journalctl -u stronghold -f`；防火墙 `sudo ufw allow 3000/tcp`。
+  `sudo systemctl daemon-reload && sudo systemctl enable --now stronghold`；日志 `journalctl -u stronghold -f`；防火墙开放 WebSocket 与原始 TCP：`sudo ufw allow 3000/tcp && sudo ufw allow 3001/tcp`。
 
 ## 5. 排错
 

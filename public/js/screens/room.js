@@ -18,6 +18,7 @@ import { LoadoutButton } from './loadout.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch } from '../store.js';
 import { difficultyInfo } from './lobby.js';
+import { buildInviteLink, loadEndpointAddress, loadTransportMode } from '../serverAddress.js';
 
 /**
  * Seats padded to the room's capacity (co-op 4, solo 1), each null or a seat record.
@@ -60,11 +61,10 @@ export function roomFacts(room, myId) {
   };
 }
 
-/** Invite link for a room code (current page URL with ?room=CODE). */
+/** Invite link for a room code, rooted at the selected game server rather than the local client. */
 export function inviteLink(code) {
-  const loc = globalThis.location;
-  const base = loc ? `${loc.origin}${loc.pathname}` : '';
-  return `${base}?room=${encodeURIComponent(code)}`;
+  const transport = loadTransportMode();
+  return buildInviteLink(loadEndpointAddress(transport), code, transport);
 }
 
 /**

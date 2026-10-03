@@ -1,12 +1,12 @@
 // Regression tests for in-match UI defects (round-3 hunt): the 暂离 (AI 托管) flag leaking into the next match, game
 // shortcuts acting behind the 本局信息 / 敌方情报 drawer, two elimination banners during SETTLE, a right-click /
-// long-press detail card that a press on the field did not close, and the touch hit areas of the 交流 pager (static
+// long-press detail card that a press outside did not close, and the touch hit areas of the 交流 pager (static
 // check here; the in-browser check is in devices.e2e.test.js).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { shortcutBlocked, showDeadPill, closesOnFieldPress } from '../../public/js/ui/gameLogic.js';
+import { shortcutBlocked, showDeadPill, closesOnFieldPress, detailPressIsInternal } from '../../public/js/ui/gameLogic.js';
 import { PHASE } from '../../shared/constants.js';
 
 describe('暂离 (AI 托管) is scoped to one match', () => {
@@ -56,11 +56,11 @@ describe('elimination banners', () => {
   });
 });
 
-describe('detail card vs a press on the field', () => {
-  test('a card opened from the field (tap, right-click, long press, battle unit) closes; others stay', () => {
+describe('detail card click-away dismissal', () => {
+  test('field, shop, item and enemy cards all close outside', () => {
     assert.equal(closesOnFieldPress({ kind: 'piece', uid: 3 }), true);
     assert.equal(closesOnFieldPress({ kind: 'unit', unitId: 7 }), true);
-    for (const kind of ['chess', 'item', 'enemy']) assert.equal(closesOnFieldPress({ kind, id: 'x' }), false, kind);
+    for (const kind of ['chess', 'item', 'enemy']) assert.equal(closesOnFieldPress({ kind, id: 'x' }), true, kind);
     assert.equal(closesOnFieldPress(null), false);
   });
 
@@ -70,6 +70,43 @@ describe('detail card vs a press on the field', () => {
     assert.ok(h.length > 0);
     assert.match(h, /setDetail\(\(d\) => \(closesOnFieldPress\(d\) \? null : d\)\)/);
     assert.doesNotMatch(h, /if \(L\.sel\) \{[^}]*setDetail/, 'not only while a piece is selected');
+    assert.match(src, /document\.addEventListener\('pointerdown', onOutside, true\)/, 'blank HUD/page areas close details');
+    assert.match(src, /detailPressIsInternal\(e\.target\)/, 'detail and selection controls do not dismiss themselves');
+  });
+
+  test('撤退 / 出售 remain mounted through pointerdown so their click can fire', () => {
+    const target = (matched) => ({ closest: (selector) => selector.split(/,\s*/).includes(matched) ? {} : null });
+    assert.equal(detailPressIsInternal(target('.dpanel')), true, 'detail content');
+    assert.equal(detailPressIsInternal(target('.uframe')), true, 'selected-piece controls');
+    assert.equal(detailPressIsInternal(target('.shopbar')), false, 'outside click still dismisses');
+    const css = readFileSync(new URL('../../public/css/devices.css', import.meta.url), 'utf8');
+    assert.match(css, /\.sp-coarse :is\([^}]*\.uframe__btn[^}]*\)::before/s, 'touch buttons receive the expanded hit area');
+    assert.doesNotMatch(css, /\.uf__btn/, 'no stale selector typo');
+  });
+
+  test('a covenant popup also closes outside, but not while interacting inside it', () => {
+    const src = readFileSync(new URL('../../public/js/screens/game.js', import.meta.url), 'utf8');
+    assert.match(src, /document\.addEventListener\('pointerdown', onBondOutside, true\)/);
+    assert.match(src, /e\.target\?\.closest\?\.\('\.bpop'\)/);
+    assert.match(src, /setBondOpen\(null\)/);
+  });
+});
+
+describe('packaged Android rendering', () => {
+  test('embedded game images load eagerly without waiting for a tap or scroll', async () => {
+    const { isPackagedAndroid } = await import('../../public/js/ui/gameComponents.js');
+    assert.equal(isPackagedAndroid({ search: '?desktop=1&android=1' }, null), true);
+    assert.equal(isPackagedAndroid({ search: '?desktop=1' }, null), false);
+    assert.equal(isPackagedAndroid({ search: '' }, {}), true);
+    const src = readFileSync(new URL('../../public/js/ui/gameComponents.js', import.meta.url), 'utf8');
+    assert.match(src, /isPackagedAndroid\(\) \? 'eager' : 'lazy'/);
+  });
+
+  test('fractional CSS viewport pixels are preserved for both render canvases', () => {
+    const app = readFileSync(new URL('../../public/js/render/app.js', import.meta.url), 'utf8');
+    const board = readFileSync(new URL('../../public/js/render/board3d/scene.js', import.meta.url), 'utf8');
+    assert.match(app, /host\.getBoundingClientRect\?\.\(\)/);
+    assert.doesNotMatch(board, /Math\.round\(w\).*Math\.round\(h\)/);
   });
 });
 

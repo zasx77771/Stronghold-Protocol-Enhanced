@@ -515,7 +515,9 @@ export class BoardScene {
   }
 
   resize(w, h, dpr = 1) {
-    const W = Math.max(1, Math.round(w)), H = Math.max(1, Math.round(h));
+    // Preserve fractional CSS pixels. Rounding before applying DPR can make this canvas differ by one physical pixel
+    // from the Pixi canvas on Android, which softens the composite and shifts overlays relative to the board.
+    const W = Math.max(1, Number(w) || 1), H = Math.max(1, Number(h) || 1);
     if (W === this.size.w && H === this.size.h && dpr === this.size.dpr) return;
     this.size = { w: W, h: H, dpr };
     this.renderer.setPixelRatio(dpr);

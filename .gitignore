@@ -13,6 +13,17 @@ data/local-assets.json
 # download caches, upstream tables, ledgers, reports, setup state
 .cache/
 
+# --- packaged-client build products ---------------------------------------------------------------
+# Current build scripts put these outside BaseCode under ../成果文件, but keep the source tree clean
+# if a custom output/cache path points back into the project.
+.android-toolchain/
+dist/
+desktop/cache/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/
+
 # --- Python (optional local-client extraction) ----------------------------------------------------
 .venv*/
 venv/
