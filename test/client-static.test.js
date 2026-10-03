@@ -745,13 +745,17 @@ describe('server address', () => {
     }
   });
 
-  test('persists a canonical address and uses desktop/browser defaults', async () => {
-    const { loadServerAddress, saveServerAddress, defaultServerAddress } = await mod('serverAddress.js');
+  test('persists a canonical address, uses browser origin, and leaves standalone defaults empty', async () => {
+    const { TRANSPORT_TCP, defaultEndpointAddress, loadEndpointAddress, loadServerAddress, saveServerAddress, defaultServerAddress } = await mod('serverAddress.js');
     const storage = memStorage();
     saveServerAddress('example.com:3456', storage);
     assert.equal(loadServerAddress(storage, { protocol: 'http:', host: 'ignored', search: '' }), 'http://example.com:3456');
     assert.equal(defaultServerAddress({ protocol: 'http:', host: 'lan:3000', search: '' }), 'http://lan:3000');
-    assert.equal(defaultServerAddress({ protocol: 'http:', host: '127.0.0.1:9999', search: '?desktop=1' }), 'http://localhost:3000');
+    const packaged = { protocol: 'https:', host: 'appassets.androidplatform.net', search: '?desktop=1&android=1' };
+    assert.equal(defaultServerAddress(packaged), '');
+    assert.equal(defaultEndpointAddress(TRANSPORT_TCP, packaged), '');
+    assert.equal(loadServerAddress(memStorage(), packaged), '');
+    assert.equal(loadEndpointAddress(TRANSPORT_TCP, memStorage(), packaged), '');
   });
 
   test('normalises room codes and builds server-rooted invite links', async () => {
@@ -1183,7 +1187,7 @@ describe('screen helpers', () => {
     assert.equal(roomFacts(room, 'h').canStart, false, 'disconnected guest blocks start');
     assert.equal(roomFacts(room, 'g').canStart, false, 'guests cannot start');
     assert.equal(roomFacts(null, 'x').mine, null);
-    assert.match(inviteLink('ABCD'), /\?room=ABCD$/);
+    assert.equal(inviteLink('ABCD', 'game.example:3000', 'websocket'), 'http://game.example:3000/?room=ABCD');
   });
 
   test('components: roman / doctorNo / secondsLeft', async () => {

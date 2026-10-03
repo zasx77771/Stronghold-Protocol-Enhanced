@@ -58,20 +58,30 @@ export function isPackagedAndroidHost(loc = globalThis.location, bridge = global
 }
 
 /**
+ * Connect the Android shop's collapsed state to the official no-shop prep camera. Browser and desktop clients keep
+ * their existing camera options, so collapsing their shop remains a HUD-only operation.
+ */
+export function prepCameraShopOptions(options, { android, collapsed = false, shopVisible = true } = {}) {
+  const base = options && typeof options === 'object' ? options : {};
+  const packaged = android ?? isPackagedAndroidHost();
+  if (!packaged || !shopVisible) return base;
+  return { ...base, shop: !collapsed };
+}
+
+/**
  * CSS px of HUD along the top edge (top bar + bond strip) and the bottom edge (the shop bar) of the viewport during
  * prep — the own board ('prep') or the Final Assault half ('bossPrep'); null for every other camera. The prep camera
  * keeps the bench / temp rows and the field's back row clear of them (render/projection.js clearHud; user playtest
  * #5 item 9: the rem floor of 40 px makes the HUD relatively taller on phones in landscape and the shop bar covered
- * the bench). The prep camera is the shop camera whether or not the bar is collapsed, so the band assumes the bar —
- * also for an eliminated player's own board (no shop bar: the band only costs size there, while a camera following
- * the bar's presence would have to re-frame whenever it appears, e.g. when the private state arrives after the prep
- * camera was set). Scouting a teammate's board uses the 'normal' camera: no band. An armed shop card (two-tap buy,
+ * the bench). On packaged Android, collapsing the shop switches to the official no-shop camera and releases the
+ * bottom band, allowing the field to fill the small landscape viewport. Browser and desktop clients retain the
+ * original fixed prep framing. Scouting a teammate's board uses the 'normal' camera: no band. An armed shop card (two-tap buy,
  * css/screens/game-shop.css .scard.is-armed) rises 4 px above the bar's top on a phone and covers the bench pads'
  * near corners by ≈ 3 px while it stays armed — less than under the unchanged official camera at 1920×1080 (13 px
  * above the bar, ≈ 11 px over the pads).
  * @param {string} kind
  * @param {{ width: number, height: number }} size
- * @param {{ android?: boolean }} [runtime] explicit runtime override for tests
+ * @param {{ android?: boolean, shop?: boolean }} [runtime] explicit runtime/camera override for tests
  * @returns {{ top: number, bottom: number }|null}
  */
 export function hudBands(kind, size, runtime) {
@@ -97,7 +107,7 @@ export function hudBands(kind, size, runtime) {
   const shopBottom = measuredBottom || rem * geometry.shopBarTop + geometry.shopBarBorderPx;
   return {
     top: Math.min(h * 0.4, safeTop + rem * geometry.bondStripBottom),
-    bottom: Math.min(h * (android ? 0.4 : 0.49), shopBottom),
+    bottom: android && runtime?.shop === false ? 0 : Math.min(h * (android ? 0.4 : 0.49), shopBottom),
   };
 }
 

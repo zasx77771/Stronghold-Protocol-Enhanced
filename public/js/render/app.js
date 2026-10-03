@@ -624,10 +624,10 @@ export async function createFieldView(host, options = {}) {
   }
 
   // the HUD bands the prep cameras keep the bench / field clear of (projection.js clearHud; user playtest #5 item 9):
-  // `opts.hud` = (kind, size) => { top, bottom } | null, or a fixed object; none → the plain official framing
-  function hudBands(kind, sz) {
+  // `opts.hud` = (kind, size, cameraOpts) => { top, bottom } | null, or a fixed object; none → plain official framing
+  function hudBands(kind, sz, cameraOpts) {
     if (kind !== 'prep' && kind !== 'bossPrep') return null;
-    if (typeof opts.hud === 'function') { try { return opts.hud(kind, sz) || null; } catch { return null; } }
+    if (typeof opts.hud === 'function') { try { return opts.hud(kind, sz, { shop: cameraOpts?.shop }) || null; } catch { return null; } }
     return opts.hud && typeof opts.hud === 'object' ? opts.hud : null;
   }
 
@@ -650,7 +650,7 @@ export async function createFieldView(host, options = {}) {
     const vk = viewKind(kind, o); // (a 'prep' camera on the boss rows = the Final Assault prep)
     return presetCamera(k, { width: sz.width, height: sz.height, padding: o.padding || defaultPadding(k, sz) }, {
       rect, side: o.side, half: !!o.half, shop: o.shop, fit: !!o.fit, config: stageRec?.config || null,
-      hud: hudBands(vk, sz),
+      hud: hudBands(vk, sz, o),
     });
   }
 

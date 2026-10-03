@@ -128,4 +128,3 @@ export function startTcpServer({ network, host, port, log }) {
     server.listen(port, host);
   });
 }
-

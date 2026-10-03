@@ -19,7 +19,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 
 const { GLYPHS, gearPath, GIcon } = await import('../../public/js/ui/gameComponents.js');
-const { hudBands, HUD_REM, ANDROID_LEGACY_HUD_REM, isPackagedAndroidHost } = await import('../../public/js/ui/fieldHost.js');
+const { hudBands, HUD_REM, ANDROID_LEGACY_HUD_REM, isPackagedAndroidHost, prepCameraShopOptions } = await import('../../public/js/ui/fieldHost.js');
 const { presetCamera, tileQuad } = await import('../../public/js/render/projection.js');
 
 // ---- 8: the gear ----------------------------------------------------------------------------------------------------
@@ -157,11 +157,41 @@ describe('9: the prep camera keeps the bench clear of the shop bar on phones in 
     });
   });
 
+  test('packaged Android collapse selects the no-shop camera and releases the bottom HUD band', () => {
+    const base = { side: 'L' };
+    assert.deepEqual(prepCameraShopOptions(base, { android: true, collapsed: false }), { side: 'L', shop: true });
+    assert.deepEqual(prepCameraShopOptions(base, { android: true, collapsed: true }), { side: 'L', shop: false });
+    assert.equal(prepCameraShopOptions(base, { android: false, collapsed: true }), base, 'desktop camera stays unchanged');
+    assert.equal(prepCameraShopOptions(base, { android: true, collapsed: true, shopVisible: false }), base, 'no hidden shop, no reframe');
+    withDom(40, 0, () => {
+      assert.deepEqual(hudBands('prep', { width: 756, height: 366 }, { android: true, shop: false }), { top: 86.4, bottom: 0 });
+      assert.deepEqual(hudBands('prep', { width: 756, height: 366 }, { android: false, shop: false }), { top: 86.4, bottom: 152 });
+    });
+  });
+
+  test('the collapsed Android camera materially enlarges tiles on a 756×366 phone', () => {
+    withDom(40, 0, () => {
+      for (const [kind, row] of [['prep', 9], ['bossPrep', 2]]) {
+        const size = { width: 756, height: 366 };
+        const open = presetCamera(kind, size, { shop: true, hud: hudBands(kind, size, { android: true, shop: true }) });
+        const closed = presetCamera(kind, size, { shop: false, hud: hudBands(kind, size, { android: true, shop: false }) });
+        const edge = (cam) => {
+          const q = tileQuad(cam, row, 5, 0.16);
+          return Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y);
+        };
+        assert.ok(edge(closed) > edge(open) * 1.25, `${kind}: collapsed ${edge(closed)} > open ${edge(open)}`);
+      }
+    });
+  });
+
   test('wiring: the game hands hudBands to the view, the view to the prep cameras', () => {
     assert.match(read('public/js/ui/fieldHost.js'), /padding: hudPadding, hud: hudBands \}/);
     const app = read('public/js/render/app.js');
-    assert.match(app, /hud: hudBands\(vk, sz\),/);
+    assert.match(app, /hud: hudBands\(vk, sz, o\),/);
     assert.match(app, /presetCamera\('prep', \{ width: s0\.width, height: s0\.height, padding: defaultPadding\('prep', s0\) \}, \{ hud: hudBands\('prep', s0\) \}\)/);
+    const game = read('public/js/screens/game.js');
+    assert.match(game, /prepCameraShopOptions\(prepCam\.opts, \{ collapsed, shopVisible: showShop \}\)/);
+    assert.match(game, /prepCamOpts\.shop \?\? 'fixed'/);
   });
 
   // phones in landscape (CSS px) incl. the user's Android: its 2772×1272 px screenshot shows the page right of a 141 px

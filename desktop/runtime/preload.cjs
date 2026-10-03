@@ -14,4 +14,3 @@ contextBridge.exposeInMainWorld('strongholdClient', {
   },
   readClipboardText: () => ipcRenderer.invoke('sp-read-clipboard'),
 });
-

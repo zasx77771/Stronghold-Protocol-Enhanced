@@ -62,9 +62,9 @@ export function roomFacts(room, myId) {
 }
 
 /** Invite link for a room code, rooted at the selected game server rather than the local client. */
-export function inviteLink(code) {
-  const transport = loadTransportMode();
-  return buildInviteLink(loadEndpointAddress(transport), code, transport);
+export function inviteLink(code, serverAddress, transportMode) {
+  const transport = transportMode || loadTransportMode();
+  return buildInviteLink(serverAddress ?? loadEndpointAddress(transport), code, transport);
 }
 
 /**

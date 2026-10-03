@@ -252,11 +252,11 @@ export function TitleScreen() {
     let endpoint;
     try {
       const previousTransport = loadTransportMode();
-      const previous = saveEndpointAddress(loadEndpointAddress(previousTransport), previousTransport);
+      const previousKey = loadEndpointAddress(previousTransport).toLowerCase();
       endpoint = saveEndpointAddress(chosenServer, chosenTransport);
       // A reconnect token is meaningful only to the server that issued it.  Never present one
       // server's token to another when the user changes the address.
-      if (previous.serverKey !== endpoint.serverKey) identity.clearToken();
+      if (previousKey !== endpoint.serverKey) identity.clearToken();
       setTransport(chosenTransport);
       setServer(endpoint.address);
       setServerError('');

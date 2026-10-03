@@ -314,8 +314,10 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
-  const savedServer = normalizeServerAddress(loadServerAddress());
-  const entered = identity.wasEntered() && !!savedName;
+  const savedAddress = loadServerAddress();
+  const savedServer = savedAddress ? normalizeServerAddress(savedAddress) : null;
+  // A clean standalone install contains no server address. Keep it on the title screen until the user supplies one.
+  const entered = identity.wasEntered() && !!savedName && !!savedServer;
   store.set((s) => ({
     me: { ...s.me, name: savedName },
     session: { entered },
@@ -323,7 +325,7 @@ async function boot() {
   }));
 
   wireNet();
-  net.setUrl(savedServer.wsUrl);
+  if (savedServer) net.setUrl(savedServer.wsUrl);
   installLoadoutSync({ net });
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).

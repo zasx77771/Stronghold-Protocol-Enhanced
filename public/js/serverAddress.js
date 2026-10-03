@@ -85,24 +85,25 @@ export function saveTransportMode(mode, storage = safeLocalStorage()) {
   return value;
 }
 
-/** Default address shown on the title screen. */
+/** Default address shown on the title screen. Standalone clients intentionally ship with no server embedded. */
 export function defaultServerAddress(loc = globalThis.location) {
-  if (isDesktopClient(loc?.search || '')) return 'http://localhost:3000';
+  if (isDesktopClient(loc?.search || '')) return '';
   if (loc && (loc.protocol === 'http:' || loc.protocol === 'https:') && loc.host) {
     return `${loc.protocol}//${loc.host}`;
   }
-  return 'http://localhost:3000';
+  return '';
 }
 
 export function defaultEndpointAddress(mode, loc = globalThis.location) {
-  return normalizeTransportMode(mode) === TRANSPORT_TCP ? 'tcp://localhost:3001' : defaultServerAddress(loc);
+  return normalizeTransportMode(mode) === TRANSPORT_TCP ? '' : defaultServerAddress(loc);
 }
 
-/** Load the last address, falling back to the current web origin / localhost in desktop builds. */
+/** Load the last address, falling back only to the origin of a server-hosted browser page. */
 export function loadServerAddress(storage = safeLocalStorage(), loc = globalThis.location) {
   let saved = '';
   try { saved = storage?.getItem(SERVER_ADDRESS_KEY) || ''; } catch { /* privacy mode */ }
-  try { return normalizeServerAddress(saved || defaultServerAddress(loc)).address; }
+  if (!saved) return defaultServerAddress(loc);
+  try { return normalizeServerAddress(saved).address; }
   catch { return defaultServerAddress(loc); }
 }
 
@@ -119,7 +120,8 @@ export function loadEndpointAddress(mode, storage = safeLocalStorage(), loc = gl
   if (selected === TRANSPORT_WEBSOCKET) return loadServerAddress(storage, loc);
   let saved = '';
   try { saved = storage?.getItem(TCP_SERVER_ADDRESS_KEY) || ''; } catch { /* privacy mode */ }
-  try { return normalizeTcpAddress(saved || defaultEndpointAddress(selected, loc)).address; }
+  if (!saved) return defaultEndpointAddress(selected, loc);
+  try { return normalizeTcpAddress(saved).address; }
   catch { return defaultEndpointAddress(selected, loc); }
 }
 

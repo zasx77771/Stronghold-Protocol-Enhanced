@@ -60,7 +60,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { html, Spinner, PhaseBanner, Icon, Button, MicroLabel, confirmDialog, useTicker } from '../ui/components.js';
 import { useGameData, GIcon } from '../ui/gameComponents.js';
-import { useFieldView } from '../ui/fieldHost.js';
+import { prepCameraShopOptions, useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
 import { TeamPanel } from '../ui/teamPanel.js';
@@ -221,6 +221,7 @@ function MatchScreen() {
   const home = homeFieldId(pub, myId);
   const watchingOther = !!watching && watching !== home && watching !== ownFieldId(myId);
   const editable = phase === PHASE.PREP && !!priv && alive && !priv.ready && !watchingOther;
+  const showShop = !!priv && alive && (phase === PHASE.PREP || phase === PHASE.SP_DRAFT || phase === PHASE.ROUND_START) && !watchingOther;
   const layersDisabled = phase === PHASE.UNITE || isBossPhase(phase);
   const sp = phase === PHASE.SP_DRAFT ? normalizeSp(pub?.sp, players) : null;
   const total = phaseTotalSeconds(pub, gd.config, myId);
@@ -266,7 +267,8 @@ function MatchScreen() {
   // own board's layout there (every coordinate the UI handles is a board coordinate either way) and draws the tiles of
   // that half (ui/fallbackField.js: the legal fence tiles are floor, not the normal field's walls; user playtest #5 item 7).
   const prepCam = prepCamera(pub, myId);
-  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}`;
+  const prepCamOpts = prepCameraShopOptions(prepCam.opts, { collapsed, shopVisible: showShop });
+  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}:${prepCamOpts.shop ?? 'fixed'}`;
   const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
   const camRef = useRef({ kind: 'prep', opts: { rect: { ...GEO.NORMAL_RECT }, side: 'L' } });
   const penRef = useRef({ on: false, collapsed: false });
@@ -352,7 +354,7 @@ function MatchScreen() {
         // the battle we just left (or whatever was stored before mount) must not be re-entered next combat;
         // an m.field that arrives during prep (the upcoming battle) is a new object and will be entered
         staleFieldRef.current = field;
-        setCam(prepCam.kind, prepCam.opts);
+        setCam(prepCam.kind, prepCamOpts);
         prepCamSeen.current = prepCamKey;
         viewModeRef.current = 'prep';
         lastFieldRef.current = null;
@@ -468,7 +470,7 @@ function MatchScreen() {
     if (!view || viewModeRef.current !== 'prep' || !showPrep) return;
     if (live.current.facing) cancelFacingRef.current();
     setSel(null);
-    setCam(prepCam.kind, prepCam.opts);
+    setCam(prepCam.kind, prepCamOpts);
   }, [view, prepCamKey, showPrep]);
 
   // 联防 / 最终攻势: the ‹ › pill moves the camera between the field's halves and 全景 (research 09 §3.1)
@@ -1059,7 +1061,6 @@ function MatchScreen() {
   // ---- render ---------------------------------------------------------------------------------------------------
   const readyCount = players.filter((p) => p.ready || p.status === 'ready').length;
   const aliveCount = players.filter((p) => p.alive !== false && p.status !== 'left').length;
-  const showShop = !!priv && alive && (phase === PHASE.PREP || phase === PHASE.SP_DRAFT || phase === PHASE.ROUND_START) && !watchingOther;
   // the own battle is over: the server says so (status done) or — client-side combat — the local simulation just ended
   const localDone = cc && !!battleState && battleState.own && !battleState.watch && battleState.done && battleState.fieldId === ownFieldId(myId);
   // (client-side combat: only in 各自行动 — 联防 observers just watch the 联防 field, research 09 §3.1)
