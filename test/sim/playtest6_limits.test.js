@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOND_LAYER_CAP, BOSS_HIT_LIMIT, layerGainRoom } from '../../shared/constants.js';
+import { BOND_LAYER_CAP, BOSS_HIT_LIMIT, BOSS_FINAL_DAMAGE_REDUCTION, bossFinalDamageTakenMul, layerGainRoom } from '../../shared/constants.js';
 import { makeBattle, chessRec, enemyRec } from '../helpers/battleHarness.js';
 import { gainLayers } from '../../server/sim/content/support/index.js';
 import { SharedBossPool } from '../../server/match/finalAssault.js';
@@ -108,9 +108,9 @@ test('layer gains stay disabled in boss / 联防 fields (unchanged)', () => {
 
 const guardRec = () => chessRec({ id: 't_guard', profession: 'WARRIOR', stats: { atk: 10, maxHp: 1e9 }, skill: null });
 /** A field of `kind` with a leader (tag 'boss'), a minion and a part, all standing still; the shared pool when given. */
-function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0 } = {}) {
+function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0, modeId = 'mode_multi_funny' } = {}) {
   const h = makeBattle({
-    kind, sharedBoss: pool,
+    kind, modeId, sharedBoss: pool,
     defs: {
       chess: { t_guard: guardRec() },
       enemies: {
@@ -132,6 +132,33 @@ function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0 } =
   return { h, b: h.b, leader, mini: h.enemy('enemy_mini'), part: h.enemy('enemy_part'), op };
 }
 const capEvents = (h) => h.eventsOf('fx').filter((e) => e[1] === 'hitCap');
+
+test('Boss最终减伤: 标准0%, 险境80%, 绝境90%, 终极95%; 同时适用于直接伤害和传递生命流失', () => {
+  assert.deepEqual(BOSS_FINAL_DAMAGE_REDUCTION, { FUNNY: 0, NORMAL: 0.8, HARD: 0.9, ABYSS: 0.95 });
+  const cases = [
+    ['mode_multi_funny', 1],
+    ['mode_single_normal', 0.2],
+    ['mode_multi_hard', 0.1],
+    ['mode_multi_abyss', 0.05],
+  ];
+  for (const [modeId, mul] of cases) {
+    assert.ok(Math.abs(bossFinalDamageTakenMul(modeId) - mul) < 1e-12, modeId);
+    const { b, leader, mini, op } = hitField({ modeId });
+    assert.ok(Math.abs(b.dealDamage(op, leader, { amount: 100000, type: 'true' }) - 100000 * mul) < 1e-9, `${modeId}: leader damage`);
+    assert.equal(b.dealDamage(op, mini, { amount: 100000, type: 'true' }), 100000, `${modeId}: minion unaffected`);
+    assert.ok(Math.abs(b.loseHp(leader, 50000, { source: op }) - 50000 * mul) < 1e-9, `${modeId}: transferred HP loss`);
+  }
+});
+
+test('Boss最终减伤: 减伤后的最终值再判定30万限伤，普通/联防战场不生效', () => {
+  const { b, leader, op } = hitField({ modeId: 'mode_multi_normal' });
+  assert.equal(b.dealDamage(op, leader, { amount: 1e6, type: 'true' }), 2e5, '1,000,000 × 20% lands below the cap');
+  assert.equal(b.dealDamage(op, leader, { amount: 1.5e6, type: 'true' }), 0, '1,500,000 × 20% reaches the cap and is cancelled');
+  for (const kind of ['normal', 'unite']) {
+    const f = hitField({ kind, modeId: 'mode_multi_abyss' });
+    assert.equal(f.b.dealDamage(f.op, f.leader, { amount: 100000, type: 'true' }), 100000, kind);
+  }
+});
 
 test('限伤: a leader\'s hit of 299999 lands, 300000 deals 0 — nothing credited to the shared pool, no number, a hitCap event', () => {
   const pool = new SharedBossPool(5e6);
@@ -293,7 +320,8 @@ const PAIR = [
 function realBossField(bossId, hidden, pool, players = PAIR) {
   const wave = buildBossWave(gd, createRng(1), setup.factions, hidden ? 15 : 14, { bossId, solo: false });
   const spec = buildBattleSpec({
-    battleId: `lim.${bossId}`, fieldId: 'b1', kind: hidden ? 'hidden' : 'boss', seed: 5, modeId: 'mode_multi_hard', round: hidden ? 15 : 14,
+    // These tests isolate the 300000 hit limit from the separate difficulty final-damage reduction.
+    battleId: `lim.${bossId}`, fieldId: 'b1', kind: hidden ? 'hidden' : 'boss', seed: 5, modeId: 'mode_multi_funny', round: hidden ? 15 : 14,
     stageId: 'act2autochess_m01', rect: { ...GEO.BOSS_RECT }, timeLimit: null, players,
     spawns: wave.spawns.filter((s) => s && gd.enemy(s.enemyKey)), routes: wave.routes, flags: { layerGainsEnabled: false, ...gd.dp },
     enemyOverrides: wave.overrides, waveId: wave.templateId, bossId, boss: { poolHp: pool.maxHp, poolMax: pool.maxHp },

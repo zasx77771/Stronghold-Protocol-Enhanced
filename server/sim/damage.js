@@ -3,7 +3,7 @@
 // dealDamage order: (element → gauge path) | invulnerable? → 'hit' hook (mutable DamageInfo, may set cancel)
 //   → dodge (phys/arts, canDodge) → mitigation (phys: DEF, arts: RES, true: none)
 //   → × source dmgDealtMul (× phys/artsDealtMul) × target dmgTakenMul (not for 元素伤害) × type-taken mul × dmg.mul
-//   → 限伤 (leaders in boss / hidden battles: a hit of ceil(final) ≥ BOSS_HIT_LIMIT is cancelled, see leaderHitCancelled)
+//   → difficulty leader final-damage reduction → 限伤 (ceil(final) ≥ BOSS_HIT_LIMIT is cancelled)
 //   → shields (hit-negating barriers first, then HP shields) → HP loss (boss pool routing) → 'damaged' hook
 //   → SP-on-hurt / TAKE_DAMAGE trigger → fatal/kill.
 // Phys: max(A − max(0, D×(1−defIgnorePct) − defIgnoreFlat), 5 %·A); Arts: max(A×(1 − R′/100), 5 %·A) with
@@ -46,7 +46,7 @@
 // has `hitSleep` or the damage carries `ignoreSleep`.
 
 import { MIN_DAMAGE_RATIO, ELEMENT, ELEMENT_ORDER, PALSY_MAX } from './constants.js';
-import { BOSS_HIT_LIMIT } from '../../shared/constants.js';
+import { BOSS_HIT_LIMIT, bossFinalDamageTakenMul } from '../../shared/constants.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -134,6 +134,15 @@ export function leaderHitCancelled(battle, target, amount) {
   return true;
 }
 
+/**
+ * Remaining multiplier after the difficulty-specific final damage reduction. Only actual leaders in Final Assault /
+ * Hidden Core fields receive it; parts, escorts, normal rounds and unite fields remain unchanged.
+ */
+export function leaderFinalDamageMul(battle, target) {
+  if (!target || !target.isBoss || (battle.kind !== 'boss' && battle.kind !== 'hidden')) return 1;
+  return bossFinalDamageTakenMul(battle.modeId);
+}
+
 /** Absorb damage with shields on `target`. Returns the remaining amount. */
 export function absorbShields(battle, target, amount) {
   if (amount <= 0) return 0;
@@ -217,6 +226,9 @@ export function dealDamage(battle, source, target, dmgIn) {
   if (ss) mul *= ss.dmgDealtMul * (type === 'phys' ? ss.physDealtMul : type === 'arts' ? ss.artsDealtMul : 1);
   mul *= type === 'phys' ? ts.physTakenMul : type === 'arts' ? ts.artsTakenMul : type === 'elemental' ? ts.elementalTakenMul : ts.trueTakenMul;
   final *= mul;
+  // Custom difficulty rule: NORMAL / HARD / ABYSS leaders finally take 20 % / 10 % / 5 %. Apply it before the
+  // 300 000 hit limit, so that limit sees the damage the leader would actually receive.
+  final *= leaderFinalDamageMul(battle, target);
   if (!(final > 0) || !Number.isFinite(final)) final = 0;
   // 限伤: a leader's hit of ≥ BOSS_HIT_LIMIT in a boss / hidden battle is cancelled before it reaches shields / HP — what
   // ran before it (the attack, its SP, `hit` hook effects, separate element 损伤) stays; nothing after it happens

@@ -119,7 +119,7 @@ const YAN = ['chess_char_6_15_a', 'chess_char_5_12_a', 'chess_char_4_17_a', 'che
 /** Every enemy takes ×K damage — a stand-in for the 999-layer debuffs of a real board (谢拉格 ×11.34 vs cold / frozen,
  * 奥术 ×11.19 arts taken): with 炎 at 999 (ATK ×10.22) the hits land far past 300000. Once `relentAfter` leader hits
  * were cancelled the leaders lose the stand-in so the fight can finish. */
-const K = 2000;
+const K = 20000;
 function limitBattleClass(log, relentAfter = 6) {
   return class extends Battle {
     constructor(opts) {

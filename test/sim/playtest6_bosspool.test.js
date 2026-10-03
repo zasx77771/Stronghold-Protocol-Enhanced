@@ -104,7 +104,8 @@ function bossBattle(bossId, sharedBoss) {
   const wave = buildBossWave(gd, createRng(1), setup.factions, 14, { bossId, solo: false });
   const max = sharedBoss ? sharedBoss.maxHp : gd.boss(bossId).bloodPoint.HARD;
   const spec = buildBattleSpec({
-    battleId: `t.${bossId}`, fieldId: 'b1', kind: 'boss', seed: 11, modeId: 'mode_multi_hard', round: 14, stageId: 'act2autochess_m01',
+    // This suite isolates shared-pool rounding from the separate difficulty final-damage reduction.
+    battleId: `t.${bossId}`, fieldId: 'b1', kind: 'boss', seed: 11, modeId: 'mode_multi_funny', round: 14, stageId: 'act2autochess_m01',
     rect: { ...GEO.BOSS_RECT }, timeLimit: null, players: PLAYERS, spawns: wave.spawns.filter((s) => s && gd.enemy(s.enemyKey)),
     routes: wave.routes, flags: { layerGainsEnabled: false, ...gd.dp }, enemyOverrides: wave.overrides, waveId: wave.templateId,
     bossId, boss: { poolHp: max, poolMax: max },

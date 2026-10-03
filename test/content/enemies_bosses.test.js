@@ -31,7 +31,7 @@ const KITSIN = { t_wall: NOATK, t_wall2: NOATK, t_wall3: NOATK, t_wall4: NOATK }
 function arena(o = {}) {
   const { chess = {}, kits = {}, enemies = [], ...rest } = o;
   return makeBattle({
-    content: 'generic', extraContent: [enemiesMod, bossesMod], seed: 7, autoFinish: false, timeLimit: 600,
+    content: 'generic', extraContent: [enemiesMod, bossesMod], seed: 7, modeId: 'mode_multi_funny', autoFinish: false, timeLimit: 600,
     defs: { chess: { ...CHESS, ...chess } }, kits: { ...KITSIN, ...kits }, enemies, captureNoisy: !!o.captureNoisy, ...rest,
   });
 }

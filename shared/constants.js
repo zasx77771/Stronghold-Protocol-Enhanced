@@ -105,6 +105,25 @@ export function layerGainRoom(before, n) {
  */
 export const BOSS_HIT_LIMIT = 300000;
 
+/**
+ * Custom final damage reduction of leaders by simulation difficulty. The value is applied only to tag-'boss' units
+ * in Final Assault / Hidden Core fields, after DEF / RES and all ordinary damage multipliers, and before shields and
+ * BOSS_HIT_LIMIT. Standard simulation and training have no extra reduction.
+ */
+export const BOSS_FINAL_DAMAGE_REDUCTION = Object.freeze({
+  FUNNY: 0,
+  NORMAL: 0.8,
+  HARD: 0.9,
+  ABYSS: 0.95,
+});
+
+/** Remaining final damage multiplier for a mode id (`mode_single_normal`, `mode_multi_abyss`, …). */
+export function bossFinalDamageTakenMul(modeId) {
+  const difficulty = typeof modeId === 'string' ? modeId.split('_').pop().toUpperCase() : '';
+  const reduction = BOSS_FINAL_DAMAGE_REDUCTION[difficulty];
+  return Number.isFinite(reduction) ? Math.max(0, Math.min(1, 1 - reduction)) : 1;
+}
+
 // Snapshot unit flag bits (DESIGN §8.2)
 export const UF = Object.freeze({
   BLOCKED: 1, STUNNED: 2, FROZEN: 4, STEALTH: 8, SKILL: 16, SHIELD: 32, INVULN: 64, COLD: 128, SLEEP: 256, FLYING: 512,

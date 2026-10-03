@@ -27,7 +27,7 @@ import { createRng } from './rng.js';
 import { Grid } from './grid.js';
 import { Unit } from './units.js';
 import { makeBuff, STATUS, RESIST_STATUSES } from './buffs.js';
-import { dealDamage as pipeDamage, heal as pipeHeal, applyHpLoss, makeDamageInfo, reduceElement, palsyBuff, elementView, leaderHitCancelled } from './damage.js';
+import { dealDamage as pipeDamage, heal as pipeHeal, applyHpLoss, makeDamageInfo, reduceElement, palsyBuff, elementView, leaderHitCancelled, leaderFinalDamageMul } from './damage.js';
 import { absoluteRangeKeys, canTargetEnemy } from './targeting.js';
 import { bodyKeys, bodyInKeys, bodyInRadius } from './body.js';
 import { normDir, mirrorDir, localOrder, localBefore } from './dir.js';
@@ -1426,6 +1426,8 @@ export class Battle {
    */
   loseHp(target, amount, { source = null, silent = false, tags = null, from = null, sourceless = false } = {}) {
     if (!target || !target.alive || !(amount > 0)) return 0;
+    // The difficulty-specific final damage reduction also covers damage/life-loss passed from boss parts and drones.
+    amount *= leaderFinalDamageMul(this, target);
     // 限伤 (shared/constants.js BOSS_HIT_LIMIT): a loss passed on to a leader (parts' 传递, 无人机) is one hit too
     if (leaderHitCancelled(this, target, amount)) return 0;
     const t = ['hpLoss'];

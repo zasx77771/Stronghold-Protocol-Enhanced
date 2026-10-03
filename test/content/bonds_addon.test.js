@@ -227,7 +227,7 @@ test('坚守 thorns: 无来源 (no attacker bonus, hooks see no source) but cred
   const bb = bondBb('steadShip');
   const defs = { chess: { d_1: op('d_1', ['steadShip']), d_2: op('d_2', ['steadShip']) }, enemies: DUMMY };
   const pool = new SharedBossPool(1e6);
-  const h = makeBattle({ defs, kind: 'boss', sharedBoss: pool, units: [{ chessId: 'd_1', row: 10, col: 3 }, { chessId: 'd_2', row: 10, col: 5 }],
+  const h = makeBattle({ defs, kind: 'boss', modeId: 'mode_multi_funny', sharedBoss: pool, units: [{ chessId: 'd_1', row: 10, col: 3 }, { chessId: 'd_2', row: 10, col: 5 }],
     bonds: { steadShip: bond(2, 10) }, enemies: [{ key: 'enemy_addon_dummy', pos: [9, 9], tag: 'boss' }], hooks: ['damaged'], captureNoisy: true });
   h.step(2);
   const e = h.enemy('enemy_addon_dummy'), d1 = h.unit('d_1');
