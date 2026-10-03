@@ -4,8 +4,8 @@
 
 - `upstream-v0.1.0`：用户提供的 `Stronghold-Protocol-v0.1.0.zip` 原始源码基线。
 - `upstream-v0.1.1`：用户提供的 `Stronghold-Protocol-v0.1.1.zip` 上游快照；提交 `1fd75dd` 从 `upstream-v0.1.0` 演进而来。
-- `enhanced-v0.2.4-vc11`：基于上游 0.1.1 的当前完整增强版（Android versionCode 11）。
-- `enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：上一轮增强版历史节点，保留用于审计和回退。
+- `enhanced-v0.2.5-vc12`：基于上游 0.1.1 的当前完整增强版（Android versionCode 12）。
+- `enhanced-v0.2.4-vc11`、`enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：旧增强版历史节点，保留用于审计和回退。
 
 `成果文件`、Node 依赖、游戏素材、Android SDK/Gradle 缓存和打包产物不进入 Git。它们可由源码和现有构建脚本重新生成。
 
