@@ -35,7 +35,7 @@ import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice } from './store.js';
 import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
-import { TitleScreen, sanitizeName } from './screens/title.js';
+import { TitleScreen, sanitizeName, skipStartupClipboardProbe } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
 import { RoomScreen } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
@@ -324,6 +324,8 @@ async function boot() {
   const savedServer = savedAddress ? normalizeServerAddress(savedAddress) : null;
   // A clean standalone install contains no server address. Keep it on the title screen until the user supplies one.
   const entered = identity.wasEntered() && !!savedName && !!savedServer;
+  // If boot resumes straight into the lobby, a later return to the title is not the startup entry.
+  if (entered) skipStartupClipboardProbe();
   store.set((s) => ({
     me: { ...s.me, name: savedName },
     session: { entered },

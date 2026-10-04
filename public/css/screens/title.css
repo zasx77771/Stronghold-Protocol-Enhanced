@@ -233,8 +233,6 @@
 .title-transport button.is-active { color: #08110e; background: var(--mint-500); }
 .title-transport button.is-active small { color: rgba(8,17,14,.66); }
 .title-transport button:disabled { cursor: not-allowed; opacity: .42; }
-.title-code-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .12rem; }
-.title-code-row .field { min-width: 0; }
 .title-paste { height: .64rem; white-space: nowrap; padding-inline: .18rem; }
 .title-remember {
   display: flex; align-items: center; gap: .08rem; align-self: flex-start;

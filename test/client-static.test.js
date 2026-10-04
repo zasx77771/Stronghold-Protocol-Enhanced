@@ -1087,18 +1087,18 @@ describe('data.js', () => {
 
 describe('screen helpers', () => {
   test('title: sanitizeName / isValidName / findUiAsset', async () => {
-    const { sanitizeName, isValidName, findUiAsset } = await mod('screens/title.js');
+    const { sanitizeName, isValidName, findUiAsset, claimStartupClipboardProbe } = await mod('screens/title.js');
     assert.equal(sanitizeName('  凯尔希  '), '凯尔希');
     assert.equal(sanitizeName('a\u0000b\u200bc\u202ed'), 'abcd');
     assert.equal(sanitizeName('a   b'), 'a b');
-    assert.equal(sanitizeName('x'.repeat(30)).length, 12);
-    const emoji = '😀'.repeat(7); // 14 UTF-16 units
+    assert.equal(sanitizeName('x'.repeat(30)).length, 16);
+    const emoji = '😀'.repeat(9); // 18 UTF-16 units
     const cut = sanitizeName(emoji);
-    assert.ok(cut.length <= 12 && !/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
+    assert.ok(cut.length <= 16 && !/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
     const server = await import(pathToFileURL(path.join(ROOT, 'server/net.js')).href);
     for (const raw of ['e\u0301', '\ud800x', '\udc00', 'a \u200b b', '\u00a0\u3000A\u3000B', 'a\u2028b', '😀'.repeat(7), ' x '.repeat(9)]) {
       const c = sanitizeName(raw);
-      assert.ok(c.length <= 12, 'protocol limit (UTF-16 units)');
+      assert.ok(c.length <= 16, 'protocol limit (UTF-16 units)');
       assert.equal(server.sanitizeName(c) ?? '', c, `server keeps the client-sanitized ${JSON.stringify(raw)} unchanged`);
     }
     assert.equal(sanitizeName(null), '');
@@ -1109,6 +1109,14 @@ describe('screen helpers', () => {
     assert.equal(findUiAsset({ files: ['/assets/ui/entry_bkg_01.webp'] }, ['entry_bkg_01']), '/assets/ui/entry_bkg_01.webp');
     assert.equal(findUiAsset(null, ['x']), null);
     assert.equal(findUiAsset({ ui: {} }, ['x']), null);
+    assert.equal(claimStartupClipboardProbe(), true, 'initial title entry may probe the clipboard');
+    assert.equal(claimStartupClipboardProbe(), false, 'later title mounts do not probe again');
+  });
+
+  test('title has invite paste but no manual room-code input', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
+    assert.doesNotMatch(source, /房间 Code（可选）|title-code-row/, 'manual room-code row was removed');
+    assert.match(source, />粘贴邀请链接<\//, 'clipboard invite entry remains available');
   });
 
   test('lobby: normalizeCode / parseRoomParam / difficultyInfo', async () => {

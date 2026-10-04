@@ -19,7 +19,7 @@ import { sanitizeName, TokenBucket, SessionRegistry, clientAddress, normalizeIp,
 import { StubMatch as Match } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ERR, MAX_SEATS, PHASE } from '../shared/constants.js';
+import { ERR, MAX_SEATS, NAME_MAX_LEN, PHASE } from '../shared/constants.js';
 
 const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{4}$`);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -281,6 +281,44 @@ describe('static http server', () => {
     assert.equal(textRange.body.toString(), js.slice(0, 2));
   });
 
+  test('extension-less /media audio route (download managers sniff .mp3 URLs)', async () => {
+    const direct = await httpReq(srv.port, '/assets/audio/bgm.mp3');
+    const media = await httpReq(srv.port, '/media/bgm');
+    assert.equal(media.status, 200);
+    assert.equal(media.headers['content-type'], 'audio/mpeg', 'resolved from the real .mp3 on disk');
+    assert.equal(media.headers['accept-ranges'], 'bytes');
+    assert.deepEqual(media.body, mp3, 'same bytes as the direct URL');
+    assert.equal(media.headers['cache-control'], direct.headers['cache-control'], 'same 1-day policy as /assets/…');
+    assert.equal(media.headers.etag, direct.headers.etag, 'ETag is the file validator, not the URL');
+
+    const range = await httpReq(srv.port, '/media/bgm', { headers: { range: 'bytes=0-9' } });
+    assert.equal(range.status, 206);
+    assert.equal(range.headers['content-range'], `bytes 0-9/${mp3.length}`);
+    assert.deepEqual(range.body, mp3.subarray(0, 10));
+    const head = await httpReq(srv.port, '/media/bgm', { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(head.body.length, 0);
+
+    // The extension may still be given, and the other audio extension resolves too.
+    assert.equal((await httpReq(srv.port, '/media/bgm.mp3')).status, 200);
+    const ogg = await httpReq(srv.port, '/media/bgm.ogg');
+    assert.equal(ogg.status, 200);
+    assert.equal(ogg.headers['content-type'], 'audio/ogg');
+    assert.equal(ogg.body.length, 64);
+
+    // …and it only ever reaches public/assets/audio.
+    for (const p of ['/media/nope', '/media/bgm/', '/media/', '/media/.hidden', '/media/bgm.mp3/nope', '/media/js/app']) {
+      const r = await httpReq(srv.port, p);
+      assert.equal(r.status, 404, `${p} → 404`);
+      assert.doesNotMatch(r.body.toString(), /TOP-SECRET-CONTENT/, `${p} must not leak files outside public/assets/audio`);
+    }
+    for (const p of ['/media/..%2f..%2fsecret.txt', '/media/bgm/../..%2f..%2fsecret.txt']) {
+      const r = await httpReq(srv.port, p);
+      assert.equal(r.status, 403, `${p} → 403 (same as the rest of the server)`);
+      assert.doesNotMatch(r.body.toString(), /TOP-SECRET-CONTENT/);
+    }
+  });
+
   test('path traversal and dotfiles are blocked', async () => {
     const attempts = [
       '/../secret.txt', '/%2e%2e/secret.txt', '/..%2fsecret.txt', '/%2e%2e%2fsecret.txt', '/data/../../secret.txt',
@@ -452,7 +490,9 @@ describe('websocket lobby', () => {
 
     await expectError(c, { t: 'hello', name: '   ' }, ERR.BAD_MSG);
     await expectError(c, { t: 'hello', name: 'x', version: 999 }, ERR.BAD_MSG);
-    await expectError(c, { t: 'hello', name: 'x'.repeat(13) }, ERR.BAD_MSG);
+    const maxName = 'x'.repeat(NAME_MAX_LEN);
+    assert.equal((await c.hello(maxName)).name, maxName, 'server accepts a 16-character nickname');
+    await expectError(c, { t: 'hello', name: 'x'.repeat(NAME_MAX_LEN + 1) }, ERR.BAD_MSG);
     // repeated hello updates the name, keeps identity
     const again = await c.hello('Renamed');
     assert.equal(again.playerId, w.playerId);
@@ -1793,7 +1833,7 @@ describe('platform units', () => {
     assert.equal(sanitizeName(String.fromCharCode(0xd800)), null);
     assert.equal(sanitizeName(''), null);
     assert.equal(sanitizeName(42), null);
-    assert.equal([...sanitizeName('😀'.repeat(20))].length, 12);
+    assert.equal([...sanitizeName('😀'.repeat(20))].length, NAME_MAX_LEN);
   });
 
   test('TokenBucket refills continuously up to burst', () => {

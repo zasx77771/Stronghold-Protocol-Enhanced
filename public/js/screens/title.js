@@ -19,7 +19,7 @@ import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
 import { isTcpTransportAvailable } from '../tcpSocket.js';
 import {
-  CLIPBOARD_PERMISSION_DENIED, ROOM_CODE_MAX_LEN, TRANSPORT_TCP, TRANSPORT_WEBSOCKET,
+  CLIPBOARD_PERMISSION_DENIED, TRANSPORT_TCP, TRANSPORT_WEBSOCKET,
   loadEndpointAddress, loadTransportMode, normalizeRoomCode, parseInviteText, readClipboardText,
   saveEndpointAddress, saveTransportMode,
 } from '../serverAddress.js';
@@ -66,6 +66,16 @@ export function sanitizeName(raw) {
 
 /** @param {any} raw @returns {boolean} */
 export const isValidName = (raw) => sanitizeName(raw).length > 0;
+
+// TitleScreen may be unmounted when the player enters the lobby and mounted again after signing out.
+// Keep this gate at module scope so automatic clipboard access happens at most once per page/app run.
+let startupClipboardProbeClaimed = false;
+export function claimStartupClipboardProbe() {
+  if (startupClipboardProbeClaimed) return false;
+  startupClipboardProbeClaimed = true;
+  return true;
+}
+export function skipStartupClipboardProbe() { startupClipboardProbeClaimed = true; }
 
 /**
  * Enter the game shell with a nickname (title → lobby).
@@ -360,10 +370,10 @@ export function TitleScreen() {
     }
   };
 
-  // Read once when the standalone client opens. An empty/unrecognised clipboard stays quiet, but a
-  // permission denial is surfaced so the user knows to grant access or enter the values manually.
+  // Read only on the initial title entry in this page/app run. Returning from the lobby/game must
+  // not access the clipboard again; the explicit “粘贴邀请链接” button remains available.
   useEffect(() => {
-    if (!pendingJoin) applyClipboardInvite({ auto: true, quiet: true });
+    if (claimStartupClipboardProbe() && !pendingJoin) applyClipboardInvite({ auto: true, quiet: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const online = conn.status === 'online' || conn.status === 'connected';
@@ -432,15 +442,9 @@ export function TitleScreen() {
           onClick=${() => updateRememberName(!rememberName)}>
           <i aria-hidden="true">${rememberName ? '✓' : ''}</i><span>记住博士代号</span><small>保存在此设备</small>
         </button>
-        ${!pastedInvite ? html`<div class="title-code-row">
-          <${TextField} label="房间 Code（可选）" micro="ROOM" size="code" icon="key" value=${roomCode}
-            maxLength=${ROOM_CODE_MAX_LEN} placeholder="留空进入大厅" disabled=${starting}
-            transform=${(v) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_MAX_LEN)}
-            onInput=${(v) => { setPastedInvite(null); setRoomCode(v); store.patch('ui', { pendingJoin: normalizeRoomCode(v) || null }); }}
-            onEnter=${() => start()} />
-          <${Button} variant="secondary" size="lg" icon="copy" class="title-paste" disabled=${starting}
-            onClick=${() => applyClipboardInvite({ auto: true })}>粘贴邀请<//>
-        </div>` : null}
+        ${!pastedInvite ? html`<${Button} variant="secondary" size="lg" block=${true} icon="copy"
+          class="title-paste" disabled=${starting}
+          onClick=${() => applyClipboardInvite({ auto: true })}>粘贴邀请链接<//>` : null}
         <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${starting}
           disabled=${!valid || !server.trim()} onClick=${() => start()}>${starting ? '正在连接' : roomCode ? '连接并加入' : '连接服务器'}<//>
         <div class="title-conn">
