@@ -22,6 +22,7 @@ $AssetsDir = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'android-embedded-asse
 $BuildOutputDir = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'android-app-build'))
 $ProjectCacheDir = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'android-project-cache'))
 $GradleUserHome = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'gradle-user-home'))
+$AndroidUserHome = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'android-user-home'))
 $JdkRoot = Join-Path $ToolchainDir 'jdk-17'
 $SdkRoot = Join-Path $ToolchainDir 'android-sdk'
 $Gradle = Join-Path $ToolchainDir 'gradle-8.10.2\bin\gradle.bat'
@@ -35,7 +36,7 @@ if (-not $AssetsDir.StartsWith($CacheRoot + [IO.Path]::DirectorySeparatorChar, [
   throw "Unsafe Android assets path: $AssetsDir"
 }
 if (Test-Path -LiteralPath $AssetsDir) { Remove-Item -LiteralPath $AssetsDir -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $AssetsDir, $BuildOutputDir, $ProjectCacheDir, $GradleUserHome, $OutputDir | Out-Null
+New-Item -ItemType Directory -Force -Path $AssetsDir, $BuildOutputDir, $ProjectCacheDir, $GradleUserHome, $AndroidUserHome, $OutputDir | Out-Null
 
 Write-Host 'Embedding client code and all local resources...'
 Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'public') -Force |
@@ -55,6 +56,7 @@ $env:JAVA_HOME = $JdkRoot
 $env:ANDROID_HOME = $SdkRoot
 $env:ANDROID_SDK_ROOT = $SdkRoot
 $env:GRADLE_USER_HOME = $GradleUserHome
+$env:ANDROID_USER_HOME = $AndroidUserHome
 $env:SP_ANDROID_ASSETS_DIR = $AssetsDir
 $env:SP_ANDROID_BUILD_DIR = $BuildOutputDir
 $env:Path = (Join-Path $JdkRoot 'bin') + [IO.Path]::PathSeparator + $env:Path
