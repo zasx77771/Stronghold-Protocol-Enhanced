@@ -1117,6 +1117,21 @@ describe('screen helpers', () => {
     const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
     assert.doesNotMatch(source, /房间 Code（可选）|title-code-row/, 'manual room-code row was removed');
     assert.match(source, />粘贴邀请链接<\//, 'clipboard invite entry remains available');
+    assert.match(source, /title-server-row/, 'TCP connection status shares the server-address row');
+    assert.match(source, /labelEnd=\$\{transport === TRANSPORT_TCP \? html`<\$\{ConnectionStatus}/, 'TCP connection status shares the server-label row');
+    assert.match(source, /title-actions/, 'invite paste and replay controls share one action row');
+    assert.match(source, /SettingsModal/, 'title screen exposes the shared settings modal');
+    assert.match(source, /!androidClient \? html`<\${FullscreenButton}/, 'Android omits only the fullscreen button');
+    assert.match(source, /title-hero/, 'title art has a dedicated column beside the login panel');
+    assert.match(source, /title-screen--android/, 'Android title layout can retain the desktop two-column composition');
+  });
+
+  test('game enables Alt+Enter fullscreen outside Android clients', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/game.js'), 'utf8');
+    assert.match(source, /if \(androidClient\) return undefined;/, 'Android does not install game keyboard handlers');
+    assert.match(source, /e\.altKey && !e\.ctrlKey && !e\.metaKey && !e\.shiftKey/, 'Alt+Enter has no conflicting modifiers');
+    assert.match(source, /await fullscreen\.toggle\(\)/, 'Alt+Enter uses the same fullscreen toggle as the button');
+    assert.match(source, /!androidClient \? html`<\${FullscreenButton}/, 'Android omits the in-game fullscreen button');
   });
 
   test('lobby: normalizeCode / parseRoomParam / difficultyInfo', async () => {

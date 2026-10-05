@@ -42,6 +42,8 @@ import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
 import { startTcpServer } from './tcp.js';
 import { Lobby } from './lobby.js';
+import { ReplayStore } from './replay/store.js';
+import { startSpectatorServer } from './spectator.js';
 import { getData, loadData } from './data.js';
 import { PROTOCOL_VERSION, APP_VERSION } from '../shared/constants.js';
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../shared/media.js';
@@ -549,6 +551,7 @@ function makeLogger(quiet) {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
+ *   replayEnabled?: boolean, replayFile?: string, replayStore?: ReplayStore | null,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, serveClient: boolean, server: http.Server, wss: WebSocketServer,
  *                     lobby: Lobby, network: Network, registry: SessionRegistry, close: () => Promise<void> }>}
@@ -561,6 +564,10 @@ export async function startServer(opts = {}) {
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
+  // Port-zero servers are test harnesses by convention; they should not add records to a developer's local history.
+  const replayEnabled = opts.replayEnabled ?? (opts.replayStore ? true : (opts.port !== 0 && process.env.SP_REPLAYS !== '0'));
+  const ownReplayStore = !!replayEnabled && !opts.replayStore;
+  const replays = replayEnabled ? (opts.replayStore || new ReplayStore({ file: opts.replayFile || process.env.SP_REPLAY_DB || path.join(ROOT, 'var', 'replays.sqlite'), log })) : null;
   const serveClient = opts.serveClient ?? !envEnabled(process.env.SP_SERVER_ONLY);
   const tcpPortValue = opts.tcpPort ?? (process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT) : null);
   if (tcpPortValue != null && (!Number.isInteger(tcpPortValue) || tcpPortValue < 0 || tcpPortValue > 65535)) {
@@ -580,8 +587,8 @@ export async function startServer(opts = {}) {
   for (const k of ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs']) {
     if (opts[k] != null) lobbyOptions[k] = opts[k];
   }
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
-  const network = new Network({ registry, handler: lobby, log, options: netOptions });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, replayStore: replays, options: lobbyOptions });
+  const network = new Network({ registry, handler: lobby, profileStore: replays, log, options: netOptions });
   let tcpListener = null;
   // In network-only distributions public/ does not exist. Do not even construct the
   // static handler in that mode: game data remains server-private and only /ws is exposed.
@@ -614,6 +621,13 @@ export async function startServer(opts = {}) {
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         sockets: network.connectionCount, tcpPort: tcpListener?.port ?? null, sessions: registry.size, ...lobby.stats(),
       });
+      return;
+    }
+    if (parts.rawPath === '/api/profiles') {
+      const name = new URLSearchParams(parts.query).get('name') || '';
+      const profiles = replays ? replays.profileCandidates(name).map((p) => ({ name: p.name, tag: p.tag })) : [];
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      sendJson(req, res, 200, { profiles });
       return;
     }
     if (!serveStatic) {
@@ -693,11 +707,12 @@ export async function startServer(opts = {}) {
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
       try { wss.close(); } catch { /* ignore */ }
+      if (ownReplayStore) replays?.close();
     })();
     return closing;
   }
 
-  return { port: actualPort, tcpPort: tcpListener?.port ?? null, host, url, serveClient, server, tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, close };
+  return { port: actualPort, tcpPort: tcpListener?.port ?? null, host, url, serveClient, server, tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, replays, close };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -717,11 +732,18 @@ async function main() {
   process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection', e));
   process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
   let srv;
+  let spectator;
   try {
     const httpPort = process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000;
     const tcpPort = process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT)
       : (Number.isInteger(httpPort) && httpPort >= 0 && httpPort < 65535 ? httpPort + 1 : 3001);
     srv = await startServer({ tcpPort });
+    const spectatorValue = String(process.env.SPECTATOR_PORT ?? '3002').trim().toLowerCase();
+    if (spectatorValue !== 'off' && spectatorValue !== 'false' && srv.replays) {
+      const spectatorPort = Number(spectatorValue);
+      if (!Number.isInteger(spectatorPort) || spectatorPort < 1 || spectatorPort > 65535) throw new RangeError('invalid SPECTATOR_PORT');
+      spectator = await startSpectatorServer({ store: srv.replays, port: spectatorPort, host: process.env.SPECTATOR_HOST || srv.host });
+    }
   } catch (e) {
     if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Set PORT=3001 and restart.`);
     else console.error('[boot] failed to start', e);
@@ -730,6 +752,7 @@ async function main() {
   if (srv.tcpPort != null) console.log(`  TCP:     tcp://${srv.host === '0.0.0.0' || srv.host === '::' ? 'localhost' : srv.host}:${srv.tcpPort}`);
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Alliance v${APP_VERSION}`);
   if (srv.serveClient) console.log(`  Local:   ${srv.url}`);
+  if (spectator) console.log(`  Replay TCP: tcp://${srv.host === '0.0.0.0' || srv.host === '::' ? 'localhost' : srv.host}:${spectator.port}`);
   else {
     console.log('  Mode:    network-only (client assets disabled)');
     console.log(`  Health:  ${srv.url}/healthz`);
@@ -748,7 +771,7 @@ async function main() {
     stopping = true;
     console.log(`\n[${signal}] shutting down…`);
     setTimeout(() => process.exit(0), 5000).unref();
-    srv.close().then(() => process.exit(0), () => process.exit(1));
+    Promise.all([spectator?.close(), srv.close()]).then(() => process.exit(0), () => process.exit(1));
   };
   process.on('SIGINT', () => stop('SIGINT'));
   process.on('SIGTERM', () => stop('SIGTERM'));

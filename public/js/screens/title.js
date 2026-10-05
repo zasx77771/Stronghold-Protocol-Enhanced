@@ -10,19 +10,22 @@
 
 import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION } from '../../../shared/constants.js';
-import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
+import { html, Button, Icon, MicroLabel, Modal, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
 import { toast } from '../ui/toasts.js';
 import { net, identity } from '../net.js';
 import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
+import { GIcon, isPackagedAndroid } from '../ui/gameComponents.js';
+import { SettingsModal } from '../ui/settings.js';
 import { isTcpTransportAvailable } from '../tcpSocket.js';
 import {
   CLIPBOARD_PERMISSION_DENIED, TRANSPORT_TCP, TRANSPORT_WEBSOCKET,
-  loadEndpointAddress, loadTransportMode, normalizeRoomCode, parseInviteText, readClipboardText,
+  isDesktopClient, loadEndpointAddress, loadTransportMode, normalizeRoomCode, parseInviteText, readClipboardText,
   saveEndpointAddress, saveTransportMode,
 } from '../serverAddress.js';
+import { loadReplayAddress, requestReplay, saveReplayAddress } from '../replayClient.js';
 
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
 // the client accepts is never rejected by the server's hello validation.
@@ -64,8 +67,15 @@ export function sanitizeName(raw) {
   return s;
 }
 
+/** Split the optional fixed `#1234` suffix without counting it against the nickname limit. */
+export function parseDoctorIdentity(raw) {
+  const value = String(raw ?? '').trim();
+  const match = /^(.*)#(\d{4})$/.exec(value);
+  return { name: sanitizeName(match ? match[1] : value), tag: match ? match[2] : null };
+}
+
 /** @param {any} raw @returns {boolean} */
-export const isValidName = (raw) => sanitizeName(raw).length > 0;
+export const isValidName = (raw) => parseDoctorIdentity(raw).name.length > 0;
 
 // TitleScreen may be unmounted when the player enters the lobby and mounted again after signing out.
 // Keep this gate at module scope so automatic clipboard access happens at most once per page/app run.
@@ -84,14 +94,15 @@ export function skipStartupClipboardProbe() { startupClipboardProbeClaimed = tru
  * @returns {boolean} false when the name is invalid
  */
 export function enterSession(rawName, rememberName = true) {
-  const name = sanitizeName(rawName);
+  const { name, tag } = parseDoctorIdentity(rawName);
   if (!name) return false;
   identity.setRememberName(rememberName);
   if (rememberName) identity.saveName(name);
   else identity.clearName();
+  if (tag) identity.saveProfileTag(tag);
   identity.setEntered(true);
-  store.set((s) => ({ me: { ...s.me, name }, session: { ...s.session, entered: true } }));
-  net.setName(name);
+  store.set((s) => ({ me: { ...s.me, name, tag: tag || s.me.tag || null }, session: { ...s.session, entered: true } }));
+  net.setIdentity(name, tag || identity.loadProfileTag());
   return true;
 }
 
@@ -197,6 +208,14 @@ const STATUS_TEXT = {
   online: '已连接服务器', reconnecting: '连接中断，正在重连', closed: '连接已关闭',
 };
 
+function ConnectionStatus({ conn, dotClass, compact = false }) {
+  return html`<div class=${`title-conn${compact ? ' title-conn--compact' : ''}`}>
+    <span class=${`status-dot ${dotClass}`}></span>
+    <span class="title-conn__label">${STATUS_TEXT[conn.status] || conn.status}</span>
+    ${!compact && conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+  </div>`;
+}
+
 /** Wait for the current handshake to finish while the title screen stays editable. */
 export function waitForOnline(connection = net, timeoutMs = 12000) {
   if (connection.status === 'online') return Promise.resolve(connection.snapshot?.() || null);
@@ -219,6 +238,92 @@ export function waitForOnline(connection = net, timeoutMs = 12000) {
   });
 }
 
+const replayTime = (value) => {
+  const date = new Date(Number(value));
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '时间未知';
+};
+
+function ReplayLibrary({ open, onClose, serverAddress }) {
+  const [address, setAddress] = useState(() => loadReplayAddress(serverAddress));
+  const [records, setRecords] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setAddress(loadReplayAddress(serverAddress));
+    setRecords(null);
+    setSelected(null);
+    setError('');
+  }, [open, serverAddress]);
+
+  const list = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const endpoint = saveReplayAddress(address);
+      setAddress(endpoint.address);
+      const response = await requestReplay(endpoint.address, { t: 'replay.list' });
+      if (response?.t !== 'replay.list' || !Array.isArray(response.matches)) throw new Error('回放服务未返回记录列表');
+      setRecords(response.matches);
+      setSelected(null);
+    } catch (reason) {
+      setError(reason?.message || '无法读取对局记录');
+    } finally { setBusy(false); }
+  };
+
+  const detail = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const endpoint = saveReplayAddress(address);
+      setAddress(endpoint.address);
+      const response = await requestReplay(endpoint.address, { t: 'replay.get', id });
+      if (response?.t !== 'replay.get' || !response.match) throw new Error(response?.code === 'NOT_FOUND' ? '该记录已不存在' : '无法读取对局详情');
+      setSelected(response.match);
+    } catch (reason) {
+      setError(reason?.message || '无法读取对局详情');
+    } finally { setBusy(false); }
+  };
+
+  const result = selected?.result || {};
+  const timeline = selected?.replay?.timeline;
+  return html`<${Modal} open=${open} onClose=${onClose} title="对局记录" micro="NATIVE TCP REPLAY // PORT 3002" width="8.2rem"
+    actions=${html`<${Button} variant="secondary" onClick=${onClose}>关闭<//>`}>
+    <div class="replay-library">
+      <${TextField} label="回放 TCP 地址" micro="REPLAY ENDPOINT" size="lg" icon="link" value=${address} maxLength=${256}
+        placeholder="例如 192.168.1.10:3002" disabled=${busy} onInput=${setAddress} onEnter=${list} />
+      <div class="replay-library__tools">
+        <${Button} variant="primary" icon="refresh" loading=${busy} onClick=${list}>读取记录<//>
+        <span>仅 Windows 原生客户端可访问此 TCP 端口</span>
+      </div>
+      ${error ? html`<p class="replay-library__error"><${Icon} name="warn" />${error}</p>` : null}
+      ${selected ? html`<section class="replay-detail">
+        <header><div><${MicroLabel} tone="mint">MATCH DETAIL<//><h3>${result.victory === true ? '作战胜利' : result.victory === false ? '作战结束' : '对局详情'}</h3></div>
+          <${Button} variant="secondary" size="sm" onClick=${() => setSelected(null)}>返回列表<//></header>
+        <dl>
+          <div><dt>开始时间</dt><dd>${replayTime(selected.startedAt)}</dd></div>
+          <div><dt>模式 / 难度</dt><dd>${selected.mode || '--'} / ${selected.difficulty || '--'}</dd></div>
+          <div><dt>关卡 / 种子</dt><dd>${selected.stageId || '--'} / <span class="num">${selected.seed ?? '--'}</span></dd></div>
+          <div><dt>完成层数</dt><dd>${result.roundsPassed ?? selected.summary?.roundsPassed ?? '--'}</dd></div>
+          <div><dt>记录操作</dt><dd>${Array.isArray(timeline) ? timeline.length : '--'} 条</dd></div>
+        </dl>
+        <div class="replay-detail__players"><${MicroLabel}>PLAYERS<//>${(selected.players || []).map((player) => html`<span key=${player.playerId}>${player.name}${player.tag ? ` #${player.tag}` : ''}${player.isBot ? ' · AI' : ''}</span>`)}</div>
+        <p class="replay-detail__note">该记录已包含本局种子、参与者、结算数据和操作时间线；战场画面回放将在后续客户端版本接入。</p>
+      </section>` : html`<div class="replay-library__list">
+        ${records == null ? html`<p class="t-lo">输入服务器地址后读取已保存的对局记录。</p>` : records.length === 0 ? html`<p class="t-lo">该服务器尚无已完成的对局记录。</p>` : records.map((record) => html`<button type="button" class="replay-row" key=${record.id} disabled=${busy} onClick=${() => detail(record.id)}>
+          <span class="replay-row__result">${record.result?.victory === true ? '胜利' : record.result?.victory === false ? '结束' : '记录中'}</span>
+          <span class="replay-row__main"><b>${record.players?.join(' · ') || '未知参与者'}</b><small>${replayTime(record.startedAt)} · ${record.mode || '--'} · ${record.difficulty || '--'}</small></span>
+          <span class="replay-row__round">${record.summary?.roundsPassed ?? record.result?.roundsPassed ?? '--'} 层</span>
+          <${Icon} name="chevronRight" />
+        </button>`)}</div>`}
+    </div>
+  <//>`;
+}
+
 /** Title screen component. */
 export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
@@ -231,6 +336,9 @@ export function TitleScreen() {
   const [pastedInvite, setPastedInvite] = useState(null);
   const [serverError, setServerError] = useState('');
   const [starting, setStarting] = useState(false);
+  const [profileChoices, setProfileChoices] = useState([]);
+  const [replayOpen, setReplayOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const assetsSettled = useData('assets');
   const assets = data.get('assets');
   const backdrop = findUiAsset(assets, BACKDROP_KEYS);
@@ -245,9 +353,12 @@ export function TitleScreen() {
   // CSS ridgelines only when there is no ridge art (avoids a swap flash when the art arrives).
   const cssRidges = assetsSettled && (!ridges || ridgesFailed);
   const tcpAvailable = useMemo(() => isTcpTransportAvailable(), []);
+  const desktopClient = useMemo(() => isDesktopClient(), []);
+  const androidClient = useMemo(() => isPackagedAndroid(), []);
 
-  const valid = isValidName(name);
-  const start = async (serverOverride = null, codeOverride = null, transportOverride = null) => {
+  const callsign = parseDoctorIdentity(name);
+  const valid = callsign.name.length > 0;
+  const start = async (serverOverride = null, codeOverride = null, transportOverride = null, tagOverride = null, createNew = false) => {
     if (starting) return;
     if (!valid) { toast('请输入博士代号', 'warn'); return; }
     const chosenTransport = transportOverride === TRANSPORT_TCP ? TRANSPORT_TCP : transportOverride === TRANSPORT_WEBSOCKET ? TRANSPORT_WEBSOCKET : transport;
@@ -276,6 +387,17 @@ export function TitleScreen() {
       toast(msg, 'warn');
       return;
     }
+    const requestedTag = typeof tagOverride === 'string' ? tagOverride : callsign.tag;
+    // A local HTTP server can list same-name records before creating a new profile. TCP clients
+    // retain the direct `昵称#编号` route; their saved reconnect token still restores automatically.
+    if (!requestedTag && !createNew && chosenTransport === TRANSPORT_WEBSOCKET) {
+      try {
+        const response = await fetch(`${endpoint.address}/api/profiles?name=${encodeURIComponent(callsign.name)}`);
+        const payload = response.ok ? await response.json() : null;
+        const choices = Array.isArray(payload?.profiles) ? payload.profiles.filter((p) => /^\d{4}$/.test(p?.tag)) : [];
+        if (choices.length) { setProfileChoices(choices); return; }
+      } catch { /* An older/remote server simply creates a new local profile. */ }
+    }
     setRoomCode(code);
     store.patch('ui', { pendingJoin: code || null });
     setStarting(true);
@@ -283,9 +405,9 @@ export function TitleScreen() {
       net.setUrl(endpoint.socketUrl);
       // Register the waiter before setName(): injectable/fake sockets used by tests may answer synchronously.
       const ready = waitForOnline(net);
-      net.setName(sanitizeName(name));
+      net.setIdentity(callsign.name, requestedTag);
       await ready;
-      enterSession(name, rememberName);
+      enterSession(requestedTag ? `${callsign.name}#${requestedTag}` : callsign.name, rememberName);
     } catch (err) {
       net.close();
       toast(err?.message || '无法连接服务器', 'error', { ttl: 6000 });
@@ -355,8 +477,9 @@ export function TitleScreen() {
 
   const updateName = (value) => {
     setName(value);
+    setProfileChoices([]);
     if (!rememberName) return;
-    const clean = sanitizeName(value);
+    const clean = parseDoctorIdentity(value).name;
     if (clean) identity.saveName(clean);
     else identity.clearName();
   };
@@ -365,7 +488,7 @@ export function TitleScreen() {
     setRememberName(on);
     identity.setRememberName(on);
     if (on) {
-      const clean = sanitizeName(name);
+      const clean = parseDoctorIdentity(name).name;
       if (clean) identity.saveName(clean);
     }
   };
@@ -381,7 +504,7 @@ export function TitleScreen() {
 
   // touch screens: no autofocus (it would pop the on-screen keyboard over a landscape phone's whole view)
   const touchUi = useMemo(() => detectFeatures().coarse, []);
-  return html`<div class="screen title-screen">
+  return html`<div class=${`screen title-screen${androidClient ? ' title-screen--android' : ''}`}>
     <div class=${`title-bg${bgLoaded ? ' has-art' : ''}${ridgesLoaded ? ' has-ridges' : ''}`} aria-hidden="true">
       ${backdrop ? html`<img class="title-bg__art" src=${backdrop} alt="" draggable=${false}
         onLoad=${() => setBgLoadedUrl(backdrop)} />` : null}
@@ -409,13 +532,15 @@ export function TitleScreen() {
     </div>
 
     <main class="title-main">
-      <${Emblem} />
-      <div class="title-en">
-        <span class="title-en__a">STRONGHOLD PROTOCOL</span>
-        <span class="title-en__b">ALLIANCE</span>
-      </div>
-      <h1 class="title-cn">卫戍协议<span class="title-cn__colon">：</span><em>盟约</em></h1>
-      <p class="title-tag">调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。</p>
+      <section class="title-hero">
+        <${Emblem} />
+        <div class="title-en">
+          <span class="title-en__a">STRONGHOLD PROTOCOL</span>
+          <span class="title-en__b">ALLIANCE</span>
+        </div>
+        <h1 class="title-cn">卫戍协议<span class="title-cn__colon">：</span><em>盟约</em></h1>
+        <p class="title-tag">调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。</p>
+      </section>
 
       <div class="title-login">
         ${pendingJoin ? html`<div class="title-invite">
@@ -430,32 +555,48 @@ export function TitleScreen() {
           <button type="button" class=${transport === TRANSPORT_TCP ? 'is-active' : ''} disabled=${starting || !tcpAvailable}
             title=${tcpAvailable ? '原生 TCP 直连' : '仅 Windows/Android 客户端可用'}
             onClick=${() => changeTransport(TRANSPORT_TCP)}>TCP <small>直连</small></button>
-        </div>
-        <${TextField} label=${transport === TRANSPORT_TCP ? 'TCP 服务器地址' : '服务器地址'} micro="SERVER" size="lg" icon="link" value=${server} maxLength=${256}
-          placeholder=${transport === TRANSPORT_TCP ? '例如 192.168.1.10:3001' : '例如 192.168.1.10:3000'} disabled=${starting} invalid=${!!serverError} hint=${serverError || null}
-          onInput=${(v) => { setPastedInvite(null); setServer(v); if (serverError) setServerError(''); }} onEnter=${() => start()} />` : null}
-        <${TextField} label="博士代号" micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
-          placeholder="输入你的代号（最多 ${NAME_MAX_LEN} 字）" autoFocus=${!touchUi} disabled=${starting}
+        </div>` : null}
+        ${!pastedInvite ? html`<div class="title-server-row">
+          <${TextField} label=${transport === TRANSPORT_TCP ? 'TCP 服务器地址' : '服务器地址'} micro="SERVER" size="lg" icon="link" value=${server} maxLength=${256}
+            placeholder=${transport === TRANSPORT_TCP ? '例如 192.168.1.10:3001' : '例如 192.168.1.10:3000'} disabled=${starting} invalid=${!!serverError} hint=${serverError || null}
+            labelEnd=${transport === TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} compact=${true} />` : null}
+            onInput=${(v) => { setPastedInvite(null); setServer(v); if (serverError) setServerError(''); }} onEnter=${() => start()} />
+        </div>` : null}
+        <${TextField} label="博士代号" micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN + 5}
+          placeholder="输入代号或 代号#编号（昵称最多 ${NAME_MAX_LEN} 字）" autoFocus=${!touchUi} disabled=${starting}
           onInput=${updateName} onEnter=${() => start()} />
+        ${profileChoices.length ? html`<div class="title-invite">
+          <${Icon} name="user" /><span>发现同名博士，请选择已有编号或继续新建</span>
+          ${profileChoices.map((p) => html`<button type="button" class="title-invite__reset" disabled=${starting}
+            onClick=${() => start(null, null, null, p.tag)}>#${p.tag}<//>`)}
+          <button type="button" class="title-invite__reset" disabled=${starting} onClick=${() => start(null, null, null, null, true)}>创建新档案<//>
+        </div>` : null}
         <button type="button" class=${`title-remember${rememberName ? ' is-on' : ''}`} role="switch"
           aria-checked=${rememberName ? 'true' : 'false'} disabled=${starting}
           onClick=${() => updateRememberName(!rememberName)}>
           <i aria-hidden="true">${rememberName ? '✓' : ''}</i><span>记住博士代号</span><small>保存在此设备</small>
         </button>
-        ${!pastedInvite ? html`<${Button} variant="secondary" size="lg" block=${true} icon="copy"
-          class="title-paste" disabled=${starting}
-          onClick=${() => applyClipboardInvite({ auto: true })}>粘贴邀请链接<//>` : null}
+        ${!pastedInvite || desktopClient ? html`<div class=${`title-actions${!pastedInvite && desktopClient ? ' has-replay' : ''}`}>
+          ${!pastedInvite ? html`<${Button} variant="secondary" size="lg" block=${true} icon="copy"
+            class="title-paste" disabled=${starting}
+            onClick=${() => applyClipboardInvite({ auto: true })}>粘贴邀请链接<//>` : null}
+          ${desktopClient ? html`<${Button} variant="secondary" size="lg" block=${true} icon="book"
+            class="title-replay" disabled=${starting} onClick=${() => setReplayOpen(true)}>对局记录<//>` : null}
+        </div>` : null}
         <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${starting}
           disabled=${!valid || !server.trim()} onClick=${() => start()}>${starting ? '正在连接' : roomCode ? '连接并加入' : '连接服务器'}<//>
-        <div class="title-conn">
-          <span class=${`status-dot ${dotClass}`}></span>
-          <span>${STATUS_TEXT[conn.status] || conn.status}</span>
-          ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+        <div class="title-bottom-tools">
+          ${transport !== TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} />` : null}
           <${GuideButton} class="title-guide" />
-          <${FullscreenButton} class="title-fs" />
+          <button type="button" class="title-settings fsbtn tapx" aria-label="设置" title="设置"
+            onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
+          ${!androidClient ? html`<${FullscreenButton} class="title-fs" />` : null}
         </div>
       </div>
     </main>
+
+    ${desktopClient ? html`<${ReplayLibrary} open=${replayOpen} onClose=${() => setReplayOpen(false)} serverAddress=${server} />` : null}
+    <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
 
     <footer class="title-foot">
       <span>非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有</span>

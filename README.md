@@ -2,7 +2,7 @@
 
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.2.6-2ea44f)
+![version](https://img.shields.io/badge/version-0.2.7-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -37,7 +37,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前增强版 0.2.6 基于上游 0.1.2，合并 Windows / Android 独立客户端、TCP 服务端与自定义交互和玩法规则；上游修复及增强改动详见 [CHANGELOG.md](CHANGELOG.md)。
+- 当前增强版 0.2.7 基于上游 0.1.2，合并 Windows / Android 独立客户端、TCP 服务端与自定义交互和玩法规则；上游修复及增强改动详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能一览
 
@@ -102,12 +102,13 @@ npm start          # 启动服务器：http://localhost:3000
 
 ### 端口与配置
 
-默认监听 **WebSocket/HTTP 3000**，打包客户端还可通过 **原生 TCP 3001** 直连。换端口可设置 `PORT` / `TCP_PORT`。
+默认监听 **WebSocket/HTTP 3000**，打包客户端还可通过 **原生 TCP 3001** 直连；对局记录与回放服务使用独立的 **TCP 3002**。换端口可设置 `PORT` / `TCP_PORT` / `SPECTATOR_PORT`。
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `3000` | 监听端口 |
 | `TCP_PORT` | `PORT + 1` | Windows/Android 客户端的原生 TCP 直连端口 |
+| `SPECTATOR_PORT` | `3002` | 对局记录/回放的原生 TCP 端口；不是 HTTP 服务，浏览器无法打开。设为 `off` 可禁用 |
 | `HOST` | `0.0.0.0` | 监听地址（`127.0.0.1` = 只允许本机，放在反向代理后面时使用） |
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |

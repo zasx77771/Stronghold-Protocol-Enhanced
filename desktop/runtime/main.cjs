@@ -13,6 +13,9 @@ const path = require('node:path');
 
 const CLIENT_ROOT = path.resolve(__dirname, 'client');
 const HOST = '127.0.0.1';
+// Game frames remain limited by the game server, while replay responses may carry a compressed
+// recording up to the separate replay service's 32 MiB protocol limit.
+const TCP_FRAME_MAX_BYTES = 32 << 20;
 const smokeArg = process.argv.find((arg) => arg.startsWith('--smoke-test='));
 const smokePathInput = process.env.SP_SMOKE_PATH || (smokeArg ? smokeArg.slice('--smoke-test='.length) : '');
 const SMOKE_PATH = smokePathInput ? path.resolve(smokePathInput) : null;
@@ -111,7 +114,7 @@ const tcpSockets = new Map();
 
 function tcpFrame(text) {
   const body = Buffer.from(String(text), 'utf8');
-  if (!body.length || body.length > 64 * 1024) throw new RangeError('invalid TCP frame size');
+  if (!body.length || body.length > TCP_FRAME_MAX_BYTES) throw new RangeError('invalid TCP frame size');
   const out = Buffer.allocUnsafe(body.length + 4);
   out.writeUInt32BE(body.length, 0);
   body.copy(out, 4);
@@ -154,7 +157,7 @@ ipcMain.on('sp-tcp-connect', (event, value = {}) => {
     entry.buffer = entry.buffer.length ? Buffer.concat([entry.buffer, chunk]) : chunk;
     while (entry.buffer.length >= 4) {
       const length = entry.buffer.readUInt32BE(0);
-      if (!length || length > 64 * 1024) { entry.reason = 'invalid frame'; socket.destroy(); return; }
+      if (!length || length > TCP_FRAME_MAX_BYTES) { entry.reason = 'invalid frame'; socket.destroy(); return; }
       if (entry.buffer.length < length + 4) return;
       const data = entry.buffer.subarray(4, length + 4).toString('utf8');
       entry.buffer = entry.buffer.subarray(length + 4);

@@ -63,6 +63,7 @@ import { checkLoadout } from '../shared/protocol.js';
 import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
+import { MatchRecorder } from './replay/recorder.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -89,7 +90,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /**
  * @typedef {{ seat: number, playerId: string, name: string, isBot: boolean, ready: boolean,
- *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null }} Seat
+ *             connected: boolean, left: boolean, userId?: string|null, tag?: string|null, loadout?: Record<string, { skill: number, module: string|null }> | null }} Seat
  */
 
 /** Deep-frozen copy of a checked loadout (shared by the session, the seat and the match's PlayerState). */
@@ -151,9 +152,12 @@ export class Room {
       mode: this.mode,
       difficulty: this.difficulty,
       inMatch: !!this.match,
-      seats: this.seats.map((s) => (s
-        ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left }
-        : null)),
+      seats: this.seats.map((s) => {
+        if (!s) return null;
+        const seat = { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left };
+        if (s.tag) seat.tag = s.tag;
+        return seat;
+      }),
     };
   }
 }
@@ -168,16 +172,18 @@ export class Lobby {
    *   getData?: () => object,
    *   now?: () => number,
    *   seedFn?: () => number,
+   *   replayStore?: import('./replay/store.js').ReplayStore | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, replayStore = null, options = {} }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
+    this.replayStore = replayStore;
     this.opts = { ...LOBBY_DEFAULTS, ...options };
     /** @type {Map<string, Room>} */
     this.rooms = new Map();
@@ -480,12 +486,12 @@ export class Lobby {
     const host = room.seatOf(room.hostId);
     if (host) host.ready = true;
     const seats = room.seats.filter(Boolean).map((s) => ({
-      seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, connected: s.connected,
+      seat: s.seat, playerId: s.playerId, userId: s.userId || null, tag: s.tag || null, name: s.name, isBot: s.isBot, connected: s.connected,
       // DESIGN §16: the human's checked operator loadout (bots fight with the defaults)
       loadout: s.isBot ? null : s.loadout || null,
     }));
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
-    const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, sharedResult: null, results: new Map() };
+    const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, sharedResult: null, results: new Map(), recorder: null, finalResult: null };
     let seed = 0;
     try { seed = this.seedFn() >>> 0; } catch { seed = randomInt(2 ** 32); }
     try {
@@ -506,6 +512,14 @@ export class Lobby {
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
       });
       ctx.match = match;
+      if (this.replayStore) {
+        try {
+          ctx.recorder = new MatchRecorder(this.replayStore, {
+            roomCode: room.code, matchNo: room.matchCount + 1, seed, mode: room.mode, difficulty: room.difficulty,
+            stageId: match.stageId, startedAt: this.now(), dataHash: this.replayStore.dataHash(this.safeData()), players: seats,
+          });
+        } catch (e) { this.log.error(`[lobby] ${room.code} replay recorder failed to start`, e); }
+      }
       room.match = match;
       room.matchCtx = ctx;
       room.matchKey = key;
@@ -529,6 +543,7 @@ export class Lobby {
     if (ctx.ended || !ctx.live || room.matchCtx !== ctx || room.disposed) return;
     ctx.ended = true;
     room.lastSummary = summary ?? null;
+    try { ctx.recorder?.finish(summary, ctx.finalResult || summary); } catch (e) { this.log.error(`[lobby] ${room.code} replay recorder failed to finish`, e); }
     room.match = null;
     room.matchCtx = null;
     room.matchKey = null;
@@ -550,19 +565,22 @@ export class Lobby {
 
   /** Match unicast; m.result frames are also kept for the replay. */
   matchSend(room, ctx, playerId, msg) {
+    try { ctx.recorder?.frame('out', playerId, msg, ctx.match?.phase || null); } catch { /* recording cannot affect a match */ }
     if (msg && msg.t === 'm.result') {
       const data = encode(msg);
       if (data != null) ctx.results.set(playerId, data);
+      if (!ctx.finalResult) { const { playerId: ignored, ...result } = msg; void ignored; ctx.finalResult = result; }
     }
     return this.sendToPlayer(room, playerId, msg);
   }
 
   /** Match broadcast; the latest m.public and a broadcast m.result are also kept for the replay. */
   matchBroadcast(room, ctx, msg) {
+    try { ctx.recorder?.frame('out', null, msg, ctx.match?.phase || null); } catch { /* recording cannot affect a match */ }
     const data = this.broadcastRoom(room, msg);
     if (data == null) return;
     if (msg.t === 'm.public') ctx.lastPublic = data;
-    else if (msg.t === 'm.result') ctx.sharedResult = data;
+    else if (msg.t === 'm.result') { ctx.sharedResult = data; ctx.finalResult = msg; }
   }
 
   /**
@@ -680,6 +698,7 @@ export class Lobby {
     if (res && typeof res === 'object' && res.error) {
       return fail(isErrCode(res.error) ? res.error : ERR.INTERNAL, typeof res.detail === 'string' ? res.detail : undefined);
     }
+    try { room.matchCtx?.recorder?.action(session.playerId, msg, room.match.phase); } catch { /* recording cannot affect a match */ }
     return OK;
   }
 
@@ -733,7 +752,7 @@ export class Lobby {
   /** @returns {Seat} */
   humanSeat(idx, session) {
     return {
-      seat: idx, playerId: session.playerId, name: session.name, isBot: false, ready: false, connected: session.connected, left: false,
+      seat: idx, playerId: session.playerId, userId: session.userId || null, tag: session.profileTag || null, name: session.name, isBot: false, ready: false, connected: session.connected, left: false,
       loadout: session.loadout || null,
     };
   }
@@ -750,6 +769,7 @@ export class Lobby {
     this.dropReplay(room, playerId);
     const seat = room.seatOf(playerId);
     if (!seat || seat.isBot || seat.left || room.disposed) return;
+    try { room.matchCtx?.recorder?.system('leave', { playerId }, room.match?.phase || null); } catch { /* recording cannot affect a match */ }
     if (room.match) {
       seat.left = true;
       seat.connected = false;

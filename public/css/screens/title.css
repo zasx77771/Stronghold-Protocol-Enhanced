@@ -133,14 +133,22 @@
   clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
 }
 
-/* ---- centre column ------------------------------------------------------------------------------- */
+/* ---- title + login ------------------------------------------------------------------------------------------------ */
 .title-main {
   position: relative;
   z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.9rem;
+  align-items: center;
+  gap: .9rem;
+  width: min(13.6rem, calc(100vw - 1.2rem));
+}
+.title-hero {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: -.3rem;
+  text-align: center;
 }
 
 .emblem { position: relative; display: flex; align-items: center; gap: .26rem; margin-bottom: .26rem; animation: rise-in 600ms var(--ease-out) backwards; }
@@ -190,7 +198,8 @@
 .title-cn__colon { color: #f4f6f5; }
 .title-cn em { font-style: normal; color: var(--mint-500); text-shadow: 0 0 .26rem rgba(23, 249, 183, .45); }
 .title-tag {
-  margin-top: .12rem;
+  max-width: 5.8rem;
+  margin: .12rem auto 0;
   font-size: .19rem;
   color: var(--text-lo);
   letter-spacing: .1em;
@@ -202,7 +211,7 @@
   --bk-c: var(--mint-500);
   position: relative;
   width: 4.9rem;
-  margin-top: .42rem;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: .16rem;
@@ -233,7 +242,13 @@
 .title-transport button.is-active { color: #08110e; background: var(--mint-500); }
 .title-transport button.is-active small { color: rgba(8,17,14,.66); }
 .title-transport button:disabled { cursor: not-allowed; opacity: .42; }
-.title-paste { height: .64rem; white-space: nowrap; padding-inline: .18rem; }
+.title-server-row { min-width: 0; }
+.title-server-row .field__label { justify-content: space-between; }
+.title-server-row .field__label-end { display: flex; align-items: center; min-width: 0; }
+.title-server-row .title-conn--compact { max-width: none; padding-bottom: 0; }
+.title-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+.title-actions.has-replay { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.title-paste, .title-replay { height: .52rem; min-width: 0; white-space: nowrap; padding-inline: .12rem; }
 .title-remember {
   display: flex; align-items: center; gap: .08rem; align-self: flex-start;
   padding: 0; border: 0; color: var(--text-lo); background: transparent; cursor: pointer;
@@ -266,12 +281,69 @@
   font: 700 .1rem/1.2 var(--font-ui); white-space: nowrap;
 }
 .title-invite__reset:disabled { cursor: not-allowed; opacity: .5; }
-.title-conn { display: flex; align-items: center; justify-content: center; gap: .1rem; min-height: .32rem; font-size: .14rem; color: var(--text-lo); }
+.title-conn { display: flex; align-items: center; justify-content: center; gap: .1rem; min-width: 0; min-height: .32rem; font-size: .14rem; color: var(--text-lo); }
+.title-conn__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-conn--compact { justify-content: flex-start; max-width: 1.7rem; padding-bottom: .06rem; font-size: .12rem; }
 .title-conn .ping { height: .26rem; font-size: .15rem; }
+.title-bottom-tools { display: flex; align-items: center; justify-content: center; gap: .1rem; min-height: .32rem; }
+.title-bottom-tools .title-conn { flex: 1; }
+
+/* Native Windows replay library: individual match rows are the only framed repeated items. */
+.replay-library { display: flex; flex-direction: column; gap: .14rem; min-height: 3.1rem; }
+.replay-library__tools { display: flex; align-items: center; gap: .14rem; }
+.replay-library__tools > span { color: var(--text-dim); font-size: .12rem; }
+.replay-library__error { display: flex; align-items: center; gap: .08rem; margin: 0; padding: .1rem .12rem; color: #ffd08a; border: 1px solid rgba(246, 163, 41, .42); background: rgba(246, 163, 41, .08); font-size: .14rem; }
+.replay-library__error .icon { flex: none; width: .18rem; height: .18rem; }
+.replay-library__list { display: flex; flex-direction: column; gap: .06rem; min-height: 1.3rem; }
+.replay-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: .12rem; width: 100%; min-height: .58rem; padding: .1rem .12rem; color: var(--text-md); background: rgba(7, 11, 9, .68); border: 1px solid var(--line); cursor: pointer; text-align: left; }
+.replay-row:hover:not(:disabled), .replay-row:focus-visible { border-color: var(--mint-600); background: rgba(23, 249, 183, .07); outline: none; }
+.replay-row:disabled { cursor: default; opacity: .58; }
+.replay-row__result { min-width: .5rem; padding: .03rem .06rem; color: #07110e; background: var(--mint-500); font: 700 .11rem/1 var(--font-ui); text-align: center; }
+.replay-row__main { min-width: 0; display: flex; flex-direction: column; gap: .02rem; }
+.replay-row__main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .15rem; }
+.replay-row__main small { color: var(--text-dim); font-size: .11rem; }
+.replay-row__round { color: var(--mint-400); font: 700 .14rem/1 var(--font-ui); white-space: nowrap; }
+.replay-row > .icon { color: var(--text-dim); }
+.replay-detail { display: flex; flex-direction: column; gap: .15rem; }
+.replay-detail > header { display: flex; align-items: center; justify-content: space-between; gap: .2rem; }
+.replay-detail h3 { margin: .02rem 0 0; color: var(--text-hi); font-size: .22rem; }
+.replay-detail dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.replay-detail dl > div { min-width: 0; padding: .1rem .12rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.replay-detail dt { color: var(--text-dim); font-size: .1rem; }
+.replay-detail dd { margin: .025rem 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-hi); font-size: .14rem; }
+.replay-detail__players { display: flex; flex-wrap: wrap; gap: .08rem; align-items: center; }
+.replay-detail__players .micro { width: 100%; }
+.replay-detail__players span { padding: .05rem .08rem; border: 1px solid var(--line); background: rgba(0, 0, 0, .18); color: var(--text-md); font-size: .13rem; }
+.replay-detail__note { margin: 0; color: var(--text-dim); font-size: .12rem; line-height: 1.55; }
 
 @media (max-height: 820px) {
   .title-main { transform: scale(.88); }
+}
+
+/* At phone and split-screen widths the login controls need their full usable width. */
+@media (max-width: 960px) {
+  .title-main { display: flex; flex-direction: column; width: auto; gap: 0; margin-top: -.3rem; }
+  .title-login { margin-top: .42rem; }
+
+  /* Packaged Android runs landscape-first: keep its title and login panel beside each other so
+     the touch controls retain their desktop size instead of shrinking with a vertical stack. */
+  .title-screen--android .title-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4.9rem;
+    gap: .45rem;
+    width: min(13.6rem, calc(100vw - 1.2rem));
+    margin-top: 0;
+  }
+  .title-screen--android .title-login { margin-top: 0; }
+}
+@media (max-width: 960px) and (max-height: 820px) {
   .title-login { margin-top: .24rem; }
+}
+@media (max-width: 960px) and (max-height: 460px) {
+  .title-main { margin-top: .1rem; transform: scale(.8); }
+  .title-login { margin-top: .12rem; }
+  .title-screen--android .title-main { margin-top: 0; transform: none; }
+  .title-screen--android .title-login { margin-top: 0; }
 }
 
 .title-foot {

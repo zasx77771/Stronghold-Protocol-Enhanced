@@ -63,7 +63,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { fxForm } from '../../../shared/protocol.js';
 import { html, Spinner, PhaseBanner, Icon, Button, MicroLabel, confirmDialog, useTicker } from '../ui/components.js';
-import { useGameData, GIcon } from '../ui/gameComponents.js';
+import { useGameData, GIcon, isPackagedAndroid } from '../ui/gameComponents.js';
 import { prepCameraShopOptions, useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
@@ -105,7 +105,7 @@ import { isClientCombat, observeTarget, teammateProgress, cameraLayers, layerCam
 import { screenStrip, playerBonds, playerLayer, detailBondOwner, toggleBond, popupView } from '../ui/watchBonds.js';
 import { data, localAsset, getMode } from '../data.js';
 import { audio } from '../audio.js';
-import { useDocClass, FullscreenButton } from '../ui/device.js';
+import { useDocClass, fullscreen, FullscreenButton } from '../ui/device.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 const HUD_HZ_MS = 200;
@@ -185,6 +185,7 @@ function MatchScreen() {
   const emotes = useStore((s) => s.emotes);
   const roomSolo = useStore((s) => s.room?.mode === 'solo');
   const gd = useGameData();
+  const androidClient = useMemo(() => isPackagedAndroid(), []);
 
   const hostRef = useRef(null);
   const barRef = useRef(null);
@@ -1054,7 +1055,20 @@ function MatchScreen() {
 
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
+    if (androidClient) return undefined;
     const onKey = async (e) => {
+      // Keep the conventional desktop shortcut in the game only. This is handled before the
+      // ordinary game bindings because Alt suppresses shortcutFor by design.
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat
+        && (e.code === 'Enter' || e.key === 'Enter')) {
+        const target = e.target;
+        const tag = target && typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !target?.isContentEditable) {
+          e.preventDefault();
+          await fullscreen.toggle();
+        }
+        return;
+      }
       const act = shortcutFor(e);
       const L = live.current;
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
@@ -1095,7 +1109,7 @@ function MatchScreen() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [androidClient]);
 
   // ---- render ---------------------------------------------------------------------------------------------------
   const readyCount = players.filter((p) => p.ready || p.status === 'ready').length;
@@ -1259,7 +1273,7 @@ function MatchScreen() {
         <${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />
         <button type="button" class="gm__gear" aria-label="设置" title="设置" onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label="玩法说明" title="玩法说明" onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
-        <${FullscreenButton} class="gm__gear gm__fs" />
+        ${!androidClient ? html`<${FullscreenButton} class="gm__gear gm__fs" />` : null}
       </div>
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}

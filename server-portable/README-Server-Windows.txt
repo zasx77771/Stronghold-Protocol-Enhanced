@@ -4,12 +4,13 @@
 快速启动
 --------
 1. 双击 start-server.cmd。
-2. 默认监听 WebSocket 端口 3000，并同时监听原生 TCP 端口 3001。
-3. 客户端选择协议后填写对应地址：WebSocket 使用 192.168.1.10:3000，TCP 直连使用 192.168.1.10:3001。
+2. 默认监听 WebSocket 端口 3000、游戏原生 TCP 端口 3001，以及回放原生 TCP 端口 3002。
+3. 客户端选择协议后填写对应地址：WebSocket 使用 192.168.1.10:3000，TCP 直连使用 192.168.1.10:3001；Windows 客户端的“对局记录”使用 192.168.1.10:3002。
 
 这个发行包只负责 WebSocket / TCP 联机、房间、匹配、对局状态与服务端校验：
   /ws       WebSocket 联机入口
   /healthz  服务状态检查
+  TCP 3002  对局记录 / 回放入口（长度前缀 JSON，不是 HTTP 网页）
 
 它不包含、也不会提供网页、图片、音频、字体或客户端脚本；所有其他 HTTP 路径均返回 404。
 data 目录中的少量 JSON 是服务端进行房间和对局计算所必需的内部规则数据，不会通过 HTTP 暴露。
@@ -17,11 +18,12 @@ data 目录中的少量 JSON 是服务端进行房间和对局计算所必需的
 自定义端口
 ----------
 PowerShell：
-  .\start-server.ps1 -Port 3000 -TcpPort 3001
+  .\start-server.ps1 -Port 3000 -TcpPort 3001 -SpectatorPort 3002
 
 或在 cmd 中：
   set PORT=3001
   set TCP_PORT=3002
+  set SPECTATOR_PORT=3003
   start-server.cmd
 
 公网部署时请在系统防火墙和路由器中开放所用端口。WebSocket 反向代理必须支持 Upgrade，
@@ -32,6 +34,7 @@ PowerShell：
 ------------
   PORT=3000            监听端口
   TCP_PORT=3001        原生 TCP 直连端口（默认 PORT + 1）
+  SPECTATOR_PORT=3002  对局记录 / 回放原生 TCP 端口；设为 off 可禁用
   HOST=0.0.0.0         监听地址
   TRUST_PROXY=auto     代理来源地址信任策略（auto / 1 / 0）
   SP_VERIFY=sample     抽样复核客户端战斗结果（也可设为 all；默认 off）
