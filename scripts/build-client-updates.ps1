@@ -75,21 +75,20 @@ foreach ($Path in @($WindowsDir, $WindowsZip)) {
 Write-Host "Building Windows incremental package: $PreviousVersion -> $Version"
 & node (Join-Path $ProjectRoot 'tools\clientDelta.mjs') windows --from $PreviousWindowsClient --to $CurrentWindowsClient --out $WindowsDir --from-version $PreviousVersion --to-version $Version | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Windows delta generator failed with exit code $LASTEXITCODE" }
-Copy-Item -LiteralPath (Join-Path $ProjectRoot 'scripts\apply-client-windows-update.ps1') -Destination (Join-Path $WindowsDir 'apply-update.ps1')
+$UpdateClient = Join-Path $WindowsDir 'Stronghold Protocol Update Client.exe'
+& (Join-Path $ProjectRoot 'scripts\build-windows-update-client.ps1') -OutputPath $UpdateClient
+if ($LASTEXITCODE -ne 0) { throw "Windows update client build failed with exit code $LASTEXITCODE" }
 @"
 # Windows client incremental update
 
-This package updates Stronghold Protocol Client from `$PreviousVersion to `$Version.
+This package updates Stronghold Protocol Client from $PreviousVersion to $Version.
 
 1. Exit **Stronghold Protocol Client** completely.
 2. Extract this ZIP to a temporary directory.
-3. In PowerShell, run:
+3. Double-click **Stronghold Protocol Update Client.exe**.
+4. Choose the existing `Stronghold-Protocol-Client-v$PreviousVersion-win-x64` folder and confirm the update.
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\apply-update.ps1 -TargetDir "<your existing Stronghold-Protocol-Client-v$PreviousVersion-win-x64 directory>"
-   ```
-
-The script checks every base and target file by SHA-256. It refuses a mismatched or incomplete client.
+The update client checks every base and target file by SHA-256. It refuses a mismatched or incomplete client.
 Keep the full client ZIP as a recovery option; this update package cannot downgrade or repair an unknown installation.
 "@ | Set-Content -LiteralPath (Join-Path $WindowsDir 'README.md') -Encoding utf8
 

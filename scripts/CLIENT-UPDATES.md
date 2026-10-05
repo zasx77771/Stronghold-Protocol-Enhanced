@@ -35,7 +35,7 @@ This writes a direct `v0.2.5-to-v0.3.0` Windows update ZIP to `../成果文件/0
 
 ## Package contents
 
-- The Windows ZIP contains only changed files, a deletion list, and an update script. The script verifies every base and resulting file with SHA-256.
+- The Windows ZIP contains only changed files, a deletion list, and a native Windows update client. The update client verifies every base and resulting file with SHA-256 and does not depend on PowerShell.
 - Android releases always use the complete, consistently signed APK. It can be installed directly over the previous release when the signing key is unchanged.
 
 Each Windows update package is valid for exactly one source and destination version. Small-release packages use the immediately prior release; mainline packages use the prior mainline baseline and therefore already include all intermediate changes.
