@@ -11,7 +11,7 @@ $PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.js
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
 $ArtifactName = "Stronghold-Protocol-Server-v$Version-win-x64"
-if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot '成果文件\04-Windows服务端' }
+if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\04-Windows服务端' }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
 $OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))
 

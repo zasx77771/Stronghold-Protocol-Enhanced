@@ -11,10 +11,10 @@ $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
 $PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
-if (-not $CacheRoot) { $CacheRoot = Join-Path $WorkspaceRoot '成果文件\06-构建环境与缓存' }
+if (-not $CacheRoot) { $CacheRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\06-构建环境与缓存' }
 $CacheRoot = [IO.Path]::GetFullPath($CacheRoot)
 if (-not $ToolchainDir) { $ToolchainDir = Join-Path $CacheRoot 'android-toolchain' }
-if (-not $OutputDir) { $OutputDir = Join-Path $WorkspaceRoot '成果文件\03-Android客户端' }
+if (-not $OutputDir) { $OutputDir = Join-Path $WorkspaceRoot 'enhanced-client-servers\03-Android客户端' }
 $ToolchainDir = [IO.Path]::GetFullPath($ToolchainDir)
 $OutputDir = [IO.Path]::GetFullPath($OutputDir)
 $AndroidRoot = Join-Path $ProjectRoot 'android'

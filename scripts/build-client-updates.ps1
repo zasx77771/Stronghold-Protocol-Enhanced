@@ -16,7 +16,7 @@ $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
 $PackageInfo = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
-if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot '成果文件\08-客户端增量包' }
+if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\08-客户端增量包' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $PreviousWindowsClient = [IO.Path]::GetFullPath($PreviousWindowsClient)
 if (-not (Test-Path -LiteralPath $PreviousWindowsClient -PathType Container)) { throw "Previous Windows client directory was not found: $PreviousWindowsClient" }
@@ -57,8 +57,8 @@ $UpdateKind = if ($MainlineUpdate) { 'mainline' } else { 'minor' }
 $Channel = if ($MainlineUpdate) { '02-主线版本更新' } else { '01-小版本更新' }
 $OutputRoot = Join-Path $OutputRoot $Channel
 
-if (-not $CurrentWindowsClient) { $CurrentWindowsClient = Join-Path $WorkspaceRoot "成果文件\02-Windows客户端\Stronghold-Protocol-Client-v$Version-win-x64" }
-if (-not $CurrentAndroidApk) { $CurrentAndroidApk = Join-Path $WorkspaceRoot "成果文件\03-Android客户端\Stronghold-Protocol-Client-v$Version-android-debug.apk" }
+if (-not $CurrentWindowsClient) { $CurrentWindowsClient = Join-Path $WorkspaceRoot "enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-v$Version-win-x64" }
+if (-not $CurrentAndroidApk) { $CurrentAndroidApk = Join-Path $WorkspaceRoot "enhanced-client-servers\03-Android客户端\Stronghold-Protocol-Client-v$Version-android-debug.apk" }
 $CurrentWindowsClient = [IO.Path]::GetFullPath($CurrentWindowsClient)
 $CurrentAndroidApk = [IO.Path]::GetFullPath($CurrentAndroidApk)
 if (-not (Test-Path -LiteralPath $CurrentWindowsClient -PathType Container)) { throw "Build the current Windows client first: $CurrentWindowsClient" }
@@ -118,8 +118,8 @@ if ($MainlineUpdate) {
   # A mainline update is deliberately based on the previous mainline full package, not the
   # immediately preceding small release. Only now that both update ZIPs and their manifest exist
   # do we remove full packages in the covered interval. The two mainline endpoints stay intact.
-  $WindowsRoot = Join-Path $WorkspaceRoot '成果文件\02-Windows客户端'
-  $AndroidRoot = Join-Path $WorkspaceRoot '成果文件\03-Android客户端'
+  $WindowsRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\02-Windows客户端'
+  $AndroidRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\03-Android客户端'
   $Removed = [System.Collections.Generic.List[object]]::new()
   function Remove-IntermediateFullPackages([string]$Root, [string]$Pattern, [string]$Platform) {
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return }

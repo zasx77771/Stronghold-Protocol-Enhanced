@@ -11,7 +11,7 @@
 
 工具链安装在项目的 `.android-toolchain/` 内，不修改系统 PATH。生成物位于：
 
-`成果文件/03-Android客户端/Stronghold-Protocol-Client-v0.2.6-android-debug.apk`
+`enhanced-client-servers/03-Android客户端/Stronghold-Protocol-Client-v0.2.6-android-debug.apk`
 
 文件名中的版本号会从根目录 `package.json` 自动读取，后续升级版本时无需手工修改打包脚本。
 

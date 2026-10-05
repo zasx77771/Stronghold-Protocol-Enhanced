@@ -13,11 +13,11 @@ For a small release, use the immediately previous Windows client as the base. Fo
 ```powershell
 pwsh -ExecutionPolicy Bypass -File scripts/publish-client-release.ps1 `
   -UpstreamMainlineVersion 0.1.2 `
-  -PreviousWindowsClient "..\成果文件\02-Windows客户端\Stronghold-Protocol-Client-vPREVIOUS-win-x64" `
+  -PreviousWindowsClient "..\enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-vPREVIOUS-win-x64" `
   -PreviousVersion PREVIOUS
 ```
 
-The output is written to `../成果文件/08-客户端增量包/01-小版本更新/`.
+The output is written to `../enhanced-client-servers/08-客户端增量包/01-小版本更新/`.
 
 ## Mainline release
 
@@ -27,11 +27,11 @@ For a mainline program release, pass the last mainline version explicitly, rathe
 pwsh -ExecutionPolicy Bypass -File scripts/publish-client-release.ps1 `
   -MainlineUpdate `
   -UpstreamMainlineVersion 0.1.3 `
-  -PreviousWindowsClient "..\成果文件\02-Windows客户端\Stronghold-Protocol-Client-v0.2.5-win-x64" `
+  -PreviousWindowsClient "..\enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-v0.2.5-win-x64" `
   -PreviousVersion 0.2.5
 ```
 
-This writes a direct `v0.2.5-to-v0.3.0` Windows update ZIP to `../成果文件/08-客户端增量包/02-主线版本更新/`; it contains all changes accumulated between those two mainline versions. The matching Android release remains a complete APK. Only after the Windows update ZIP and release manifest are generated successfully, the script removes full Windows directories/ZIPs and Android APKs for strictly intermediate releases, such as `v0.2.6` and `v0.2.7`. It preserves the `v0.2.5` and `v0.3.0` full packages and writes a cleanup record alongside the mainline update manifest.
+This writes a direct `v0.2.5-to-v0.3.0` Windows update ZIP to `../enhanced-client-servers/08-客户端增量包/02-主线版本更新/`; it contains all changes accumulated between those two mainline versions. The matching Android release remains a complete APK. Only after the Windows update ZIP and release manifest are generated successfully, the script removes full Windows directories/ZIPs and Android APKs for strictly intermediate releases, such as `v0.2.6` and `v0.2.7`. It preserves the `v0.2.5` and `v0.3.0` full packages and writes a cleanup record alongside the mainline update manifest.
 
 ## Package contents
 

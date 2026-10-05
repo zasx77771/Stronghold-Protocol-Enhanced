@@ -13,10 +13,10 @@ $PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.js
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
 $ArtifactName = "Stronghold-Protocol-Client-v$Version-win-x64"
-if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot '成果文件\02-Windows客户端' }
+if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\02-Windows客户端' }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
 $OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))
-if (-not $CacheDir) { $CacheDir = Join-Path $WorkspaceRoot '成果文件\06-构建环境与缓存\electron-download-cache' }
+if (-not $CacheDir) { $CacheDir = Join-Path $WorkspaceRoot 'enhanced-client-servers\06-构建环境与缓存\electron-download-cache' }
 $CacheDir = [IO.Path]::GetFullPath($CacheDir)
 
 if (-not $OutputDir.StartsWith($DistRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {

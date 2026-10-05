@@ -6,12 +6,12 @@
 - `upstream-v0.1.1`：用户提供的 `Stronghold-Protocol-v0.1.1.zip` 上游快照；提交 `1fd75dd` 从 `upstream-v0.1.0` 演进而来。
 - `upstream-v0.1.2`：用户提供的 `Stronghold-Protocol-v0.1.2.zip` 上游快照；从 `upstream-v0.1.1` 演进而来。
 - `upstream-v0.1.3`：用户提供的 `Stronghold-Protocol-v0.1.3.zip` 上游快照；从 `upstream-v0.1.2` 演进而来。
-- `enhanced-v0.3.0-vc15`：基于上游 0.1.3 的当前完整增强版（Android versionCode 15）。
+- `enhanced-v0.3.1-vc16`：基于上游 0.1.3 的当前完整增强版（Android versionCode 16）。
 - `enhanced-v0.2.6-vc13`：基于上游 0.1.2 的上一完整增强版（Android versionCode 13）。
 - `enhanced-v0.2.5-vc12`：基于上游 0.1.1 的上一完整增强版。
 - `enhanced-v0.2.4-vc11`、`enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：旧增强版历史节点，保留用于审计和回退。
 
-`成果文件`、Node 依赖、游戏素材、Android SDK/Gradle 缓存和打包产物不进入 Git。它们可由源码和现有构建脚本重新生成。
+`enhanced-client-servers`、Node 依赖、游戏素材、Android SDK/Gradle 缓存和打包产物不进入 Git。它们可由源码和现有构建脚本重新生成。
 
 ## 推荐：把下一版上游合并进增强主线
 
@@ -52,7 +52,7 @@ git merge --continue
 
 ## 使用导出的补丁
 
-如果目标仓库没有本仓库历史，可将目标仓库切到对应的新上游版本，再应用 `成果文件/07-Git迁移包` 中与该基线匹配的补丁：
+如果目标仓库没有本仓库历史，可将目标仓库切到对应的新上游版本，再应用 `enhanced-client-servers/07-Git迁移包` 中与该基线匹配的补丁：
 
 ```powershell
 git am --3way 000*.patch
@@ -78,4 +78,4 @@ powershell -ExecutionPolicy Bypass -File scripts/build-windows-server.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build-android-client.ps1
 ```
 
-构建脚本默认把成果写入仓库外层的 `成果文件` 分类目录。Android 重新签名或发布正式版时，不要提交签名文件、密钥或口令。
+构建脚本默认把成果写入仓库外层的 `enhanced-client-servers` 分类目录。Android 重新签名或发布正式版时，不要提交签名文件、密钥或口令。

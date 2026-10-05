@@ -14,7 +14,7 @@ data/local-assets.json
 .cache/
 
 # --- packaged-client build products ---------------------------------------------------------------
-# Current build scripts put these outside BaseCode under ../成果文件, but keep the source tree clean
+# Current build scripts put these outside BaseCode under ../enhanced-client-servers, but keep the source tree clean
 # if a custom output/cache path points back into the project.
 .android-toolchain/
 dist/
