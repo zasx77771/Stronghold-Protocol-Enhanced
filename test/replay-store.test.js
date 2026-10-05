@@ -95,5 +95,8 @@ test('spectator service accepts only framed TCP replay requests', async (t) => {
   assert.equal(list.matches[0].id, rec.id);
   const detail = await tcpRequest(spectator.port, { t: 'replay.get', id: rec.id });
   assert.equal(detail.match.seed, 7);
+  assert.equal(detail.match.replay, undefined, 'library detail responses must not include the full timeline');
+  const complete = await tcpRequest(spectator.port, { t: 'replay.get', id: rec.id, includeTimeline: true });
+  assert.equal(complete.match.replay.timeline.length, 0, 'complete timelines require an explicit request');
   assert.equal(await httpRequestHasNoResponse(spectator.port), '');
 });

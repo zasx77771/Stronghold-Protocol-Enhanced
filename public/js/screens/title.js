@@ -281,7 +281,9 @@ function ReplayLibrary({ open, onClose, serverAddress }) {
     try {
       const endpoint = saveReplayAddress(address);
       setAddress(endpoint.address);
-      const response = await requestReplay(endpoint.address, { t: 'replay.get', id });
+      // The library displays metadata, not a battle player. Do not download a complete
+      // action timeline in one TCP response.
+      const response = await requestReplay(endpoint.address, { t: 'replay.get', id, includeTimeline: false });
       if (response?.t !== 'replay.get' || !response.match) throw new Error(response?.code === 'NOT_FOUND' ? '该记录已不存在' : '无法读取对局详情');
       setSelected(response.match);
     } catch (reason) {

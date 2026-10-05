@@ -34,7 +34,9 @@ function handle(store, request) {
       };
     }
     case 'replay.get': {
-      const match = store.getMatch(request.id);
+      // The library view only needs match metadata. A complete timeline can exceed a
+      // native TCP frame, so it must be requested explicitly by a future chunked player.
+      const match = store.getMatch(request.id, { includeTimeline: request.includeTimeline === true });
       return match ? { t: 'replay.get', match } : { t: 'replay.error', code: 'NOT_FOUND' };
     }
     case 'replay.export': {
