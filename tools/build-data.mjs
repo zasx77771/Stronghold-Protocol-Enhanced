@@ -1920,6 +1920,14 @@ function buildEnemies(ctx) {
 
 const pos = (p) => (p ? [p.row, p.col] : null);
 
+/** Actual target of a positional checkpoint: official routes may offset it from the tile centre. */
+function checkpointPos(c) {
+  const p = pos(c?.position);
+  if (!p) return null;
+  const o = c.reachOffset;
+  return o ? [cleanNum(p[0] + (Number(o.y) || 0)), cleanNum(p[1] + (Number(o.x) || 0))] : p;
+}
+
 /** Resolve an official route into { motion, start, end, checkpoints, steps? }. */
 function resolveRoute(r) {
   if (!r) return null;
@@ -1928,11 +1936,11 @@ function resolveRoute(r) {
   let special = false;
   for (const c of r.checkpoints || []) {
     switch (c.type) {
-      case 'MOVE': checkpoints.push(pos(c.position)); steps.push({ t: 'move', p: pos(c.position) }); break;
-      case 'PATROL_MOVE': special = true; checkpoints.push(pos(c.position)); steps.push({ t: 'patrol', p: pos(c.position) }); break;
+      case 'MOVE': checkpoints.push(checkpointPos(c)); steps.push({ t: 'move', p: checkpointPos(c) }); break;
+      case 'PATROL_MOVE': special = true; checkpoints.push(checkpointPos(c)); steps.push({ t: 'patrol', p: checkpointPos(c) }); break;
       case 'WAIT_FOR_SECONDS': special = true; steps.push({ t: 'wait', s: c.time }); break;
       case 'DISAPPEAR': special = true; steps.push({ t: 'disappear' }); break;
-      case 'APPEAR_AT_POS': special = true; steps.push({ t: 'appear', p: pos(c.position) }); break;
+      case 'APPEAR_AT_POS': special = true; steps.push({ t: 'appear', p: checkpointPos(c) }); break;
       case 'WAIT_CURRENT_FRAGMENT_TIME': case 'WAIT_CURRENT_WAVE_TIME': special = true; steps.push({ t: 'wait', s: c.time, until: c.type }); break;
       default: special = true; steps.push({ t: String(c.type).toLowerCase(), p: pos(c.position), s: c.time }); warn(`unknown checkpoint type ${c.type}`);
     }

@@ -12,7 +12,7 @@
 //   give_coin_in_round {round,coin}                    老鲤     income of round `round` = coin (R1/R2 0, R3 15)
 //   prep_start_gain_chess_from_pool_in_round {round}   老鲤     round start of `round`: 1 chess of pool
 //   band_coin_cost_gain_random_char_by_shop_level      绮良     every coin_cnt funds spent → count random chess ≤ shop level
-//   up_shop_next_refresh_must_present_bond_char        佩佩     level-up to a level of lvlist → +1 free refresh (price 0) that prefers <bond>
+//   up_shop_next_refresh_must_present_bond_char        佩佩     level-up to a level of lvlist → next paid refresh prefers <bond>
 //   gain_bond_char_per_round {round,preround,bond}     哈洛德   rounds round, round+preround, …: a <bond> chess (≤ shop level, else any tier)
 //   first_buy_in_round_char_price_change {price,bond}  休露丝   first <bond> chess of the round costs `price` (bought in the
 //                                                               shop: onBuy — a free pick / grant never uses it up)
@@ -189,10 +189,9 @@ K.up_shop_next_refresh_must_present_bond_char = (ps) => ({
     const p = ps[0];
     if (!list(p.lvlist).map(Number).includes(ev.level)) return;
     ctx.incCounter('band:pepe:special', 1);
-    if (int(p.price, 0) === 0) ctx.grantFreeRefresh(1);
   },
-  onRefresh(ctx) {
-    if (ctx.counter('band:pepe:special') <= 0) return;
+  onRefresh(ctx, ev) {
+    if (ev.free || ctx.counter('band:pepe:special') <= 0) return;
     ctx.incCounter('band:pepe:special', -1);
     const bond = ps[0].bond;
     const slots = ctx.shopSlots();
