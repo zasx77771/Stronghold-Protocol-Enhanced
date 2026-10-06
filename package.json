@@ -29,6 +29,8 @@
     "preversion": "npm run check:release-policy",
     "postversion": "npm run check:release-policy",
     "test": "npm run check:release-policy && node --test",
+    "golden": "node tools/golden.mjs",
+    "golden:update": "node tools/golden.mjs --update",
     "vendor": "node tools/vendor.mjs",
     "build-data": "node tools/build-data.mjs",
     "assets": "node tools/vendor.mjs && node tools/fetch-assets.mjs",
