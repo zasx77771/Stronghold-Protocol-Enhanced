@@ -35,24 +35,14 @@ function Get-ReleaseVersion([string]$Value) {
   return [version]$Match.Groups['core'].Value
 }
 
-function Assert-LocalVersionMatchesUpstream([string]$LocalVersion, [string]$UpstreamVersion, [switch]$RequireMainlineBaseline) {
-  $UpstreamMatch = [regex]::Match($UpstreamVersion, '^\d+\.\d+\.(?<tail>\d+)$')
-  if (-not $UpstreamMatch.Success) { throw "Upstream mainline version must use X.Y.Z form: $UpstreamVersion" }
-  $LocalMatch = [regex]::Match($LocalVersion, '^0\.(?<mainline>\d+)\.(?<revision>\d+)(?:[-+][0-9A-Za-z.-]+)?$')
-  if (-not $LocalMatch.Success) { throw "Local release version must use 0.<upstream tail>.<small revision>: $LocalVersion" }
-  if ($LocalMatch.Groups['mainline'].Value -ne $UpstreamMatch.Groups['tail'].Value) {
-    throw "Local version $LocalVersion does not match upstream $UpstreamVersion. Expected local form: 0.$($UpstreamMatch.Groups['tail'].Value).*"
-  }
-  if ($RequireMainlineBaseline -and $LocalMatch.Groups['revision'].Value -ne '0') {
-    throw "A mainline release based on upstream $UpstreamVersion must start at 0.$($UpstreamMatch.Groups['tail'].Value).0; small releases increment only the final number."
-  }
-}
-
 $PreviousRelease = Get-ReleaseVersion $PreviousVersion
 $CurrentRelease = Get-ReleaseVersion $Version
 if ($CurrentRelease -le $PreviousRelease) { throw "Current version $Version must be newer than base version $PreviousVersion." }
 if (-not $UpstreamMainlineVersion) { throw 'Every incremental release requires -UpstreamMainlineVersion.' }
-Assert-LocalVersionMatchesUpstream $Version $UpstreamMainlineVersion -RequireMainlineBaseline:$MainlineUpdate
+$PolicyArguments = @((Join-Path $ProjectRoot 'tools\release-policy.mjs'), '--upstream', $UpstreamMainlineVersion)
+if ($MainlineUpdate) { $PolicyArguments += '--mainline' }
+& node @PolicyArguments
+if ($LASTEXITCODE -ne 0) { throw 'Release policy validation failed.' }
 $UpdateKind = if ($MainlineUpdate) { 'mainline' } else { 'minor' }
 $Channel = if ($MainlineUpdate) { '02-主线版本更新' } else { '01-小版本更新' }
 $OutputRoot = Join-Path $OutputRoot $Channel

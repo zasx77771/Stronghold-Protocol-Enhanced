@@ -6,7 +6,9 @@
 - `upstream-v0.1.1`：用户提供的 `Stronghold-Protocol-v0.1.1.zip` 上游快照；提交 `1fd75dd` 从 `upstream-v0.1.0` 演进而来。
 - `upstream-v0.1.2`：用户提供的 `Stronghold-Protocol-v0.1.2.zip` 上游快照；从 `upstream-v0.1.1` 演进而来。
 - `upstream-v0.1.3`：用户提供的 `Stronghold-Protocol-v0.1.3.zip` 上游快照；从 `upstream-v0.1.2` 演进而来。
-- `enhanced-v0.3.1-vc16`：基于上游 0.1.3 的当前完整增强版（Android versionCode 16）。
+- `upstream-v0.1.4`：以 Git `upstream/master` 的 `v0.1.4` 为代码基线；用户提供的 ZIP 仅用于更新运行素材。
+- `enhanced-v1.4.0-vc17`：基于上游 0.1.4 的当前完整增强版（Android versionCode 17）。
+- `enhanced-v0.3.1-vc16`：基于上游 0.1.3 的上一完整增强版。
 - `enhanced-v0.2.6-vc13`：基于上游 0.1.2 的上一完整增强版（Android versionCode 13）。
 - `enhanced-v0.2.5-vc12`：基于上游 0.1.1 的上一完整增强版。
 - `enhanced-v0.2.4-vc11`、`enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：旧增强版历史节点，保留用于审计和回退。
@@ -15,7 +17,7 @@
 
 ## 推荐：把下一版上游合并进增强主线
 
-当前主线已完成 0.1.3 合并；下次更新从 `main` 和 `upstream-v0.1.3` 继续建立新的上游快照。
+当前主线已完成 0.1.4 合并；下次更新从 `enhanced-mode` 和 `upstream-v0.1.4` 继续建立新的上游快照。
 
 先保存现有工作，再获取上游：
 

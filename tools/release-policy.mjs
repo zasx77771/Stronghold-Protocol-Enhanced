@@ -18,20 +18,33 @@ function versionParts(value, label) {
   return match.slice(1).map(Number);
 }
 
-function localVersionFor(upstreamVersion, localVersion, { mainline = false } = {}) {
-  const [, , upstreamPatch] = versionParts(upstreamVersion, 'upstreamMainlineVersion');
+export function assertLocalVersionFor(upstreamVersion, localVersion, policy, { mainline = false } = {}) {
+  const [upstreamMajor, upstreamMinor, upstreamPatch] = versionParts(upstreamVersion, 'upstreamMainlineVersion');
+  if (upstreamMajor !== 0) fail(`upstreamMainlineVersion must use 0.M.N form, received ${upstreamVersion}`);
+
+  let expectedMajor = upstreamMinor;
+  let expectedMinor = upstreamPatch;
+  const legacy = policy.legacyVersionLine;
+  if (legacy && upstreamVersion === legacy.upstreamVersion) {
+    const match = /^(\d+)\.(\d+)$/.exec(String(legacy.localLine));
+    if (!match) fail(`legacyVersionLine.localLine must use X.Y form, received ${legacy.localLine}`);
+    expectedMajor = Number(match[1]);
+    expectedMinor = Number(match[2]);
+  }
+
   const [major, minor, revision] = versionParts(localVersion, 'package.json version');
-  if (major !== 0 || minor !== upstreamPatch) {
-    fail(`upstream ${upstreamVersion} requires local version 0.${upstreamPatch}.*, received ${localVersion}`);
+  if (major !== expectedMajor || minor !== expectedMinor) {
+    fail(`upstream ${upstreamVersion} requires local version ${expectedMajor}.${expectedMinor}.*, received ${localVersion}`);
   }
   if (mainline && revision !== 0) {
-    fail(`a mainline release for upstream ${upstreamVersion} must be 0.${upstreamPatch}.0, received ${localVersion}`);
+    fail(`a mainline release for upstream ${upstreamVersion} must be ${expectedMajor}.${expectedMinor}.0, received ${localVersion}`);
   }
+  return { expectedMajor, expectedMinor, revision };
 }
 
 export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = null, mainline = false } = {}) {
   const policy = readJson(root, 'release-policy.json');
-  if (policy.format !== 'stronghold-release-policy-v1') fail('unsupported release-policy.json format');
+  if (policy.format !== 'stronghold-release-policy-v2') fail('unsupported release-policy.json format');
   const upstream = policy.upstreamMainlineVersion;
   versionParts(upstream, 'release-policy.json upstreamMainlineVersion');
   if (upstreamMainlineVersion && upstreamMainlineVersion !== upstream) {
@@ -50,7 +63,7 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
   const androidVersion = /versionName\s+['"]([^'"]+)['"]/.exec(androidGradle)?.[1];
   const androidCode = Number(/versionCode\s+(\d+)/.exec(androidGradle)?.[1]);
 
-  localVersionFor(upstream, pkg.version, { mainline });
+  assertLocalVersionFor(upstream, pkg.version, policy, { mainline });
   for (const [label, value] of Object.entries({
     'package-lock.json version': lock.version,
     'package-lock.json root package version': lock.packages?.['']?.version,

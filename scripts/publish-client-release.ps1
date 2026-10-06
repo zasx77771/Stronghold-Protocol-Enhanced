@@ -19,21 +19,16 @@ if ($MainlineUpdate -and -not $HasPreviousWindows) {
   throw 'A mainline release requires the previous mainline Windows client directory.'
 }
 if (-not $UpstreamMainlineVersion) {
-  throw 'Every release requires -UpstreamMainlineVersion, for example 0.1.2 or 0.1.3.'
+  throw 'Every release requires -UpstreamMainlineVersion, for example 0.1.3 or 0.1.4.'
 }
 
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $PackageInfo = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $LocalVersion = [string]$PackageInfo.version
-$UpstreamMatch = [regex]::Match($UpstreamMainlineVersion, '^\d+\.\d+\.(?<tail>\d+)$')
-$LocalMatch = [regex]::Match($LocalVersion, '^0\.(?<mainline>\d+)\.(?<revision>\d+)(?:[-+][0-9A-Za-z.-]+)?$')
-if (-not $UpstreamMatch.Success) { throw "Upstream mainline version must use X.Y.Z form: $UpstreamMainlineVersion" }
-if (-not $LocalMatch.Success -or $LocalMatch.Groups['mainline'].Value -ne $UpstreamMatch.Groups['tail'].Value) {
-  throw "Local version $LocalVersion does not match upstream $UpstreamMainlineVersion. Expected local form: 0.$($UpstreamMatch.Groups['tail'].Value).*"
-}
-if ($MainlineUpdate -and $LocalMatch.Groups['revision'].Value -ne '0') {
-  throw "A mainline release based on upstream $UpstreamMainlineVersion must start at 0.$($UpstreamMatch.Groups['tail'].Value).0; small releases increment only the final number."
-}
+$PolicyArguments = @((Join-Path $ProjectRoot 'tools\release-policy.mjs'), '--upstream', $UpstreamMainlineVersion)
+if ($MainlineUpdate) { $PolicyArguments += '--mainline' }
+& node @PolicyArguments
+if ($LASTEXITCODE -ne 0) { throw 'Release policy validation failed.' }
 
 $WindowsArguments = @{
   ElectronVersion = $ElectronVersion
