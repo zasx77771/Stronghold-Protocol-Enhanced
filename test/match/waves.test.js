@@ -245,6 +245,10 @@ test('联防 wave: walkers on the escaped lrsldr action, flyers on yokai, tokens
   const two = buildUniteWave(gd, leaked, 2, 60);
   assert.equal(one.templateId, 'act1autochess_escaped_single');
   assert.equal(two.templateId, 'act1autochess_escaped_multi');
+  assert.deepEqual(one.routes[0].checkpoints.slice(0, 7), [
+    [9.01, 8.54], [11.49, 8.52], [11.48, 7.53], [9.05, 7.56],
+    [9.04, 6.48], [11.52, 6.5], [11.5, 5.48],
+  ], 'the single-helper flight keeps the official checkpoint offsets instead of cutting diagonally between tile centres');
   for (const w of [one, two]) {
     const tpl = DATA.waves[w.templateId];
     const act = (k) => tpl.spawns.find((s) => s.key === k);
