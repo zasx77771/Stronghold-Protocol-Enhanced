@@ -1,11 +1,14 @@
-// Tier-3 operator kits (server/sim/content/kits/tier3.js): every chess runs a real battle through the harness and
+// Tier-3 operator kits (server/sim/content/kits/ops/chess_char_3_*.js): every chess runs a real battle through the harness and
 // its signature skill / talent / module effect is asserted with numbers taken from its own blackboards.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { getDefaultSource } from '../../server/sim/simdata.js';
 import { effectiveProfile } from '../../server/sim/ai.js';
-import KITS from '../../server/sim/content/kits/tier3.js';
+import { TIER_KITS } from '../../server/sim/content/kits/index.js';
+import { COLS } from '../../server/sim/constants.js';
+
+const KITS = TIER_KITS[2];
 
 const ds = getDefaultSource();
 const D = (id) => ds.getChess(id);
@@ -110,23 +113,38 @@ test('3_03 诗怀雅: 近距离作战指导 melee ATK aura, ×talent_scale durin
   done(h);
 });
 
-test('3_04 琳琅诗怀雅: coins → champagne bomb (ATK% + 停顿), 大买家 coin/ATK per DP payment, 破财消灾 DP revive', () => {
+/** 琳琅诗怀雅 S2's placement range x-6 (range_table; PRTS 备注 "香槟炸弹放置范围：x-6") — symmetric, so facing does not matter. */
+const SWIRE_X6 = [[2, 0], [1, 0], [0, -2], [0, -1], [0, 0], [0, 1], [0, 2], [-1, 0], [-2, 0]];
+const TRAP = 'token_10031_swire2_gdtrap';
+const trapsOf = (h) => h.b.allyUnits.filter((t) => t.alive && t.defId === TRAP);
+const x6Keys = (r, c) => new Set(SWIRE_X6.map(([dr, dc]) => (r + dr) * COLS + c + dc));
+/** Flat stage where the only free placeable tile of x-6 around (9,5) is (9,6): the others are walkable 'R' road. */
+const ONE_TILE = { rows: { 9: '##ERRrrRrrSrrrrrrrS##', 10: '##hrrRrrrrfrrrrrrrf##', 11: '##hrrRrrrrfrrrrrrrf##' } };
+
+test('3_04 琳琅诗怀雅: coins → champagne bombs on range x-6 with no enemy needed (ATK% + 停顿), 大买家 coin/ATK per DP payment, 破财消灾 DP revive', () => {
   const id = 'chess_char_3_04_a', bb = BB(id), t0 = TB(id, 0), t1 = TB(id, 1);
   const booms = [];
   const h = makeBattle({
     defs: { enemies: { enemy_w: enemyRec({ key: 'enemy_w', hp: 1e6, speed: 1, def: 0, atk: 0 }) } }, timeLimit: 60, hooks: ['damaged', 'deploy'], captureNoisy: true,
-    units: [{ chessId: id, row: 9, col: 5 }], enemies: [{ key: 'enemy_w', route: 0 }],
+    units: [{ chessId: id, row: 9, col: 5 }], enemies: [{ key: 'enemy_w', route: 0, time: 8 }],
     setup: (b) => b.on('damaged', (c) => { if (c.dmg?.tags?.includes('trap')) booms.push({ amount: c.amount, atk: c.source.s.atk, t: b.time }); }),
   });
   const u = h.unit(id);
+  const x6 = x6Keys(9, 5);
   h.step();
-  assert.equal(u.mem.coins, t0.sp, '开启技能 coin');
+  // the 开启技能 coin (大买家) is thrown at once — her attack's turn, nobody on the field (client charpack: the S2 attack is
+  // [SpawnToken if a free x-6 tile and a coin, else Attack]; PRTS 备注 "否则随机放置香槟至可部署的地块")
+  assert.equal(trapsOf(h).length, t0.sp, 'the deployment coin became a bomb with no enemy around');
+  assert.equal(u.mem.coins, 0);
   h.run(3.1);
-  assert.equal(u.mem.coins, t0.sp, 'the payment coin is immediately spent on the bomb');
-  assert.equal(u.findBuff('talent:swire2_buyer')?.stacks, 1);
+  assert.equal(u.findBuff('talent:swire2_buyer')?.stacks, 1, 'first trait payment: an ATK stack');
   approx(u.s.atk, u.base.atk * (1 + t0.atk));
-  assert.ok(h.runUntil(() => booms.length > 0, 20), 'bomb exploded');
-  assert.ok(h.hooksOf('deploy').some((c) => c.unit.defId === 'token_10031_swire2_gdtrap'), 'bomb token placed');
+  assert.equal(trapsOf(h).length, t0.sp + t0.trait_sp, '… and its coin another bomb');
+  for (const t of trapsOf(h)) {
+    assert.ok(x6.has(t.tileR * COLS + t.tileC), `bomb (${t.tileR},${t.tileC}) on range x-6`);
+    assert.ok(h.b.grid.groundPassable(t.tileR, t.tileC) && h.b.grid.canStand(t.tileR, t.tileC), 'on walkable ground a melee unit may stand on');
+  }
+  assert.ok(h.runUntil(() => booms.length > 0, 30), 'bomb exploded');
   approx(booms[0].amount, booms[0].atk * bb.atk_scale, 1e-6, 'bomb damage');
   const e = h.enemy('enemy_w');
   assert.ok(e.findBuff('sluggish'), '停顿');
@@ -144,26 +162,6 @@ test('3_04 琳琅诗怀雅: coins → champagne bomb (ATK% + 停顿), 大买家 
   p.dp = 0;
   h.b.dealDamage(null, u, { type: 'true', amount: 1e6 });
   assert.equal(u.alive, false, 'no DP ⇒ no save');
-  done(h);
-});
-
-test("3_04 琳琅诗怀雅 S2 '见面礼': a merchant payment places a bomb without an attack", () => {
-  const id = 'chess_char_3_04_a';
-  const h = makeBattle({
-    timeLimit: 20, autoFinish: false, hooks: ['deploy'], captureNoisy: true,
-    flags: { dpInit: 60, dpMax: 99, dpPerSec: 0 },
-    units: [{ chessId: id, row: 9, col: 5 }],
-  });
-  const u = h.unit(id);
-  h.step();
-  const coinsBeforePayment = u.mem.coins;
-  h.run(3.1);
-  const bombs = h.b.allyUnits.filter((x) => x.alive && x.defId === 'token_10031_swire2_gdtrap');
-  assert.equal(bombs.length, 1, 'the trait payment creates a bomb even with no attack target');
-  assert.equal(u.mem.coins, coinsBeforePayment, 'the payment coin is consumed by the bomb');
-  const bomb = bombs[0];
-  assert.ok(Math.abs(bomb.tileR - u.tileR) + Math.abs(bomb.tileC - u.tileC) <= 2, 'bomb is placed within two cardinal tiles');
-  assert.ok(bomb.tileR === u.tileR || bomb.tileC === u.tileC, 'bomb stays on a cardinal tile');
   done(h);
 });
 
@@ -731,11 +729,17 @@ test('3_19 伺夜: wolf pack (2 → 3 wolves, block/bites, lose a wolf instead o
   assert.ok(g.runUntil(() => v.skill.active, 5));
   g.runUntil(() => !v.skill.active, 20);
   approx(gp.dp, gdp + BB(gid).value, 1e-6, '精锐 DP over the full duration');
+  // the last wolf falls: 战术点形态 (PRTS 狼群领袖 备注) for the 狼影 interval, then the same pack back with one wolf —
+  // not a new pack after the token's redeploy time (until 0.2.0)
+  const iv = ds.getToken('token_10028_vigil_wolf', gid).talents[0].bb.interval;
   g.b.dealDamage(null, gw, { type: 'true', amount: 1e7 });
   g.b.dealDamage(null, gw, { type: 'true', amount: 1e7 });
   assert.equal(gw.alive, false);
   g.run(gw.base.respawnTime + 0.5);
-  assert.ok(v.trait.reinforcement !== gw && v.trait.reinforcement?.alive, 'pack re-summoned after its respawn time');
+  assert.equal(gw.alive, false, 'not back after the token’s redeploy time');
+  assert.ok(g.runUntil(() => gw.alive, iv), 'back after the 狼影 interval');
+  assert.equal(v.trait.reinforcement, gw, 'the same pack');
+  assert.equal(gw.mem.wolves, 1, 'with one wolf');
   done(g);
 });
 
@@ -866,45 +870,47 @@ test('3_02 断崖: 浮游刃 blades hit enemies blocked by the allies around her
   done(h);
 });
 
-test('3_04 琳琅诗怀雅 精锐: MER-X drain, coin cap, armed bomb hits twice; bombs never land on a dead operator’s tile', () => {
+test('3_04 琳琅诗怀雅 精锐: MER-X drain; no enemy ⇒ coins fill every free tile of x-6, then pile up to the cap; armed bomb hits twice; never on a dead operator’s tile', () => {
   const gid = 'chess_char_3_04_b', bb = BB(gid), t0 = TB(gid, 0), tb = TR(gid);
-  // drain + one coin is immediately spent on each passive bomb placement
-  const q = makeBattle({ units: [{ chessId: gid, row: 9, col: 5 }], timeLimit: 60, flags: { dpPerSec: 0 } });
+  // drain; no enemy: every coin becomes a bomb on a free tile of x-6 until none is left, then the coins pile up to the cap
+  const q = makeBattle({ units: [{ chessId: gid, row: 9, col: 5 }], timeLimit: 90, flags: { dpPerSec: 0 } });
   const s = q.unit(gid);
   q.step();
-  q.b.getPlayer('p1').dp = 50;
+  q.b.getPlayer('p1').dp = 90;
   q.run(3.1);
-  approx(q.b.getPlayer('p1').dp, 50 - Math.abs(tb.cost), 1e-6, 'module: 2 DP per payment');
-  q.run(tb.interval * (bb.sp + 1));
+  approx(q.b.getPlayer('p1').dp, 90 - Math.abs(tb.cost), 1e-6, 'module: 2 DP per payment');
+  // the flat field around (9,5): x-6 has 6 free placeable tiles (row 9 cols 3/4/6/7, (10,5), (11,5); rows 7/8 are no field)
+  const free = [...x6Keys(9, 5)].filter((k) => { const r = (k / COLS) | 0, c = k % COLS; return !(r === 9 && c === 5) && q.b.grid.groundPassable(r, c) && q.b.grid.canStand(r, c); });
+  assert.equal(free.length, 6);
+  q.run(tb.interval * (free.length + bb.sp + 1));
+  assert.deepEqual(trapsOf(q).map((t) => t.tileR * COLS + t.tileC).sort((a, b) => a - b), free.sort((a, b) => a - b), 'a bomb on every free tile of x-6');
   const paid = Math.floor((q.b.time + 1e-9) / tb.interval);
-  assert.equal(s.mem.coins, t0.sp, 'the one-coin buffer is spent and replenished per payment');
+  assert.equal(s.mem.coins, bb.sp, 'x-6 full: coin cap = bb.sp');
   assert.equal(s.findBuff('talent:swire2_buyer').stacks, Math.min(t0.max_stack_cnt, paid), 'ATK stack per payment (coins capped, stacks not)');
   done(q);
 
-  // a bomb that stayed duration_switch s on the field hits twice
+  // a bomb that stayed duration_switch s on the field hits twice (only (9,6) is free: the walker comes to it after 3 s)
   const booms = [];
   const h = makeBattle({
+    flat: ONE_TILE,
     defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_w: enemyRec({ key: 'enemy_w', hp: 1e6, speed: 1, def: 0, atk: 0 }) } }, timeLimit: 60,
-    units: [{ chessId: gid, row: 9, col: 5 }], enemies: [],
+    units: [{ chessId: gid, row: 9, col: 5 }], enemies: [{ key: 'enemy_d', pos: [9, 5] }, { key: 'enemy_w', route: 0, time: 1 }],
     setup: (b) => b.on('damaged', (c) => { if (c.dmg?.tags?.includes('trap')) booms.push({ target: c.target.defId, amount: c.amount, atk: c.source.s.atk, t: b.time }); }),
   });
-  const u = h.unit(gid);
-  const switchT = ds.getToken('token_10031_swire2_gdtrap', gid).skill.bb.duration_switch;
-  assert.ok(h.runUntil(() => h.b.allyUnits.some((t) => t.alive && t.defId === 'token_10031_swire2_gdtrap'), 5), 'bomb placed in front of her');
-  const bomb = h.b.allyUnits.find((t) => t.alive && t.defId === 'token_10031_swire2_gdtrap');
-  assert.ok(Math.abs(bomb.tileR - u.tileR) + Math.abs(bomb.tileC - u.tileC) <= 2);
-  assert.ok(bomb.tileR === u.tileR || bomb.tileC === u.tileC);
-  h.run(switchT + 0.1);
-  h.spawn('enemy_w', { pos: [bomb.tileR, bomb.tileC] });
-  assert.ok(h.runUntil(() => booms.length > 0, 5), 'an enemy on the bomb tile triggers it');
+  const switchT = ds.getToken(TRAP, gid).skill.bb.duration_switch;
+  assert.ok(h.runUntil(() => trapsOf(h).length > 0, 5), 'bomb placed');
+  const bomb = trapsOf(h)[0];
+  assert.deepEqual([bomb.tileR, bomb.tileC], [9, 6], 'the one free tile of x-6');
+  assert.ok(h.runUntil(() => booms.length > 0, 30), 'the walker triggered it');
   assert.ok(booms[0].t - bomb.deployedAt >= switchT);
   assert.equal(booms.length, 2, 'armed bomb: one extra hit');
   for (const b of booms) { assert.equal(b.target, 'enemy_w'); approx(b.amount, b.atk * bb.atk_scale); }
   assert.ok(h.enemy('enemy_w').findBuff('sluggish'));
   done(h);
 
-  // a dead operator’s home tile remains reserved even though other cardinal tiles can take a bomb
+  // that one tile belongs to a dead operator waiting to redeploy: no bomb anywhere, no coin spent, and she attacks on
   const k = makeBattle({
+    flat: ONE_TILE,
     defs: { enemies: { enemy_d: dummy('enemy_d') } }, timeLimit: 30,
     units: [{ chessId: gid, row: 9, col: 5 }, { chessId: 'chess_char_3_16_a', row: 9, col: 6 }], enemies: [{ key: 'enemy_d', pos: [9, 5], time: 0.5 }],
   });
@@ -915,11 +921,34 @@ test('3_04 琳琅诗怀雅 精锐: MER-X drain, coin cap, armed bomb hits twice;
   const coins = v.mem.coins;
   k.run(5);
   assert.ok(v.stats.attacks >= 2, 'she kept attacking');
-  const traps = k.b.allyUnits.filter((t) => t.defId === 'token_10031_swire2_gdtrap');
-  assert.ok(traps.length > 0, 'another cardinal tile can receive the bomb');
-  assert.ok(traps.every((t) => t.tileR !== 9 || t.tileC !== 6), 'no bomb on the dead operator’s tile');
-  assert.ok(v.mem.coins < coins + t0.trait_sp, 'a coin is spent only after a valid placement');
+  assert.equal(k.b.allyUnits.filter((t) => t.defId === TRAP).length, 0, 'no bomb on the dead operator’s tile');
+  assert.ok(v.mem.coins >= coins, 'no coin spent');
   done(k);
+});
+
+test('3_04 琳琅诗怀雅 S2 见面礼: an enemy on a free tile of x-6 gets the bomb on its tile — ground only, in her attack target order; outside her 1-1 attack range too', () => {
+  const id = 'chess_char_3_04_a';
+  const bombAt = (enemies) => {
+    const h = makeBattle({
+      defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_f: dummy('enemy_f', { motion: 'FLY' }) } }, timeLimit: 10, autoFinish: false,
+      units: [{ chessId: id, row: 9, col: 5 }], enemies,
+    });
+    const u = h.unit(id);
+    h.step();
+    for (const t of trapsOf(h)) h.b.retreat(t, { reason: 'expired', permanent: true }); // the deployment coin's bomb
+    h.step(2);
+    u.mem.coins = 1;
+    assert.ok(h.runUntil(() => trapsOf(h).length > 0, 2), 'a bomb');
+    const t = trapsOf(h)[0];
+    done(h);
+    return [t.tileR, t.tileC];
+  };
+  // (9,7): two tiles ahead — x-6 but outside her attack range 1-1
+  assert.deepEqual(bombAt([{ key: 'enemy_d', pos: [9, 7] }]), [9, 7]);
+  // two ground enemies: the one nearer the goal (9,2) first (her attack target order: blocked → … → remaining distance)
+  assert.deepEqual(bombAt([{ key: 'enemy_d', pos: [9, 7] }, { key: 'enemy_d', pos: [9, 4] }]), [9, 4]);
+  // a flyer is no target of the selector (its `_targetMotion` WALK): the ground enemy farther from the goal gets it
+  assert.deepEqual(bombAt([{ key: 'enemy_d', pos: [9, 7] }, { key: 'enemy_f', pos: [9, 4], route: 2 }]), [9, 7]);
 });
 
 test('3_07 见行者: 惊爆射击 fires on an enemy inside the skill range only; 精锐 refund only on a ranged tile', () => {

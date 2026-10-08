@@ -160,7 +160,7 @@ test('Final Assault + Hidden Core with a 999-layer 炎 board (real sim, server-r
   const m = h.m;
   m.bossId = 'boss_6';       // 阿利斯泰尔 walks into the board
   m.hiddenBossId = 'boss_9'; // 假想敌：铳 (完全形态) with its three springs
-  m.gd.bossHpMul = () => 0.1; // pools the 4-operator board clears once the stand-in debuff leaves the leaders
+  m.gd.bossHpMul = () => 0.1;
   h.start();
   h.toPrep(14);
   const ps = h.ps('p_0');

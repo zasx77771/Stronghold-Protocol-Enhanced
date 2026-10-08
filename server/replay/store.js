@@ -149,7 +149,7 @@ export class ReplayStore {
     const add = this.db.prepare(`INSERT INTO match_players(match_id, user_id, player_id, seat, name_at_match, tag_at_match, is_bot, loadout_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const p of meta.players || []) {
-      add.run(id, p.userId || null, p.playerId, Number(p.seat) || 0, p.name || '博士', p.tag || null, p.isBot ? 1 : 0,
+      add.run(id, p.userId || null, p.playerId, Number(p.seat) || 0, p.name || /* i18n-ignore: persisted fallback */ '博士', p.tag || null, p.isBot ? 1 : 0,
         JSON.stringify(plain(p.loadout || null)));
     }
     return id;
@@ -181,7 +181,7 @@ export class ReplayStore {
   listMatches({ q = '', limit = 100 } = {}) {
     const query = String(q || '').trim();
     const n = Math.max(1, Math.min(500, Number(limit) || 100));
-    const rows = this.db.prepare(`SELECT m.*, GROUP_CONCAT(COALESCE(mp.name_at_match, '博士') || CASE WHEN mp.tag_at_match IS NOT NULL THEN '#' || mp.tag_at_match ELSE '' END, ' · ') AS players
+    const rows = this.db.prepare(/* i18n-ignore: persisted fallback name and separator */ `SELECT m.*, GROUP_CONCAT(COALESCE(mp.name_at_match, '博士') || CASE WHEN mp.tag_at_match IS NOT NULL THEN '#' || mp.tag_at_match ELSE '' END, ' · ') AS players
       FROM matches m LEFT JOIN match_players mp ON mp.match_id = m.id
       WHERE (? = '' OR m.id LIKE '%' || ? || '%' OR EXISTS (
         SELECT 1 FROM match_players x WHERE x.match_id = m.id AND (x.name_at_match LIKE '%' || ? || '%' OR x.tag_at_match = ?)

@@ -2,15 +2,15 @@
 // seconds; with our layers the official leader never dies that fast"). DESIGN §20.10.
 //   * Pool: one pool for every boss field (official tip "最终攻势中，所有人将一起对敌方领袖造成伤害"), bloodPoint[difficulty]
 //     of data/bosses.json (= activity_table bossInfoDict bloodPoint / Normal / Hard / Abyss of the current data; PRTS
-//     盟约记录's leader table is the older 11月18日 revision, 铳 险境 and 胄 / 铳 / 萨米 绝境 differ, no 终极 column) whatever
-//     the number of alive players (× alive / 4 only with config bossHpScale.aliveScaling, off until confirmed).
+//     盟约记录's leader table is the older 11月18日 revision, 铳 险境 and 胄 / 铳 / 萨米 绝境 differ, no 终极 column) per
+//     player alive when the fight starts (DESIGN §25.13.4: the owner's decision of 2026-10-06, adopting PR #209).
 //   * Damage: the 卫戍 systems' "+X%" attribute bonuses are 直接乘算 — summed, not compounded (PRTS 盟约记录 / 游戏数据基础);
 //     v2.5 compounded them, which made stacked lineups kill the leaders 1.2–3× faster (more with more layers).
 // Real bot matches to the Final Assault (real sim, server-run fields): every operator fighting the leader carries its
 // bond / strategy / equipment bonuses in the additive bucket, both fields drain the one pool exactly once per hit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHASE, bossFinalDamageTakenMul } from '../../shared/constants.js';
+import { PHASE } from '../../shared/constants.js';
 import { makeMatch, DATA } from './harness.js';
 import { aggregateMods } from '../../server/sim/buffs.js';
 import { bondBb } from '../../server/sim/content/bonds/addon/battle.js';
@@ -67,12 +67,12 @@ test('leader HP data = the current official bossInfoDict for every leader and di
 const SYSTEM_KEY = /^(bond|item|band|choice):/;
 const MUL_STATS = ['atkMul', 'defMul', 'hpMul'];
 
-test('终极 Final Assault (+200 layers per active bond): one bloodPoint pool for both fields, bonuses additive, each hit once', () => {
+test('终极 Final Assault (+200 layers per active bond): one pool (bloodPoint × 4 alive) for both fields, bonuses additive, each hit once', () => {
   const h = toFinalAssault({ difficulty: 'ABYSS', seed: 2, bossId: 'boss_1', layers: 200 });
   const m = h.m;
   const pool = m.bossPool;
   assert.equal(m.alivePlayers().length, 4);
-  assert.equal(pool.maxHp, DATA.bosses.boss_1.bloodPoint.ABYSS, 'full team: the data value (3 600 000)');
+  assert.equal(pool.maxHp, DATA.bosses.boss_1.bloodPoint.ABYSS * 4, 'four alive: 4 × the data value (14 400 000)');
   const fields = m.fields.filter((f) => f.battle);
   assert.equal(fields.length, 2, 'two pair fields');
   // one second into the fight: every operator's stats
@@ -99,8 +99,8 @@ test('终极 Final Assault (+200 layers per active bond): one bloodPoint pool fo
 test('绝境 Final Assault: both pair fields drain the one pool, every hit exactly once', () => {
   const h = toFinalAssault({ difficulty: 'HARD', seed: 3, bossId: 'boss_5' });
   const m = h.m;
-  assert.equal(m.bossPool.maxHp, DATA.bosses.boss_5.bloodPoint.HARD, 'four alive: the data value');
-  assert.equal(m.gd.bossPoolHp('boss_5', 2), DATA.bosses.boss_5.bloodPoint.HARD, 'two alive: the same pool (aliveScaling off)');
+  assert.equal(m.bossPool.maxHp, DATA.bosses.boss_5.bloodPoint.HARD * 4, 'four alive: 4 × the data value');
+  assert.equal(m.gd.bossPoolHp('boss_5', 2), DATA.bosses.boss_5.bloodPoint.HARD * 2, 'two alive: 2 × the data value');
   const pool = m.bossPool;
   const fields = m.fields.filter((f) => f.battle);
   assert.equal(fields.length, 2);
@@ -116,9 +116,10 @@ test('绝境 Final Assault: both pair fields drain the one pool, every hit exact
   m.dispose();
 });
 
-test('终极 Final Assault vs 假想敌：胄 (seeded bot match): 奥术 never multiply; a drone link receives the 90% final reduction', () => {
+test('终极 Final Assault vs 假想敌：胄 (seeded bot match): both players\' 奥术 never multiply on the leader; a drone costs it 2 % of the pool', () => {
   // DESIGN §20.10: one 奥术 instance per target (the strongest — PRTS 作战机制 同名buff, 巴哈姆特 12316 "共享型buff會跟對面搶");
-  // 死亡集群's raw "最大生命值2%" = 72 000 at 终极, then the leader's 90 % final reduction leaves 7 200.
+  // 死亡集群's "最大生命值2%" = the leader's shown max HP, the pool (DRONE_LINK_BASE 'pool' [ASSUMED]): 288 000 at 终极
+  // with 4 alive (14 400 000)
   // the bots' boards follow every draw of the match (the elite-to-board merge, DESIGN §20.11, moved seed 7 to 12; the
   // 战术决策 drawn with replacement moved 12 on): the first of these seeds whose bots pair two 奥术 players
   const pairOf = (m) => m.fields.filter((f) => f.battle).find((f) => f.players.length === 2 && f.players.every((pid) => f.battle.getPlayer(pid).bonds.arcaneShip?.active));
@@ -161,11 +162,13 @@ test('终极 Final Assault vs 假想敌：胄 (seeded bot match): 奥术 never m
   }
   assert.ok(withArcane > 100, `the leader carried 奥术 (${withArcane} samples)`);
   assert.ok(links.length >= 1, 'drones were shot down');
-  for (const x of links) assert.equal(x, DATA.bosses.boss_1.bloodPoint.ABYSS * 0.02 * bossFinalDamageTakenMul(m.modeId), 'drone link = 2 % of pool × 10 % final intake');
+  const linkDamage = m.bossPool.maxHp * 0.02;
+  for (const x of links) assert.ok(Math.abs(x - linkDamage) <= 1e-9 * linkDamage, `drone link is 2% of the pool without an extra damage multiplier (${x} vs ${linkDamage})`);
+  assert.equal(m.bossPool.maxHp, DATA.bosses.boss_1.bloodPoint.ABYSS * 4, 'the 14 400 000 pool of 4 alive players');
   m.dispose();
 });
 
-test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): spring transfer is 无来源 and receives the 85% final reduction', () => {
+test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): a 碎铳之簧 passes every damage it takes to the pool 1:1, 无来源, credited', () => {
   // DESIGN §20.10: PRTS 碎铳之簧 "受到伤害时令…假想敌：铳受到等量的无来源生命流失" (v2.5: half); real match → Hidden Core specs
   const seats = [0, 1, 2, 3].map((i) => ({ seat: i, playerId: `ai_${i}`, name: `AI${i}`, isBot: true, connected: true }));
   const h = makeMatch({ mode: 'coop', difficulty: 'HARD', seats, seed: 7, captureFrames: false, instant: false, clientCombat: true });
@@ -194,7 +197,7 @@ test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): spring transfer is �
   assert.equal(m.phase, PHASE.HIDDEN_CORE, 'reached the Hidden Core');
   assert.ok(specs.length >= 1);
   const pool = new SharedBossPool(m.bossPool.maxHp);
-  assert.equal(pool.maxHp, DATA.bosses.boss_9.bloodPoint.HARD, 'the hidden 铳 pool = bloodPoint');
+  assert.equal(pool.maxHp, DATA.bosses.boss_9.bloodPoint.HARD * m.alivePlayers().length, 'the hidden 铳 pool = bloodPoint × the players alive at its start');
   const b = createBattleFromSpec(specs[0], new DataSource(DATA, null), { sharedBoss: pool, recordEvents: false, quiet: true });
   // the springs stand from the start, 铳 enters ≈ 10 game s later
   for (let i = 0; i < 1200 && !b.enemies.some((e) => e.alive && e.isBoss); i++) b.step();
@@ -208,8 +211,7 @@ test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): spring transfer is �
   const pool0 = pool.hp;
   const dealt = b.dealDamage(op, sp, { amount: 50000, type: 'true', canDodge: false });
   assert.ok(dealt > 0, 'the spring took damage');
-  const want = dealt * bossFinalDamageTakenMul(m.modeId);
-  assert.ok(Math.abs((pool0 - pool.hp) - want) < 1e-6, `the pool lost 10% of the spring transfer (${pool0 - pool.hp} vs ${want})`);
+  assert.ok(Math.abs((pool0 - pool.hp) - dealt) < 1e-6, `the pool lost the spring damage 1:1 (${pool0 - pool.hp} vs ${dealt})`);
   assert.ok(seen.length === 1 && seen[0].source === null && seen[0].credit === op, '无来源, credited to the operator');
   m.dispose();
 });

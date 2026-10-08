@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOND_LAYER_CAP, BOSS_HIT_LIMIT, BOSS_FINAL_DAMAGE_REDUCTION, bossFinalDamageTakenMul, layerGainRoom } from '../../shared/constants.js';
+import { BOND_LAYER_CAP, BOSS_HIT_LIMIT, layerGainRoom } from '../../shared/constants.js';
 import { makeBattle, chessRec, enemyRec } from '../helpers/battleHarness.js';
 import { gainLayers } from '../../server/sim/content/support/index.js';
 import { SharedBossPool } from '../../server/match/finalAssault.js';
@@ -133,27 +133,19 @@ function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0, mo
 }
 const capEvents = (h) => h.eventsOf('fx').filter((e) => e[1] === 'hitCap');
 
-test('Boss最终减伤: 标准0%, 险境80%, 绝境85%, 终极90%; 同时适用于直接伤害和传递生命流失', () => {
-  assert.deepEqual(BOSS_FINAL_DAMAGE_REDUCTION, { FUNNY: 0, NORMAL: 0.8, HARD: 0.85, ABYSS: 0.9 });
-  const cases = [
-    ['mode_multi_funny', 1],
-    ['mode_single_normal', 0.2],
-    ['mode_multi_hard', 0.15],
-    ['mode_multi_abyss', 0.1],
-  ];
-  for (const [modeId, mul] of cases) {
-    assert.ok(Math.abs(bossFinalDamageTakenMul(modeId) - mul) < 1e-12, modeId);
+test('Boss不再有增强版最终减伤；各难度的直接伤害和传递生命流失均为100%', () => {
+  for (const modeId of ['mode_multi_funny', 'mode_single_normal', 'mode_multi_hard', 'mode_multi_abyss']) {
     const { b, leader, mini, op } = hitField({ modeId });
-    assert.ok(Math.abs(b.dealDamage(op, leader, { amount: 100000, type: 'true' }) - 100000 * mul) < 1e-9, `${modeId}: leader damage`);
+    assert.equal(b.dealDamage(op, leader, { amount: 100000, type: 'true' }), 100000, `${modeId}: leader damage`);
     assert.equal(b.dealDamage(op, mini, { amount: 100000, type: 'true' }), 100000, `${modeId}: minion unaffected`);
-    assert.ok(Math.abs(b.loseHp(leader, 50000, { source: op }) - 50000 * mul) < 1e-9, `${modeId}: transferred HP loss`);
+    assert.equal(b.loseHp(leader, 50000, { source: op }), 50000, `${modeId}: transferred HP loss`);
   }
 });
 
-test('Boss最终减伤: 减伤后的最终值再判定30万限伤，普通/联防战场不生效', () => {
+test('Boss无额外承伤倍率，最终值直接判定30万限伤；普通/联防战场不受首领限伤影响', () => {
   const { b, leader, op } = hitField({ modeId: 'mode_multi_normal' });
-  assert.equal(b.dealDamage(op, leader, { amount: 1e6, type: 'true' }), 2e5, '1,000,000 × 20% lands below the cap');
-  assert.equal(b.dealDamage(op, leader, { amount: 1.5e6, type: 'true' }), 0, '1,500,000 × 20% reaches the cap and is cancelled');
+  assert.equal(b.dealDamage(op, leader, { amount: 299999, type: 'true' }), 299999, '299,999 lands below the cap');
+  assert.equal(b.dealDamage(op, leader, { amount: 300000, type: 'true' }), 0, '300,000 reaches the cap and is cancelled');
   for (const kind of ['normal', 'unite']) {
     const f = hitField({ kind, modeId: 'mode_multi_abyss' });
     assert.equal(f.b.dealDamage(f.op, f.leader, { amount: 100000, type: 'true' }), 100000, kind);
@@ -400,11 +392,12 @@ test('限伤 vs the real leader defences [ASSUMED order]: 阿利斯泰尔\'s 500
   assert.equal(pool10.hp, before10);
 });
 
-test('限伤 vs 【死亡集群】 (real kit): a drone killed by an operator costs the leader 2 % of the pool max — a loss that lands up to a 14999950 pool and is cancelled above it (ceil)', () => {
+test('限伤 vs 【死亡集群】 (real kit): a drone killed by an operator costs the leader 2 % of the pool max — a share, no hit: it lands past the 300000 line too (DESIGN §25.13.4)', () => {
   // boss_1 / boss_8 skill 2: bb hp_ratio 0.02; the leader's max HP is the shared pool's max (Battle syncs it), so the
-  // loss is 0.02 × pool max. Today's largest drone pool is boss_8 ABYSS 7.2M → 144000; a pool above 14999950 (≈ 2.08 ×
-  // that), where ceil(0.02 × max) reaches 300000, would make every drone kill a cancelled hit — kept in view for any
-  // change to the pool size (research 11 §6).
+  // loss is 0.02 × pool max. With the pool per player alive (the owner's decision of 2026-10-06, PR #209) boss_8 ABYSS
+  // reaches 21.6M / 28.8M at 3 / 4 players: 432000 / 576000 per drone, past the line where ceil(0.02 × max) ≥ 300000 —
+  // until 0.2.0 the link was cancelled there like a hit; it is a share of the pool and lands (Battle.loseHp noHitLimit
+  // [ASSUMED], research 11 §6).
   assert.equal(gd.enemy('enemy_9013_acstmk').skills.find((s) => s.prefabKey === '2').bb.hp_ratio, 0.02);
   assert.equal(gd.enemy('enemy_9013_acstmk_2').skills.find((s) => s.prefabKey === '2').bb.hp_ratio, 0.02);
   const withOp = [{ ...PAIR[0], units: [{ uid: 1, chessId: 'chess_char_1_01_a', row: 10, col: 2 }] }, PAIR[1]];
@@ -427,16 +420,16 @@ test('限伤 vs 【死亡集群】 (real kit): a drone killed by an operator cos
     assert.equal(drone.alive, false, 'the drone died');
     return { lost: before - pool.hp, caps, id: L.id };
   };
-  const today = run(7200000);
-  assert.equal(today.lost, 144000, 'boss_8 ABYSS-sized pool: the loss lands');
-  assert.deepEqual(today.caps, []);
+  const solo = run(7200000);
+  assert.equal(solo.lost, 144000, 'boss_8 ABYSS-sized pool (one player): the loss lands');
+  assert.deepEqual(solo.caps, []);
   const under = run(14999950);
   assert.equal(under.lost, 299999, 'just under the line: lands');
   assert.deepEqual(under.caps, []);
-  for (const m of [14999951, 15000000]) {
+  for (const [m, want] of [[14999951, 299999.02], [15000000, 300000], [21600000, 432000], [28800000, 576000]]) {
     const over = run(m);
-    assert.equal(over.lost, 0, `${m}: ceil(0.02 × max) = 300000, one hit at the line: cancelled`);
-    assert.deepEqual(over.caps.map((c) => c[0]), [over.id]);
+    assert.ok(Math.abs(over.lost - want) < 1e-6, `${m}: the share lands past the line (${over.lost})`);
+    assert.deepEqual(over.caps, [], `${m}: no cancelled hit`);
   }
 });
 
