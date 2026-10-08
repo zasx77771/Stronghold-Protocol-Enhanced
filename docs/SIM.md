@@ -716,10 +716,8 @@ PRTS 异常效果: 无法选择 effects "仅在选择时生效"); checked before
 (`rng()`) → mitigation (phys
 `max(A − max(0, D×(1−defIgnorePct) − defIgnoreFlat), 5 %A)`, arts `max(A×(1 − R′/100), 5 %A)`, elemental
 `max(A×(1 − 元素抗性/100), 5 %A)`, true = A; source ignore mods are added) → × source `dmgDealtMul` (× phys/artsDealtMul)
-× target `dmgTakenMul` (not for elemental) × type-taken mul × `dmg.mul` (a `sourceless` hit skips every source term) →
-**增强版最终减伤** (`leaderFinalDamageMul`: only the tag-`boss` leader in Final Assault / Hidden Core; standard / normal /
-hard / abyss final damage multipliers are 1 / 0.2 / 0.15 / 0.1; parts and escorts are unaffected; this is an intentional
-enhanced-mode difference) →
+× target `dmgTakenMul` (not for elemental) × type-taken mul × `dmg.mul` (a `sourceless` hit skips every source term; there
+is no extra enhanced-mode multiplier for Final Assault / Hidden Core leaders) →
 **限伤** (`leaderHitCancelled`: on a leader — `isBoss`, the tag-'boss' units: data/bosses.json `enemyKey`, the official
 `IsBossEnemy` list, and their mirrored copies; never parts, escorts, drones — in a `'boss'` / `'hidden'` battle, a hit
 with `ceil(final) ≥ BOSS_HIT_LIMIT` (300000, shared/constants.js) is cancelled whole: returns 0 before shields (阿利斯泰尔's

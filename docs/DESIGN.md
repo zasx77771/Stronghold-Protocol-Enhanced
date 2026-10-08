@@ -6,7 +6,7 @@ Language: player-facing text is **Simplified Chinese** by default, with an Engli
 
 Versions: the first public release was **0.1.0** (2026-10-02, the state of §0–§20.15); the releases after it add the player feedback and GitHub reports — 0.1.1 §21, 0.1.2 §22, 0.1.3 §23, 0.1.4 §24 — and **0.2.0** (2026-10-07; `CHANGELOG.md`) the maintainability refactor, two languages, 补位, 自选编队 and their fidelity work — §25 — and **0.2.1** (2026-10-07; `package.json`, `shared/constants.js APP_VERSION`) the 联防 battlefield restored, full potential and the GitHub fixes after it — §26 — and is the state described by this document. The labels v1 / v2 / v2.1–v2.5.2 in §0, §14–§20 and in the BALANCE / SIM comparisons name the design generations and the private playtest builds that came before it; they are kept as history.
 
-Enhanced 2.1.0 deliberately adds difficulty-specific final damage reduction to Final Assault / Hidden Core leaders after the ordinary upstream pipeline: standard / normal / hard / abyss leaders take 100% / 20% / 15% / 10%. This intentional difference is protected by `test/sim/playtest6_limits.test.js` and documented in `docs/SIM.md`.
+Enhanced 2.1.1 removes the earlier difficulty-specific final damage reduction from Final Assault / Hidden Core leaders. Their pool follows upstream PR #209's rule (`bloodPoint × players alive when the fight starts`), while damage uses the ordinary upstream pipeline and the official single-hit limit without an extra enhanced-mode multiplier. This is protected by `test/sim/playtest6_limits.test.js` and documented in `docs/SIM.md`.
 
 ---
 

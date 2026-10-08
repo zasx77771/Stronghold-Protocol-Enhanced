@@ -5,7 +5,7 @@ import { N_ } from './i18n.js';
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '2.1.0';
+export const APP_VERSION = '2.1.1';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
@@ -117,24 +117,6 @@ export function layerGainRoom(before, n) {
  * 0 / Infinity = off.
  */
 export const BOSS_HIT_LIMIT = 300000;
-
-/**
- * Enhanced-mode final damage reduction for leaders, keyed by simulation difficulty. It applies only in Final Assault
- * and Hidden Core, after ordinary damage multipliers and before shields and the official single-hit limit.
- */
-export const BOSS_FINAL_DAMAGE_REDUCTION = Object.freeze({
-  FUNNY: 0,
-  NORMAL: 0.8,
-  HARD: 0.85,
-  ABYSS: 0.9,
-});
-
-/** Remaining final damage multiplier for a mode id (`mode_single_normal`, `mode_multi_abyss`, ...). */
-export function bossFinalDamageTakenMul(modeId) {
-  const difficulty = typeof modeId === 'string' ? modeId.split('_').pop().toUpperCase() : '';
-  const reduction = BOSS_FINAL_DAMAGE_REDUCTION[difficulty];
-  return Number.isFinite(reduction) ? Math.max(0, Math.min(1, 1 - reduction)) : 1;
-}
 
 // Snapshot unit flag bits (DESIGN §8.2)
 export const UF = Object.freeze({

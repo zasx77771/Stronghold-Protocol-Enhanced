@@ -4,7 +4,7 @@
 
 import {
   dealDamage as pipeDamage, heal as pipeHeal, applyHpLoss, makeDamageInfo, reduceElement,
-  leaderHitCancelled, leaderFinalDamageMul,
+  leaderHitCancelled,
 } from '../damage.js';
 import { effectiveProfile, performAttack, acquireTargets } from '../ai.js';
 
@@ -29,7 +29,6 @@ export class BattleCombat {
    */
   loseHp(target, amount, { source = null, silent = false, tags = null, from = null, sourceless = false, noHitLimit = false } = {}) {
     if (!target || !target.alive || !(amount > 0)) return 0;
-    amount *= leaderFinalDamageMul(this, target);
     // 限伤 (shared/constants.js BOSS_HIT_LIMIT): a loss passed on to a leader (the parts' 传递) is one hit too
     if (!noHitLimit && leaderHitCancelled(this, target, amount)) return 0;
     const t = ['hpLoss'];

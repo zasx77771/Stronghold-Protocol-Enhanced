@@ -10,7 +10,7 @@
 // bond / strategy / equipment bonuses in the additive bucket, both fields drain the one pool exactly once per hit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHASE, bossFinalDamageTakenMul } from '../../shared/constants.js';
+import { PHASE } from '../../shared/constants.js';
 import { makeMatch, DATA } from './harness.js';
 import { aggregateMods } from '../../server/sim/buffs.js';
 import { bondBb } from '../../server/sim/content/bonds/addon/battle.js';
@@ -162,8 +162,8 @@ test('终极 Final Assault vs 假想敌：胄 (seeded bot match): both players\'
   }
   assert.ok(withArcane > 100, `the leader carried 奥术 (${withArcane} samples)`);
   assert.ok(links.length >= 1, 'drones were shot down');
-  const linkDamage = m.bossPool.maxHp * 0.02 * bossFinalDamageTakenMul(m.modeId);
-  for (const x of links) assert.ok(Math.abs(x - linkDamage) <= 1e-9 * linkDamage, `drone link includes final damage reduction (${x} vs ${linkDamage})`);
+  const linkDamage = m.bossPool.maxHp * 0.02;
+  for (const x of links) assert.ok(Math.abs(x - linkDamage) <= 1e-9 * linkDamage, `drone link is 2% of the pool without an extra damage multiplier (${x} vs ${linkDamage})`);
   assert.equal(m.bossPool.maxHp, DATA.bosses.boss_1.bloodPoint.ABYSS * 4, 'the 14 400 000 pool of 4 alive players');
   m.dispose();
 });
@@ -211,8 +211,7 @@ test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): a 碎铳之簧 passe
   const pool0 = pool.hp;
   const dealt = b.dealDamage(op, sp, { amount: 50000, type: 'true', canDodge: false });
   assert.ok(dealt > 0, 'the spring took damage');
-  const forwarded = dealt * bossFinalDamageTakenMul(b.modeId);
-  assert.ok(Math.abs((pool0 - pool.hp) - forwarded) < 1e-6, `the pool lost the spring damage after final damage reduction (${pool0 - pool.hp} vs ${forwarded})`);
+  assert.ok(Math.abs((pool0 - pool.hp) - dealt) < 1e-6, `the pool lost the spring damage 1:1 (${pool0 - pool.hp} vs ${dealt})`);
   assert.ok(seen.length === 1 && seen[0].source === null && seen[0].credit === op, '无来源, credited to the operator');
   m.dispose();
 });

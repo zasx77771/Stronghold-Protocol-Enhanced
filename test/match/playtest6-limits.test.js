@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHASE, BOND_LAYER_CAP, BOSS_HIT_LIMIT, bossFinalDamageTakenMul } from '../../shared/constants.js';
+import { PHASE, BOND_LAYER_CAP, BOSS_HIT_LIMIT } from '../../shared/constants.js';
 import { Battle } from '../../server/sim/Battle.js';
 import { validateClientResult } from '../../server/match/fields.js';
 import { collectViolations } from '../../server/match/invariants.js';
@@ -160,8 +160,7 @@ test('Final Assault + Hidden Core with a 999-layer 炎 board (real sim, server-r
   const m = h.m;
   m.bossId = 'boss_6';       // 阿利斯泰尔 walks into the board
   m.hiddenBossId = 'boss_9'; // 假想敌：铳 (完全形态) with its three springs
-  // Keep this limit-focused fixture's effective time-to-kill unchanged under enhanced final damage reduction.
-  m.gd.bossHpMul = () => 0.1 * bossFinalDamageTakenMul(m.modeId);
+  m.gd.bossHpMul = () => 0.1;
   h.start();
   h.toPrep(14);
   const ps = h.ps('p_0');

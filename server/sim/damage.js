@@ -51,7 +51,7 @@
 // has `hitSleep` or the damage carries `ignoreSleep`.
 
 import { MIN_DAMAGE_RATIO, ELEMENT, ELEMENT_ORDER, PALSY_MAX } from './constants.js';
-import { BOSS_HIT_LIMIT, bossFinalDamageTakenMul } from '../../shared/constants.js';
+import { BOSS_HIT_LIMIT } from '../../shared/constants.js';
 import { evadesGround } from './targeting.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -182,12 +182,6 @@ export function leaderHitCancelled(battle, target, amount) {
   return true;
 }
 
-/** Final damage multiplier for an actual leader in a Final Assault or Hidden Core battle. */
-export function leaderFinalDamageMul(battle, target) {
-  if (!target || !target.isBoss || (battle.kind !== 'boss' && battle.kind !== 'hidden')) return 1;
-  return bossFinalDamageTakenMul(battle.modeId);
-}
-
 /**
  * Absorb damage with shields on `target`. Returns the remaining amount. `type` = the damage type: a shield buff with a
  * `shieldType` absorbs only that type (夜莺 S2 "屏障能吸收…法术伤害") — or, a list of types, only those (机械师's 屏障:
@@ -278,7 +272,6 @@ export function dealDamage(battle, source, target, dmgIn) {
   if (ss) mul *= ss.dmgDealtMul * (type === 'phys' ? ss.physDealtMul : type === 'arts' ? ss.artsDealtMul : 1);
   mul *= type === 'phys' ? ts.physTakenMul : type === 'arts' ? ts.artsTakenMul : type === 'elemental' ? ts.elementalTakenMul : ts.trueTakenMul;
   final *= mul;
-  final *= leaderFinalDamageMul(battle, target);
   if (!(final > 0) || !Number.isFinite(final)) final = 0;
   // 限伤: a leader's hit of ≥ BOSS_HIT_LIMIT in a boss / hidden battle is cancelled before it reaches shields / HP — what
   // ran before it (the attack, its SP, `hit` hook effects, separate element 损伤) stays; nothing after it happens

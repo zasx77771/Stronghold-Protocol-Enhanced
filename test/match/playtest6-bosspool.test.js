@@ -17,7 +17,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHASE, bossFinalDamageTakenMul } from '../../shared/constants.js';
+import { PHASE } from '../../shared/constants.js';
 import { makeMatch } from './harness.js';
 
 /** A real client-combat match (real sim) of 2 humans to the Final Assault on the user's stage and difficulty. */
@@ -29,7 +29,7 @@ function realFinalAssault({ bossId, seed, clientCombat = true }) {
   // the autoplay lineups cannot clear a full 绝境 pool: 5 % of the one-player table value (the tuning knob
   // GameData.bossHpMul; the pool counts both players alive since DESIGN §25.13.4, so 2.5 % of it) — the pool's
   // arithmetic, not its size, stalled the fight
-  m.gd.bossHpMul = () => 0.025 * bossFinalDamageTakenMul(m.modeId);
+  m.gd.bossHpMul = () => 0.025;
   h.autoHumans();
   m.start();
   let last = '';
