@@ -392,7 +392,7 @@ hidden core `h08_0X`; 联防 `act1autochess_escaped_single|multi`; training `tr0
 | `bossId` | `null` / `"boss_8"` | |
 | `maxPlayTime` | `55` | **real** seconds of the forced-2× battle (DESIGN §4; spawn `time`s below are game seconds) |
 | `dp`, `characterLimit`, `moveMultiplier`, `bgm` | `{"init":10,"perSec":1,"max":99}`, `8`, `0.5`, `"bat_kazimierz2_2"` | level options |
-| `routes[]` | `{"motion":"FLY","start":[9,10],"end":[9,2],"checkpoints":[[9,9],[12,9],…]}` | WALK routes have 0–1 checkpoints (usually the end) ⇒ pathfind between them on the stage grid; `motion:"E_NUM"` (start/end `[0,0]`) = dummy route of a non-SPAWN action (only `ACTIVATE_PREDEFINED` in boss_4 branches) |
+| `routes[]` | `{"motion":"FLY","start":[9,10],"end":[9,2],"checkpoints":[[9.01,8.54],[11.49,8.52],…]}` | positional checkpoints include the official `reachOffset` from their tile centre and may be fractional; WALK routes have 0–1 checkpoints (usually the end) ⇒ pathfind between them on the stage grid; `motion:"E_NUM"` (start/end `[0,0]`) = dummy route of a non-SPAWN action (only `ACTIVATE_PREDEFINED` in boss_4 branches) |
 | `routes[].steps` | `[{"t":"move","p":[1,17]},{"t":"disappear"},{"t":"wait","s":3},{"t":"appear","p":[5,10]}]` | present only when a route has non-MOVE checkpoints (`move`, `patrol`, `wait` s, `disappear`, `appear` p); authoritative when present |
 | `routes[].spawnRandom` | `[0.3,0.3]` | random spawn offset (tiles), optional |
 | `extraRoutes[]` | same shape | routes used by `branches` |
