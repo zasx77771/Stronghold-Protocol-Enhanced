@@ -1,45 +1,52 @@
-# 上游更新后的增强版重新部署
+# 上游更新与增强版同步
 
-本仓库用明确的 Git 分支与标签保存上游快照和增强版本：
+本仓库使用 Git 远端、分支和实际标签保存上游与增强历史。标签必须先用 Git 核验，文档不得预先声明尚未创建的标签。
 
 - `upstream-v0.1.0`：用户提供的 `Stronghold-Protocol-v0.1.0.zip` 原始源码基线。
 - `upstream-v0.1.1`：用户提供的 `Stronghold-Protocol-v0.1.1.zip` 上游快照；提交 `1fd75dd` 从 `upstream-v0.1.0` 演进而来。
 - `upstream-v0.1.2`：用户提供的 `Stronghold-Protocol-v0.1.2.zip` 上游快照；从 `upstream-v0.1.1` 演进而来。
 - `upstream-v0.1.3`：用户提供的 `Stronghold-Protocol-v0.1.3.zip` 上游快照；从 `upstream-v0.1.2` 演进而来。
-- `upstream-v0.1.4`：以 Git `upstream/master` 的 `v0.1.4` 为代码基线；用户提供的 ZIP 仅用于更新运行素材。
-- `upstream-v0.2.1`：以 Git `upstream/master` 的 `v0.2.1` 为代码基线；用户提供的 ZIP 仅用于更新运行素材。
-- `enhanced-v2.1.0-vc18`：基于上游 0.2.1 的当前完整增强版（Android versionCode 18）。
-- `enhanced-v1.4.0-vc17`：基于上游 0.1.4 的上一完整增强版。
-- `enhanced-v0.3.1-vc16`：基于上游 0.1.3 的上一完整增强版。
+- `v0.1.4`、`v0.2.1`：上游仓库的正式 Git 标签；代码以 `upstream/master` 和实际标签为准。
+- `enhanced-v1.4.0-vc17`：旧格式增强标签；旧标签保留原名，不追溯改名。
+- `enhanced-v0.3.0-vc15`：基于上游 0.1.3 的旧格式增强标签。
 - `enhanced-v0.2.6-vc13`：基于上游 0.1.2 的上一完整增强版（Android versionCode 13）。
 - `enhanced-v0.2.5-vc12`：基于上游 0.1.1 的上一完整增强版。
 - `enhanced-v0.2.4-vc11`、`enhanced-v0.2.3`、`enhanced-v0.2.3-vc10`：旧增强版历史节点，保留用于审计和回退。
 
 `enhanced-client-servers`、Node 依赖、游戏素材、Android SDK/Gradle 缓存和打包产物不进入 Git。它们可由源码和现有构建脚本重新生成。
 
-## 推荐：把下一版上游合并进增强主线
+从下一次增强发布起，标签使用 `enhanced-vM.N.R`，不再附带 Android `versionCode`。版本是否已经发布还必须核验个人仓库的实际标签、GitHub Release 和产物。
 
-当前主线已完成 0.2.1 合并；下次更新从 `enhanced-mode` 和 `upstream-v0.2.1` 继续建立新的上游快照。
+用户后续提供的 ZIP 只用于素材复用，原文件保持不变；不得从 ZIP 导入或覆盖代码。
 
-先保存现有工作，再获取上游：
+## 同步个人 master
+
+`stronghold-protocol` 主工作区保持在个人 `master`，只负责与上游主仓库执行 Sync Fork。游戏代码开发必须使用从最新个人 `master` 建立的独立分支或 worktree，不在主工作区直接修改。
+
+先确认工作树并获取远端：
 
 ```powershell
 git status
-git remote add upstream https://github.com/sganggs/Stronghold-Protocol.git
+git branch --show-current
+git remote -v
 git fetch upstream --tags
+git fetch origin --prune
 ```
 
-如果已经存在名为 `upstream` 的 remote，跳过 `remote add`。随后为新上游建立独立快照分支，再合并到增强主线：
+确认上游有更新后，通过 GitHub Sync Fork 更新个人 `master`。不要为尚未被上游合并的游戏 PR提前修改个人 `master`。
+
+## 同步 enhanced-mode
+
+从当前增强分支建立同步分支，再合并最新上游：
 
 ```powershell
-git switch -c upstream-vNEXT upstream/main
-git switch main
-git merge --no-ff upstream-vNEXT
+git switch -c sync/upstream-<提交>-enhanced origin/enhanced-mode
+git merge --no-ff upstream/master
 ```
 
-若拿到的是 zip 而不是远端仓库，应从最近的 `upstream-v*` 标签建立新分支，把 zip 的源码完整导入并提交，再执行同样的 `merge --no-ff`。不要把压缩包附带的 `node_modules`、构建缓存或产物导入 Git。
+解决冲突并完成测试后，从同步分支向个人 `enhanced-mode` 创建 PR；是否合并必须由用户单独确认。无需额外增强适配时，不创建空 PR；需要适配时，等待同步 PR 合并后，从最新 `origin/enhanced-mode` 另建分支和 PR。
 
-出现冲突时，优先保留新版上游的游戏逻辑，再把增强版的连接入口、剪贴板/邀请链接、桌面与 Android 壳、移动端布局和详情面板交互逐项合并。常见冲突位置为：
+出现冲突时优先保留新版上游游戏逻辑；上游已有相同或相似功能时删除重复增强实现，只保留必要且经过测试的最小差异。常见冲突位置为：
 
 - `public/js/screens/title.js`、`serverAddress.js`：服务器地址、用户名、房间码、邀请链接与剪贴板。
 - `public/js/screens/game.js`、`public/js/ui/gameLogic.js`：详情面板、撤退与出售按钮事件。
@@ -54,23 +61,11 @@ git add <已解决的文件>
 git merge --continue
 ```
 
-## 使用导出的补丁
+## 历史补丁与 bundle
 
-如果目标仓库没有本仓库历史，可将目标仓库切到对应的新上游版本，再应用 `enhanced-client-servers/07-Git迁移包` 中与该基线匹配的补丁：
+`enhanced-client-servers/07-Git迁移包` 中的补丁与 bundle 只用于复现或审计历史版本，不作为当前代码来源，也不得应用到当前工作树。
 
-```powershell
-git am --3way 000*.patch
-```
-
-`--3way` 会在文件上下文变化时尝试三方合并。补丁是源码差异，不包含 APK、Electron、SDK、`node_modules` 或游戏素材。
-
-## 使用 Git bundle 完整恢复
-
-Git bundle 包含基线、增强提交、分支和标签，可在另一台机器直接克隆：
-
-```powershell
-git clone -b main <Stronghold-Protocol-Enhanced.bundle 路径> Stronghold-Protocol-Enhanced
-```
+换机器时从个人 Git 仓库克隆，并重新配置 `upstream`。只有明确需要审计旧版本时，才在独立目录中使用历史 bundle，并先核对其校验值。
 
 ## 重新安装依赖、测试与打包
 

@@ -4,17 +4,17 @@ Use `publish-client-release.ps1` for the normal release workflow. It builds the 
 
 ## Version policy
 
-Upstream `0.M.N` maps to enhanced `M.N.*`; a new upstream baseline starts at `M.N.0`, and enhanced releases on that baseline increment only the final component. Published `0.2.*` and `0.3.*` releases remain unchanged. The historical upstream `0.1.3` line remains published as `0.3.*`; the current upstream `0.1.4` baseline starts the new mapping at enhanced `1.4.0`.
+Upstream `0.M.N` maps to enhanced `M.N.*`; a new upstream baseline starts at `M.N.0`, and enhanced releases on that baseline increment only the final component. Published `0.2.*` and `0.3.*` releases remain unchanged. The general mapping has been active since upstream `0.1.4`; the current version is read from `release-policy.json` and the version files rather than hard-coded in this guide.
 
 Both release scripts delegate validation to `tools/release-policy.mjs`. Do not duplicate the mapping in PowerShell.
 
 ## Small release
 
-For a small release, use the immediately previous Windows client as the base. For example, `v0.2.5 -> v0.2.6` produces a `v0.2.5-to-v0.2.6` Windows update ZIP while Android receives the complete `v0.2.6` APK:
+For a small release, use the immediately previous Windows client as the base. Windows receives an update ZIP while Android receives the complete APK:
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File scripts/publish-client-release.ps1 `
-  -UpstreamMainlineVersion 0.1.2 `
+  -UpstreamMainlineVersion UPSTREAM_VERSION `
   -PreviousWindowsClient "..\enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-vPREVIOUS-win-x64" `
   -PreviousVersion PREVIOUS
 ```
@@ -23,17 +23,19 @@ The output is written to `../enhanced-client-servers/08-客户端增量包/01-�
 
 ## Mainline release
 
-For a mainline program release, pass the last mainline version explicitly, rather than the immediately preceding small version. This may cross the historical-to-new mapping boundary; for example, a future upstream `0.1.4` release may update the prior `v0.3.0` baseline directly to `v1.4.0`.
+For a mainline program release, pass the last mainline version explicitly, rather than the immediately preceding small version. The package may span multiple enhanced revisions, but must still name one exact source and destination.
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File scripts/publish-client-release.ps1 `
   -MainlineUpdate `
-  -UpstreamMainlineVersion 0.1.4 `
-  -PreviousWindowsClient "..\enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-v0.3.0-win-x64" `
-  -PreviousVersion 0.3.0
+  -UpstreamMainlineVersion UPSTREAM_VERSION `
+  -PreviousWindowsClient "..\enhanced-client-servers\02-Windows客户端\Stronghold-Protocol-Client-vPREVIOUS-win-x64" `
+  -PreviousVersion PREVIOUS
 ```
 
-This writes a direct `v0.3.0-to-v1.4.0` Windows update ZIP to `../enhanced-client-servers/08-客户端增量包/02-主线版本更新/`; it contains all changes accumulated between those two mainline versions. The matching Android release remains a complete APK. Only after the Windows update ZIP and release manifest are generated successfully, the script removes full Windows directories/ZIPs and Android APKs for strictly intermediate releases. It preserves both mainline endpoints and writes a cleanup record alongside the mainline update manifest.
+This writes a direct Windows update ZIP to `../enhanced-client-servers/08-客户端增量包/02-主线版本更新/`; it contains all changes accumulated between the two named versions. The matching Android release remains a complete APK. Only after the Windows update ZIP and release manifest are generated and verified successfully may the script remove full Windows directories/ZIPs and Android APKs for strictly intermediate releases. It preserves both endpoints and writes a cleanup record alongside the mainline update manifest.
+
+Android `versionName`, the APK filename and release notes use the public enhanced version `M.N.R`. Android still requires a strictly increasing integer `versionCode` internally; it is not part of the release tag, artifact name or GitHub Release title.
 
 ## Package contents
 
