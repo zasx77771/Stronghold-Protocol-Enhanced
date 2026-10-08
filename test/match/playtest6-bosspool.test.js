@@ -9,7 +9,7 @@
 // the verdict then came from the pool after the final b.result, whose per-player damage is rounded: rounding up
 // emptied the dust → 胜利 (what the user saw), rounding down → 失败.
 //
-// Now (sim/constants.js BOSS_POOL_MIN_HP, finalAssault.js SharedBossPool, sim/spec.js LocalBossPool, Match.js): a pool
+// Now (sim/constants.js BOSS_POOL_MIN_HP, finalAssault.js SharedBossPool, sim/spec.js LocalBossPool, match/reports.js): a pool
 // never holds less than 1 HP (the hit that would leave less takes the rest; a browser pool reading below 1 is 0), so
 // the leader dies on every field as soon as the pool shows 0 and the fight ends; the first end condition the server
 // registers decides the verdict (pool 0 → victory, team LP 0 → defeat: PRTS 卫戍协议：盟约 下半 "…使目标生命值扣除至0，
@@ -17,7 +17,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHASE } from '../../shared/constants.js';
+import { PHASE, bossFinalDamageTakenMul } from '../../shared/constants.js';
 import { makeMatch } from './harness.js';
 
 /** A real client-combat match (real sim) of 2 humans to the Final Assault on the user's stage and difficulty. */
@@ -26,10 +26,10 @@ function realFinalAssault({ bossId, seed, clientCombat = true }) {
   h.setStage('act2autochess_m01');
   const m = h.m;
   m.bossId = bossId;
-  // The enhanced HARD rule applies a final 85% leader reduction. Use 0.75% of the official pool so this regression
-  // keeps the original effective time-to-kill (0.75% / 15% intake = the former 5%) and still tests float-dust handling,
-  // not the separate overtime mechanic.
-  m.gd.bossHpMul = () => 0.0075;
+  // the autoplay lineups cannot clear a full 绝境 pool: 5 % of the one-player table value (the tuning knob
+  // GameData.bossHpMul; the pool counts both players alive since DESIGN §25.13.4, so 2.5 % of it) — the pool's
+  // arithmetic, not its size, stalled the fight
+  m.gd.bossHpMul = () => 0.025 * bossFinalDamageTakenMul(m.modeId);
   h.autoHumans();
   m.start();
   let last = '';

@@ -5,6 +5,7 @@
 // is normalised to the server's fixed `/ws` endpoint.
 
 import { parseTcpUrl } from './tcpSocket.js';
+import { t } from '../../shared/i18n.js';
 
 export const SERVER_ADDRESS_KEY = 'sp.server';
 export const TCP_SERVER_ADDRESS_KEY = 'sp.server.tcp';
@@ -233,13 +234,13 @@ export function describeClipboardReadError(err) {
     return {
       code: CLIPBOARD_PERMISSION_DENIED,
       permissionDenied: true,
-      message: '需要获取剪贴板权限。请允许系统的剪贴板访问提示；若未弹出，请到系统设置的应用权限中允许“卫戍协议：盟约”读取剪贴板，或手动输入地址和房间 Code。',
+      message: t('需要获取剪贴板权限。请允许系统的剪贴板访问提示；若未弹出，请到系统设置的应用权限中允许“卫戍协议：盟约”读取剪贴板，或手动输入地址和房间 Code。'),
     };
   }
   return {
     code: 'CLIPBOARD_READ_FAILED',
     permissionDenied: false,
-    message: detail || '无法读取剪贴板，请检查权限',
+    message: detail || t('无法读取剪贴板，请检查权限'),
   };
 }
 

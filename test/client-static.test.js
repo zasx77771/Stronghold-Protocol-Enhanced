@@ -36,7 +36,7 @@ function walk(dir, ext, out = []) {
   return out;
 }
 
-/** URL path served by the server → file on disk (mirrors server/index.js mounts). */
+/** URL path served by the server → file on disk (mirrors the server/http/static.js mounts). */
 function urlPathToFile(urlPath) {
   const clean = decodeURIComponent(urlPath.split(/[?#]/)[0]);
   if (clean.startsWith('/shared/')) return path.join(ROOT, clean);
@@ -1116,7 +1116,7 @@ describe('screen helpers', () => {
   test('title has invite paste but no manual room-code input', () => {
     const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
     assert.doesNotMatch(source, /房间 Code（可选）|title-code-row/, 'manual room-code row was removed');
-    assert.match(source, />粘贴邀请链接<\//, 'clipboard invite entry remains available');
+    assert.match(source, /t\('粘贴邀请链接'\)/, 'clipboard invite entry remains available');
     assert.match(source, /title-server-row/, 'TCP connection status shares the server-address row');
     assert.match(source, /labelEnd=\$\{transport === TRANSPORT_TCP \? html`<\$\{ConnectionStatus}/, 'TCP connection status shares the server-label row');
     assert.match(source, /title-actions/, 'invite paste and replay controls share one action row');
@@ -1132,6 +1132,13 @@ describe('screen helpers', () => {
     assert.match(source, /e\.altKey && !e\.ctrlKey && !e\.metaKey && !e\.shiftKey/, 'Alt+Enter has no conflicting modifiers');
     assert.match(source, /await fullscreen\.toggle\(\)/, 'Alt+Enter uses the same fullscreen toggle as the button');
     assert.match(source, /!androidClient \? html`<\${FullscreenButton}/, 'Android omits the in-game fullscreen button');
+  });
+
+  test('title exposes the shared settings modal', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
+    assert.match(source, /import \{ SettingsModal \} from '\.\.\/ui\/settings\.js'/);
+    assert.match(source, /class="title-settings fsbtn tapx"/, 'title screen includes the settings control');
+    assert.match(source, /<\$\{SettingsModal\} open=\$\{settingsOpen\}/, 'settings control opens the shared modal');
   });
 
   test('title exposes the shared settings modal', () => {
