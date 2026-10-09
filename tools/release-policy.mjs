@@ -62,6 +62,9 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
   const appVersion = /export const APP_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(constants)?.[1];
   const androidVersion = /versionName\s+['"]([^'"]+)['"]/.exec(androidGradle)?.[1];
   const androidCode = Number(/versionCode\s+(\d+)/.exec(androidGradle)?.[1]);
+  if (/versionNameSuffix\b/.test(androidGradle)) {
+    fail('android build types must not override the public versionName');
+  }
 
   assertLocalVersionFor(upstream, pkg.version, policy, { mainline });
   for (const [label, value] of Object.entries({
