@@ -15,7 +15,7 @@
 param(
   [int]$Port = 3000,
   [int]$TcpPort = 0,
-  [string]$BindHost = '0.0.0.0',
+  [string]$BindHost = '::',
   [ValidateSet('client', 'server')][string]$Combat = 'client',
   [ValidateSet('off', 'sample', 'all')][string]$Verify = 'off',
   [string]$TaskName = 'StrongholdProtocol',
@@ -173,8 +173,10 @@ try {
   Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
   Start-Sleep -Seconds 4
   Show-Status
-  Write-Host "`n朋友访问地址（局域网）："
-  & $nodeExe tools\doctor.mjs --port $Port | Select-String -Pattern 'http://\d' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+  Write-Host "`n朋友访问地址（局域网 / IPv6，方括号不能少）："
+  # doctor prints a full URL. An IPv6 literal is bracketed, so a pattern that requires a digit right after http://
+  # would drop it. Keep every http:// line; the rest of the report is classification text.
+  & $nodeExe tools\doctor.mjs --port $Port | Select-String -Pattern 'http://' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
   Write-Host "  TCP 直连端口：$ResolvedTcpPort"
   Write-Host "`n停止：-Stop   重启：-Restart   状态：-Status   卸载：-Uninstall   日志：$Log"
 } catch {
