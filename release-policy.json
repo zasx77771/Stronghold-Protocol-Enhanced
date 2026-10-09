@@ -2,5 +2,5 @@
   "format": "stronghold-release-policy-v2",
   "upstreamMainlineVersion": "0.2.2",
   "localVersionRule": "upstream 0.M.N maps to local M.N.<enhanced revision>",
-  "androidVersionCode": 20
+  "androidVersionCode": 21
 }
