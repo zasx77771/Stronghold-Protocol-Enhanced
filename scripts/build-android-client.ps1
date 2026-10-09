@@ -2,6 +2,7 @@ param(
   [string]$ToolchainDir = '',
   [string]$OutputDir = '',
   [string]$CacheRoot = '',
+  [string]$ResourceSourceDir = '',
   [switch]$Clean
 )
 
@@ -26,6 +27,8 @@ $AndroidUserHome = [IO.Path]::GetFullPath((Join-Path $CacheRoot 'android-user-ho
 $JdkRoot = Join-Path $ToolchainDir 'jdk-17'
 $SdkRoot = Join-Path $ToolchainDir 'android-sdk'
 $Gradle = Join-Path $ToolchainDir 'gradle-8.10.2\bin\gradle.bat'
+if (-not $ResourceSourceDir) { $ResourceSourceDir = Join-Path $ProjectRoot 'public' }
+$ResourceSourceDir = [IO.Path]::GetFullPath($ResourceSourceDir)
 
 foreach ($Required in @((Join-Path $JdkRoot 'bin\java.exe'), $Gradle, (Join-Path $SdkRoot 'platforms\android-35\android.jar'))) {
   if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
@@ -38,10 +41,23 @@ if (-not $AssetsDir.StartsWith($CacheRoot + [IO.Path]::DirectorySeparatorChar, [
 if (Test-Path -LiteralPath $AssetsDir) { Remove-Item -LiteralPath $AssetsDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $AssetsDir, $BuildOutputDir, $ProjectCacheDir, $GradleUserHome, $AndroidUserHome, $OutputDir | Out-Null
 
+Write-Host 'Preparing generated browser dependencies...'
+& node (Join-Path $ProjectRoot 'tools\vendor.mjs')
+if ($LASTEXITCODE -ne 0) {
+  throw 'Unable to prepare browser dependencies. Run npm ci in this worktree before building Android.'
+}
+
 Write-Host 'Embedding client code and all local resources...'
 Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'public') -Force |
-  Where-Object { $_.Name -ne 'dev' } |
+  Where-Object { $_.Name -notin @('dev', 'assets', 'fonts') } |
   Copy-Item -Destination $AssetsDir -Recurse -Force
+foreach ($ResourceName in @('assets', 'fonts')) {
+  $ResourcePath = Join-Path $ResourceSourceDir $ResourceName
+  if (-not (Test-Path -LiteralPath $ResourcePath -PathType Container)) {
+    throw "Missing Android client resource directory: $ResourcePath"
+  }
+  Copy-Item -LiteralPath $ResourcePath -Destination (Join-Path $AssetsDir $ResourceName) -Recurse -Force
+}
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'data') -Destination (Join-Path $AssetsDir 'data') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'shared') -Destination (Join-Path $AssetsDir 'shared') -Recurse -Force
 
@@ -51,6 +67,9 @@ Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'server\sim') -Force |
   Where-Object { $_.Name -ne 'nodeData.js' } |
   Copy-Item -Destination $SimTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\data.js') -Destination (Join-Path $AssetsDir 'data.js')
+
+& node (Join-Path $ProjectRoot 'tools\validate-client-runtime.mjs') $AssetsDir
+if ($LASTEXITCODE -ne 0) { throw 'Android embedded client runtime validation failed.' }
 
 $env:JAVA_HOME = $JdkRoot
 $env:ANDROID_HOME = $SdkRoot

@@ -8,6 +8,7 @@ param(
   [string]$WindowsCacheDir = '',
   [string]$AndroidToolchainDir = '',
   [string]$AndroidCacheRoot = '',
+  [string]$AndroidResourceSourceDir = '',
   [switch]$AndroidClean,
   [string]$IncrementalOutputRoot = ''
 )
@@ -43,6 +44,7 @@ if (-not $?) { throw 'Windows client build failed.' }
 $AndroidArguments = @{}
 if ($AndroidToolchainDir) { $AndroidArguments.ToolchainDir = $AndroidToolchainDir }
 if ($AndroidCacheRoot) { $AndroidArguments.CacheRoot = $AndroidCacheRoot }
+if ($AndroidResourceSourceDir) { $AndroidArguments.ResourceSourceDir = $AndroidResourceSourceDir }
 if ($AndroidClean) { $AndroidArguments.Clean = $true }
 
 Write-Host 'Building complete Android client package...'
