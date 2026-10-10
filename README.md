@@ -37,7 +37,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前增强代码版本 2.2.1 已同步上游 0.2.2：干员可单独设置潜能和练度（默认满潜、精英2 Lv.60），新增日文语音和统计数据页，按官方补上失衡、整数秒攻击间隔 30 帧等规则；同时保留 Windows / Android 客户端、TCP 直连、四位 tag、观战、对局记录、独立回放服务和更新器。代码版本不等同于已经打包或发布，正式状态以 Git 标签和 GitHub Release 为准。详见 [CHANGELOG.md](CHANGELOG.md)。
+- 当前增强代码版本 2.2.1 已同步上游 0.2.3：自选编队新增六星克莱门莎，黍和乌尔比安新增模组，并新增文字大小、逐干员语音语言、添加到桌面、开局重刷和恢复本机对局；同时保留 Windows / Android 客户端、TCP 直连、四位 tag、观战、对局记录、独立回放服务和更新器。代码版本不等同于已经打包或发布，正式状态以 Git 标签和 GitHub Release 为准。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能一览
 
@@ -125,6 +125,7 @@ npm start          # 启动服务器：http://localhost:3000
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |
+| `SP_BOT_EMOTES` | 空 | AI 队友的对局表情回应（战斗、整备、合成、联防、收礼时即刻的 `m.emote` 广播）；设为 `0` 时整体关闭 |
 
 设置方式：macOS / Linux `PORT=8080 npm start`；PowerShell `$env:PORT=8080; npm start`；cmd `set "PORT=8080" && npm start`。健康检查：`GET /healthz`。
 

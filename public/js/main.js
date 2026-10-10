@@ -137,6 +137,7 @@ function maybeFinishRestore() {
  * follow the store themselves).
  */
 function backToLobby() {
+  identity.rememberMatch(null);
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
@@ -146,10 +147,12 @@ function backToLobby() {
 
 function onWelcome(msg) {
   identity.saveToken(msg.token);
+  identity.rememberMatch(null);
   const prev = store.get();
   const prevId = prev.me.playerId;
   const name = typeof msg.name === 'string' && msg.name ? msg.name : prev.me.name;
   const tag = typeof msg.profileTag === 'string' && /^\d{4}$/.test(msg.profileTag) ? msg.profileTag : prev.me.tag || null;
+  identity.saveName(name);
   if (tag) identity.saveProfileTag(tag);
   store.set({ me: { playerId: msg.playerId ?? null, name, tag, token: typeof msg.token === 'string' ? msg.token : null } });
   welcomeAt = Date.now();
@@ -191,6 +194,8 @@ function onRoomState(msg) {
   // A (new) match starts: forget the previous match's state so stale results never show.
   if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch() });
   store.set({ room });
+  identity.rememberMatch(room.inMatch && seats.some((seat) => seat?.playerId === myId)
+    ? { name: store.get().me.name, code: room.code || '' } : null);
   if (room.mode === 'coop' && typeof room.code === 'string') rememberRoom(room.code);
   maybeFinishRestore();
 }
@@ -213,7 +218,10 @@ function wireNet() {
   });
   net.on('clock', (c) => store.set({ clock: { offset: c.offset, rtt: c.rtt, synced: c.synced } }));
   net.on('welcome', onWelcome);
-  net.on('helloError', (err) => toastError(err));
+  net.on('helloError', (err) => {
+    if (err.code === 'SESSION_IN_USE') identity.rejectToken();
+    toastError(err);
+  });
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
