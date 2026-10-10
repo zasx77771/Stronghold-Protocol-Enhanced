@@ -17,28 +17,27 @@ const MAX_URL_LENGTH = 4096;
 /**
  * The GET /healthz body.
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby }} health
+ *           lobby: import('../lobby.js').Lobby, serveClient?: boolean, tcpPort?: number|null }} health
  */
-export function healthReport({ startedAt, network, registry, lobby }) {
+export function healthReport({ startedAt, network, registry, lobby, serveClient = true, tcpPort = null }) {
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+    mode: serveClient ? 'integrated' : 'network-only', clientAssets: serveClient,
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
-    sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+    sockets: network.connectionCount, tcpPort, sessions: registry.size, ...lobby.stats(),
   };
 }
-
 /**
  * The request listener for `http.createServer`.
- * @param {{ serveStatic: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
+ * @param {{ serveStatic: null|((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
  *             rawPath: string, query: string) => Promise<void>,
- *           health: Parameters<typeof healthReport>[0], log: object }} deps
+ *           health: Parameters<typeof healthReport>[0], replays?: import('../replay/store.js').ReplayStore|null, log: object }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log }) {
-  async function handleRequest(req, res) {
-    const url = req.url || '/';
+export function createRequestHandler({ serveStatic, health, replays = null, log }) {
+  async function handleRequest(req, res) {    const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
@@ -49,6 +48,16 @@ export function createRequestHandler({ serveStatic, health, log }) {
     }
     if (parts.rawPath === '/healthz') {
       sendJson(req, res, 200, healthReport(health));
+      return;
+    }
+    if (parts.rawPath === '/api/profiles') {
+      const name = new URLSearchParams(parts.query).get('name') || '';
+      const profiles = replays ? replays.profileCandidates(name).map((p) => ({ name: p.name, tag: p.tag })) : [];
+      sendJson(req, res, 200, { profiles });
+      return;
+    }
+    if (!serveStatic) {
+      sendJson(req, res, 404, { ok: false, error: 'not_found' });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

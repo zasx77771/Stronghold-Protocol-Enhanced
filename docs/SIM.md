@@ -779,7 +779,8 @@ PRTS 异常效果: 无法选择 effects "仅在选择时生效"); checked before
 (`rng()`) → mitigation (phys
 `max(A − max(0, D×(1−defIgnorePct) − defIgnoreFlat), 5 %A)`, arts `max(A×(1 − R′/100), 5 %A)`, elemental
 `max(A×(1 − 元素抗性/100), 5 %A)`, true = A; source ignore mods are added) → × source `dmgDealtMul` (× phys/artsDealtMul)
-× target `dmgTakenMul` (not for elemental) × type-taken mul × `dmg.mul` (a `sourceless` hit skips every source term) →
+× target `dmgTakenMul` (not for elemental) × type-taken mul × `dmg.mul` (a `sourceless` hit skips every source term; there
+is no extra enhanced-mode multiplier for Final Assault / Hidden Core leaders) →
 **限伤** (`leaderHitCancelled`: on a leader — `isBoss`, the tag-'boss' units: data/bosses.json `enemyKey`, the official
 `IsBossEnemy` list, and their mirrored copies; never parts, escorts, drones — in a `'boss'` / `'hidden'` battle, a hit
 with `ceil(final) ≥ BOSS_HIT_LIMIT` (300000, shared/constants.js) is cancelled whole: returns 0 before shields (阿利斯泰尔's
@@ -825,8 +826,9 @@ partner's too: PRTS 备注 "全场范围内的所有敌人类我方单位也会�
 second however many carriers (PRTS 作战机制 "同名buff的默认叠加策略buff只能表现出一个"), while a carrier is on the field
 [ASSUMED]. 奥术法阵 has the same 备注 for its rider: while a carrier is on the field, every damage instance of such a unit
 silences its target for the item's 5 s ("造成伤害时使目标失去特殊能力5秒"; since 0.1.1). On a leader
-in a boss / hidden battle a loss of ≥ `BOSS_HIT_LIMIT` (a part's 传递) is cancelled like a hit; 胄's drone link — 2 % of the
-pool, a share that is no hit — passes it (`loseHp` `noHitLimit`, DESIGN §25.13.4 [ASSUMED]). Every HP-damage kind
+in a boss / hidden battle, `loseHp` first receives the same enhanced-mode final multiplier, then a loss of ≥
+`BOSS_HIT_LIMIT` (a part's 传递) is cancelled like a hit; 胄's drone link — 2 % of the pool, a share that is no hit — passes
+only that official hit-limit check (`loseHp` `noHitLimit`, DESIGN §25.13.4 [ASSUMED]), not the enhanced final reduction. Every HP-damage kind
 meets the limit (phys / arts / true / 元素伤害 incl. element bursts, DoT ticks); element 损伤 (the gauge, `type: 'element'`)
 removes no HP and never does.
 

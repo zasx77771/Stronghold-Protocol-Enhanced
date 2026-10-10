@@ -32,6 +32,7 @@
 import { PROTOCOL_VERSION, ERR_TEXT } from '../../shared/constants.js';
 import { validateC2S } from '../../shared/protocol.js';
 import { N_ } from '../../shared/i18n.js';
+import { TcpSocket, parseTcpUrl } from './tcpSocket.js';
 
 export const REQUEST_TIMEOUT_MS = 8000;
 export const HELLO_TIMEOUT_MS = 8000;
@@ -137,7 +138,9 @@ export class Net {
     this.status = 'idle';
     this.ws = null;
     this.name = null;          // desired player name (hello is sent when set)
+    this.profileTag = null;    // fixed four-digit local replay profile tag
     this.helloName = null;     // name we sent in the hello that got the last welcome
+    this.helloProfileTag = null;
     this.serverName = null;    // name as normalised by the server
     this.playerId = null;
     this.attempt = 0;          // consecutive failed connection attempts
@@ -159,10 +162,70 @@ export class Net {
     this._helloTimer = null;
     this._helloRid = null;
     this._helloSentName = null;
+    this._helloSentProfileTag = null;
     this._helloToken = null;
     this._lastRx = 0;
     this._unansweredSince = null; // time of the oldest ping sent since the last inbound frame
     this._clockSamples = [];   // [{ offset, rtt }]
+  }
+
+  /**
+   * Select a socket endpoint.  Changing servers drops the old connection and all in-flight
+   * requests, but does not connect until connect() / setName() is called.
+   * @param {string} url absolute ws://, wss:// or packaged-client tcp:// URL
+   * @returns {boolean} true when the endpoint changed
+   */
+  setUrl(url) {
+    const raw = String(url);
+    if (/^tcp:\/\//i.test(raw)) {
+      const next = parseTcpUrl(raw).url;
+      if (this.url === next) { this._manualClose = false; return false; }
+      const ws = this.ws;
+      this._teardownSocket();
+      this._clearTimer('_reconnectTimer', 'clearTimeout');
+      try { ws?.close(4000, 'server changed'); } catch { /* ignore */ }
+      this._failPending('DISCONNECTED', false);
+      this.url = next;
+      this._manualClose = false;
+      this._quietSwap = false;
+      this.attempt = 0;
+      this.retryAt = 0;
+      this.ping = null;
+      this.playerId = null;
+      this.serverName = null;
+      this.helloName = null;
+      this.helloProfileTag = null;
+      this.lastError = null;
+      this._setStatus('idle');
+      return true;
+    }
+    let parsed;
+    try { parsed = new URL(raw); } catch { throw new TypeError('invalid WebSocket URL'); }
+    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) throw new TypeError('invalid socket URL');
+    const next = parsed.href;
+    if (this.url === next) {
+      // close() is a permanent stop; selecting the same server explicitly makes it usable again.
+      this._manualClose = false;
+      return false;
+    }
+    const ws = this.ws;
+    this._teardownSocket();
+    this._clearTimer('_reconnectTimer', 'clearTimeout');
+    try { ws?.close(4000, 'server changed'); } catch { /* ignore */ }
+    this._failPending('DISCONNECTED', false);
+    this.url = next;
+    this._manualClose = false;
+    this._quietSwap = false;
+    this.attempt = 0;
+    this.retryAt = 0;
+    this.ping = null;
+    this.playerId = null;
+    this.serverName = null;
+    this.helloName = null;
+    this.helloProfileTag = null;
+    this.lastError = null;
+    this._setStatus('idle');
+    return true;
   }
 
   // ---- events ----------------------------------------------------------------------------------
@@ -219,8 +282,8 @@ export class Net {
     this._manualClose = false;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
     this.retryAt = 0;
-    const WS = this.WS || globalThis.WebSocket;
     const url = this.url || defaultWsUrl();
+    const WS = this.WS || (url.startsWith('tcp:') ? TcpSocket : globalThis.WebSocket);
     let ws;
     try {
       ws = new WS(url);
@@ -275,16 +338,23 @@ export class Net {
    * @param {string} name
    */
   setName(name) {
+    this.setIdentity(name, this.profileTag);
+  }
+
+  /** Set the display name and its optional fixed `#1234` replay profile tag. */
+  setIdentity(name, profileTag = null) {
     const n = typeof name === 'string' ? name.trim() : '';
     if (!n) return;
-    const changed = n !== this.name;
+    const tag = typeof profileTag === 'string' && /^\d{4}$/.test(profileTag) ? profileTag : null;
+    const changed = n !== this.name || tag !== this.profileTag;
     this.name = n;
+    this.profileTag = tag;
     if (!this.ws || this.ws.readyState !== WS_OPEN) {
       if (!this.ws && !this._reconnectTimer && !this._manualClose) this.connect();
       return; // hello goes out on open
     }
-    if (this.status === 'online' && this.helloName === n) return;
-    if (this.status === 'handshaking' && !changed && this._helloSentName === n) return;
+    if (this.status === 'online' && this.helloName === n && this.helloProfileTag === tag) return;
+    if (this.status === 'handshaking' && !changed && this._helloSentName === n && this._helloSentProfileTag === tag) return;
     // The server accepts a repeated hello on a live socket (it renames the session and resyncs).
     this._sendHello();
   }
@@ -352,6 +422,7 @@ export class Net {
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;
     this._helloSentName = null;
+    this._helloSentProfileTag = null;
   }
 
   _clearTimer(field, fn) {
@@ -367,6 +438,7 @@ export class Net {
     if (!this.name) return;
     const rid = this._nextRid();
     const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION };
+    if (this.profileTag) msg.profileTag = this.profileTag;
     let token = null;
     try { token = this.getToken(); } catch { token = null; }
     if (typeof token === 'string' && token.length > 0 && token.length <= 64) {
@@ -378,6 +450,7 @@ export class Net {
     this._helloToken = token;
     this._helloRid = rid;
     this._helloSentName = this.name;
+    this._helloSentProfileTag = this.profileTag;
     if (this.status !== 'handshaking') this._setStatus('handshaking');
     if (!this._sendRaw(msg)) return;
     this._clearTimer('_helloTimer', 'clearTimeout');
@@ -398,7 +471,9 @@ export class Net {
     this._helloRid = null;
     // Compare future setName() calls against what we sent (the server may normalise the name).
     this.helloName = this._helloSentName;
+    this.helloProfileTag = this._helloSentProfileTag;
     this.serverName = typeof msg.name === 'string' && msg.name ? msg.name : this._helloSentName;
+    this.profileTag = typeof msg.profileTag === 'string' && /^\d{4}$/.test(msg.profileTag) ? msg.profileTag : this._helloSentProfileTag;
     this.playerId = msg.playerId ?? null;
     this.attempt = 0;
     this.lastError = null;
@@ -674,6 +749,8 @@ export class Net {
 // its own token (never another tab's), so it can't steal a live session either.
 
 const K_NAME = 'sp.name';
+const K_PROFILE_TAG = 'sp.profileTag';
+const K_REMEMBER_NAME = 'sp.rememberName';
 const K_TOKEN = 'sp.token';      // sessionStorage: this tab's token
 const K_WELCOME = 'sp.tokenWelcome'; // sessionStorage: { hash, at } from the first welcome for this token
 const K_RECENT = 'sp.tokens';    // localStorage: this browser's recent tokens, most recent first
@@ -915,6 +992,20 @@ export function createIdentity(deps = {}) {
     loadName: () => (sget(local, K_NAME) || '').slice(0, 64),
     /** @param {string} name */
     saveName: (name) => sset(local, K_NAME, String(name)),
+    clearName: () => sdel(local, K_NAME),
+    loadProfileTag: () => {
+      const tag = sget(local, K_PROFILE_TAG);
+      return typeof tag === 'string' && /^\d{4}$/.test(tag) ? tag : null;
+    },
+    saveProfileTag: (tag) => { if (typeof tag === 'string' && /^\d{4}$/.test(tag)) sset(local, K_PROFILE_TAG, tag); },
+    clearProfileTag: () => sdel(local, K_PROFILE_TAG),
+    /** Remembering is enabled by default for existing installs. */
+    loadRememberName: () => sget(local, K_REMEMBER_NAME) !== '0',
+    /** @param {boolean} on */
+    setRememberName(on) {
+      sset(local, K_REMEMBER_NAME, on ? '1' : '0');
+      if (!on) sdel(local, K_NAME);
+    },
     /** Token for `hello` (null ⇒ new session). Before init() only this tab's own token is used. */
     getToken() {
       if (current) return current;

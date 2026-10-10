@@ -40,7 +40,7 @@ import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
-import { TitleScreen, sanitizeName } from './screens/title.js';
+import { TitleScreen, sanitizeName, skipStartupClipboardProbe } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
 import { RoomScreen } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
@@ -55,6 +55,7 @@ import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/l
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
+import { loadServerAddress, normalizeServerAddress } from './serverAddress.js';
 import { recordError } from './diag.js';
 
 const RESTORE_GRACE_MS = 1500;
@@ -150,8 +151,10 @@ function onWelcome(msg) {
   const prev = store.get();
   const prevId = prev.me.playerId;
   const name = typeof msg.name === 'string' && msg.name ? msg.name : prev.me.name;
+  const tag = typeof msg.profileTag === 'string' && /^\d{4}$/.test(msg.profileTag) ? msg.profileTag : prev.me.tag || null;
   identity.saveName(name);
-  store.set({ me: { playerId: msg.playerId ?? null, name, token: typeof msg.token === 'string' ? msg.token : null } });
+  if (tag) identity.saveProfileTag(tag);
+  store.set({ me: { playerId: msg.playerId ?? null, name, tag, token: typeof msg.token === 'string' ? msg.token : null } });
   welcomeAt = Date.now();
 
   if (prevId != null && prevId !== msg.playerId) {
@@ -351,14 +354,21 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
-  const entered = identity.wasEntered() && !!savedName;
+  const savedTag = identity.loadProfileTag();
+  const savedAddress = loadServerAddress();
+  const savedServer = savedAddress ? normalizeServerAddress(savedAddress) : null;
+  // A clean standalone install contains no server address. Keep it on the title screen until the user supplies one.
+  const entered = identity.wasEntered() && !!savedName && !!savedServer;
+  // If boot resumes straight into the lobby, a later return to the title is not the startup entry.
+  if (entered) skipStartupClipboardProbe();
   store.set((s) => ({
-    me: { ...s.me, name: savedName },
+    me: { ...s.me, name: savedName, tag: savedTag },
     session: { entered },
     ui: { ...s.ui, pendingJoin },
   }));
 
   wireNet();
+  if (savedServer) net.setUrl(savedServer.wsUrl);
   installStatsRecorder(store); // follows the match on screen, so a 放弃模拟 can be recorded (ui/stats.js)
   installLoadoutSync({ net });
   installOwnershipSync({ net });
@@ -373,8 +383,7 @@ async function boot() {
   data.load('local').catch(() => {});
 
   const connectWhenReady = identityReady.then(() => {
-    if (entered) net.setName(savedName);
-    else net.connect();
+    if (entered) net.setIdentity(savedName, savedTag);
   });
   // the language (and its UI translations) before the first render: no Chinese flash for an English player
   const langReady = initLang().catch((err) => console.warn('[app] language setup failed', err));

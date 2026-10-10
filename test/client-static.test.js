@@ -148,7 +148,7 @@ const JS_FILES = walk(path.join(PUBLIC, 'js'), '.js');
 
 describe('client modules parse as ES modules', () => {
   test('found client modules', () => {
-    for (const f of ['main.js', 'net.js', 'store.js', 'data.js', 'ui/components.js', 'ui/toasts.js',
+    for (const f of ['main.js', 'net.js', 'serverAddress.js', 'store.js', 'data.js', 'ui/components.js', 'ui/toasts.js',
       'screens/title.js', 'screens/lobby.js', 'screens/room.js', 'screens/game.js']) {
       assert.ok(existsSync(path.join(PUBLIC, 'js', f)), `public/js/${f} exists`);
     }
@@ -192,7 +192,7 @@ describe('HTML pages reference existing files', () => {
     const src = readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
     assert.match(src, /<script type="module" src="\/js\/main\.js"[^>]*><\/script>/);
     assert.match(src, /class="rotate-hint"/);
-    assert.match(src, /fonts\.googleapis\.com\/css2\?family=Noto\+Sans\+SC/);
+    assert.doesNotMatch(src, /fonts\.(?:googleapis|gstatic)\.com/, 'portable client must not fetch web fonts');
     assert.match(src, /href="\/fonts\/fonts\.css"/);
   });
 });
@@ -423,6 +423,22 @@ describe('net.js', () => {
     const { defaultWsUrl } = await mod('net.js');
     assert.equal(defaultWsUrl({ protocol: 'http:', host: 'a:3000' }), 'ws://a:3000/ws');
     assert.equal(defaultWsUrl({ protocol: 'https:', host: 'x.io' }), 'wss://x.io/ws');
+  });
+
+  test('setUrl switches endpoint and drops an old socket', async () => {
+    const { net, sockets } = await makeNet();
+    net.connect();
+    sockets[0].open();
+    assert.equal(net.status, 'connected');
+    assert.equal(net.setUrl('wss://game.example/ws'), true);
+    assert.equal(sockets[0].closedWith, 4000);
+    assert.equal(net.status, 'idle');
+    assert.equal(net.url, 'wss://game.example/ws');
+    assert.equal(net.setUrl('wss://game.example/ws'), false);
+    assert.equal(net.setUrl('tcp://127.0.0.1:3001'), true);
+    assert.equal(net.url, 'tcp://127.0.0.1:3001');
+    net.setName('A');
+    assert.equal(sockets.length, 2);
   });
 
   test('connect without a name → connected + ping; setName → hello with token & version', async () => {
@@ -688,6 +704,122 @@ describe('net.js', () => {
   });
 });
 
+// ---- unit: configurable server address -------------------------------------------------------------
+
+describe('server address', () => {
+  test('normalises HTTP(S), WS(S), host:port and IPv6', async () => {
+    const { normalizeServerAddress } = await mod('serverAddress.js');
+    assert.deepEqual(normalizeServerAddress('192.168.1.8:3000'), {
+      address: 'http://192.168.1.8:3000', wsUrl: 'ws://192.168.1.8:3000/ws', serverKey: 'http://192.168.1.8:3000',
+    });
+    assert.equal(normalizeServerAddress('https://Game.Example/').wsUrl, 'wss://game.example/ws');
+    assert.equal(normalizeServerAddress('wss://game.example/ws').address, 'https://game.example');
+    assert.equal(normalizeServerAddress('http://[::1]:3000').wsUrl, 'ws://[::1]:3000/ws');
+  });
+
+  test('normalises and separately remembers packaged-client TCP endpoints', async () => {
+    const {
+      TRANSPORT_TCP, TRANSPORT_WEBSOCKET, buildInviteLink, loadEndpointAddress, loadTransportMode,
+      normalizeTcpAddress, saveEndpointAddress,
+    } = await mod('serverAddress.js');
+    assert.deepEqual(normalizeTcpAddress('192.168.1.8:3001'), {
+      address: 'tcp://192.168.1.8:3001', socketUrl: 'tcp://192.168.1.8:3001',
+      wsUrl: 'tcp://192.168.1.8:3001', serverKey: 'tcp://192.168.1.8:3001', transport: TRANSPORT_TCP,
+    });
+    assert.throws(() => normalizeTcpAddress('tcp://example.com'), /端口/);
+    assert.throws(() => normalizeTcpAddress('udp://example.com:3001'), /tcp:\/\//i);
+    const storage = memStorage();
+    saveEndpointAddress('game.example:3000', TRANSPORT_WEBSOCKET, storage);
+    saveEndpointAddress('game.example:3001', TRANSPORT_TCP, storage);
+    assert.equal(loadTransportMode(storage), TRANSPORT_TCP);
+    assert.equal(loadEndpointAddress(TRANSPORT_TCP, storage), 'tcp://game.example:3001');
+    assert.equal(loadEndpointAddress(TRANSPORT_WEBSOCKET, storage), 'http://game.example:3000');
+    assert.equal(buildInviteLink('tcp://game.example:3001', 'ab12', TRANSPORT_TCP), 'tcp://game.example:3001/?room=AB12');
+  });
+
+  test('rejects unsafe or unsupported server addresses', async () => {
+    const { normalizeServerAddress } = await mod('serverAddress.js');
+    for (const bad of ['', 'ftp://example.com', 'http://u:p@example.com', 'http://example.com/game',
+      'http://example.com/?x=1', 'http://example.com/#x', 'hello world']) {
+      assert.throws(() => normalizeServerAddress(bad), TypeError, bad);
+    }
+  });
+
+  test('persists a canonical address, uses browser origin, and leaves standalone defaults empty', async () => {
+    const { TRANSPORT_TCP, defaultEndpointAddress, loadEndpointAddress, loadServerAddress, saveServerAddress, defaultServerAddress } = await mod('serverAddress.js');
+    const storage = memStorage();
+    saveServerAddress('example.com:3456', storage);
+    assert.equal(loadServerAddress(storage, { protocol: 'http:', host: 'ignored', search: '' }), 'http://example.com:3456');
+    assert.equal(defaultServerAddress({ protocol: 'http:', host: 'lan:3000', search: '' }), 'http://lan:3000');
+    const packaged = { protocol: 'https:', host: 'appassets.androidplatform.net', search: '?desktop=1&android=1' };
+    assert.equal(defaultServerAddress(packaged), '');
+    assert.equal(defaultEndpointAddress(TRANSPORT_TCP, packaged), '');
+    assert.equal(loadServerAddress(memStorage(), packaged), '');
+    assert.equal(loadEndpointAddress(TRANSPORT_TCP, memStorage(), packaged), '');
+  });
+
+  test('normalises room codes and builds server-rooted invite links', async () => {
+    const { buildInviteLink, normalizeRoomCode } = await mod('serverAddress.js');
+    assert.equal(normalizeRoomCode(' ab12 '), 'AB12');
+    assert.equal(normalizeRoomCode('abc'), '');
+    assert.equal(normalizeRoomCode('abcdefg'), '');
+    assert.equal(normalizeRoomCode('ab-12'), '');
+    assert.equal(buildInviteLink('192.168.1.8:3000', 'ab12'), 'http://192.168.1.8:3000/?room=AB12');
+    assert.equal(buildInviteLink('wss://game.example/ws', 'ZX90'), 'https://game.example/?room=ZX90');
+    assert.doesNotMatch(buildInviteLink('game.example:4567', 'AB12'), /127\.0\.0\.1:3210/);
+  });
+
+  test('parses clipboard invitation URLs, host+code and bare codes without matching prose', async () => {
+    const { parseInviteText } = await mod('serverAddress.js');
+    assert.deepEqual(parseInviteText('https://Game.Example/?room=ab12'), {
+      address: 'https://game.example', wsUrl: 'wss://game.example/ws', serverKey: 'https://game.example',
+      code: 'AB12', completeInvite: true,
+    });
+    assert.equal(parseInviteText('10.0.0.2:3000 ZX90').wsUrl, 'ws://10.0.0.2:3000/ws');
+    assert.equal(parseInviteText('ZX90', 'http://localhost:3000').code, 'ZX90');
+    assert.equal(parseInviteText('https://game.example').code, '');
+    assert.equal(parseInviteText('ordinary clipboard prose'), null);
+    assert.equal(parseInviteText('see https://unrelated.example for details'), null);
+    const tcp = parseInviteText('tcp://game.example:3001/?room=xy99');
+    assert.equal(tcp.transport, 'tcp');
+    assert.equal(tcp.address, 'tcp://game.example:3001');
+    assert.equal(tcp.code, 'XY99');
+  });
+
+  test('describes clipboard permission denials with an actionable Chinese prompt', async () => {
+    const { CLIPBOARD_PERMISSION_DENIED, describeClipboardReadError } = await mod('serverAddress.js');
+    for (const err of [
+      Object.assign(new Error('Read permission denied.'), { name: 'NotAllowedError' }),
+      Object.assign(new Error('Access denied'), { name: 'SecurityError' }),
+      new Error('Permission denied'),
+    ]) {
+      const result = describeClipboardReadError(err);
+      assert.equal(result.code, CLIPBOARD_PERMISSION_DENIED);
+      assert.equal(result.permissionDenied, true);
+      assert.match(result.message, /需要获取剪贴板权限/);
+      assert.match(result.message, /手动输入/);
+    }
+    const other = describeClipboardReadError(new Error('clipboard unavailable'));
+    assert.equal(other.permissionDenied, false);
+    assert.equal(other.code, 'CLIPBOARD_READ_FAILED');
+  });
+
+  test('uses the Android native clipboard bridge and reports native denial', async () => {
+    const { readClipboardText } = await mod('serverAddress.js');
+    const previous = globalThis.StrongholdAndroid;
+    try {
+      globalThis.StrongholdAndroid = { readClipboardText: () => 'tcp://game.example:3001/?room=AB12' };
+      assert.equal(await readClipboardText(), 'tcp://game.example:3001/?room=AB12');
+      globalThis.StrongholdAndroid = { readClipboardText: () => '__SP_CLIPBOARD_DENIED__:Read permission denied' };
+      await assert.rejects(readClipboardText(), (err) => err?.code === 'CLIPBOARD_PERMISSION_DENIED'
+        && /需要获取剪贴板权限/.test(err.message));
+    } finally {
+      if (previous === undefined) delete globalThis.StrongholdAndroid;
+      else globalThis.StrongholdAndroid = previous;
+    }
+  });
+});
+
 // ---- unit: identity ----------------------------------------------------------------------------------------
 
 function memStorage() {
@@ -874,6 +1006,17 @@ describe('identity (reconnect-token selection across tabs)', () => {
     assert.equal(id.wasEntered(), false);
     id.saveName('凯尔希');
     assert.equal(id.loadName(), '凯尔希');
+    assert.equal(id.loadRememberName(), true, 'remembering defaults on');
+    id.setRememberName(false);
+    assert.equal(id.loadRememberName(), false);
+    assert.equal(id.loadName(), '', 'turning remember off clears the saved name');
+    id.saveName('不会保留');
+    id.setRememberName(true);
+    id.saveName('阿米娅');
+    assert.equal(id.loadRememberName(), true);
+    assert.equal(id.loadName(), '阿米娅');
+    id.clearName();
+    assert.equal(id.loadName(), '');
     id.saveToken('t');
     assert.deepEqual(recent(local), ['t']);
     id.clearToken();
@@ -996,18 +1139,18 @@ describe('data.js', () => {
 
 describe('screen helpers', () => {
   test('title: sanitizeName / isValidName / findUiAsset', async () => {
-    const { sanitizeName, isValidName, findUiAsset } = await mod('screens/title.js');
+    const { sanitizeName, isValidName, findUiAsset, claimStartupClipboardProbe } = await mod('screens/title.js');
     assert.equal(sanitizeName('  凯尔希  '), '凯尔希');
     assert.equal(sanitizeName('a\u0000b\u200bc\u202ed'), 'abcd');
     assert.equal(sanitizeName('a   b'), 'a b');
-    assert.equal(sanitizeName('x'.repeat(30)).length, 12);
-    const emoji = '😀'.repeat(7); // 14 UTF-16 units
+    assert.equal(sanitizeName('x'.repeat(30)).length, 16);
+    const emoji = '😀'.repeat(9); // 18 UTF-16 units
     const cut = sanitizeName(emoji);
-    assert.ok(cut.length <= 12 && !/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
+    assert.ok(cut.length <= 16 && !/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
     const server = await import(pathToFileURL(path.join(ROOT, 'server/net.js')).href);
     for (const raw of ['e\u0301', '\ud800x', '\udc00', 'a \u200b b', '\u00a0\u3000A\u3000B', 'a\u2028b', '😀'.repeat(7), ' x '.repeat(9)]) {
       const c = sanitizeName(raw);
-      assert.ok(c.length <= 12, 'protocol limit (UTF-16 units)');
+      assert.ok(c.length <= 16, 'protocol limit (UTF-16 units)');
       assert.equal(server.sanitizeName(c) ?? '', c, `server keeps the client-sanitized ${JSON.stringify(raw)} unchanged`);
     }
     assert.equal(sanitizeName(null), '');
@@ -1018,6 +1161,36 @@ describe('screen helpers', () => {
     assert.equal(findUiAsset({ files: ['/assets/ui/entry_bkg_01.webp'] }, ['entry_bkg_01']), '/assets/ui/entry_bkg_01.webp');
     assert.equal(findUiAsset(null, ['x']), null);
     assert.equal(findUiAsset({ ui: {} }, ['x']), null);
+    assert.equal(claimStartupClipboardProbe(), true, 'initial title entry may probe the clipboard');
+    assert.equal(claimStartupClipboardProbe(), false, 'later title mounts do not probe again');
+  });
+
+  test('title has invite paste but no manual room-code input', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
+    assert.doesNotMatch(source, /房间 Code（可选）|title-code-row/, 'manual room-code row was removed');
+    assert.match(source, /t\('粘贴邀请链接'\)/, 'clipboard invite entry remains available');
+    assert.match(source, /title-server-row/, 'TCP connection status shares the server-address row');
+    assert.match(source, /labelEnd=\$\{transport === TRANSPORT_TCP \? html`<\$\{ConnectionStatus}/, 'TCP connection status shares the server-label row');
+    assert.match(source, /title-actions/, 'invite paste and replay controls share one action row');
+    assert.match(source, /SettingsModal/, 'title screen exposes the shared settings modal');
+    assert.match(source, /!androidClient \? html`<\${FullscreenButton}/, 'Android omits only the fullscreen button');
+    assert.match(source, /title-hero/, 'title art has a dedicated column beside the login panel');
+    assert.match(source, /title-screen--android/, 'Android title layout can retain the desktop two-column composition');
+  });
+
+  test('game enables Alt+Enter fullscreen outside Android clients', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/game.js'), 'utf8');
+    assert.match(source, /if \(androidClient\) return undefined;/, 'Android does not install game keyboard handlers');
+    assert.match(source, /e\.altKey && !e\.ctrlKey && !e\.metaKey && !e\.shiftKey/, 'Alt+Enter has no conflicting modifiers');
+    assert.match(source, /await fullscreen\.toggle\(\)/, 'Alt+Enter uses the same fullscreen toggle as the button');
+    assert.match(source, /!androidClient \? html`<\${FullscreenButton}/, 'Android omits the in-game fullscreen button');
+  });
+
+  test('title exposes the shared settings modal', () => {
+    const source = readFileSync(path.join(PUBLIC, 'js/screens/title.js'), 'utf8');
+    assert.match(source, /import \{ SettingsModal \} from '\.\.\/ui\/settings\.js'/);
+    assert.match(source, /class="title-settings fsbtn tapx"/, 'title screen includes the settings control');
+    assert.match(source, /<\$\{SettingsModal\} open=\$\{settingsOpen\}/, 'settings control opens the shared modal');
   });
 
   test('title exposes the shared settings modal', () => {
@@ -1125,7 +1298,7 @@ describe('screen helpers', () => {
     assert.equal(roomFacts(room, 'h').canStart, false, 'disconnected guest blocks start');
     assert.equal(roomFacts(room, 'g').canStart, false, 'guests cannot start');
     assert.equal(roomFacts(null, 'x').mine, null);
-    assert.match(inviteLink('ABCD'), /\?room=ABCD$/);
+    assert.equal(inviteLink('ABCD', 'game.example:3000', 'websocket'), 'http://game.example:3000/?room=ABCD');
   });
 
   test('room: spectator seats (community report #26) — isSpectating; roomFacts never counts a spectator as a player', async () => {

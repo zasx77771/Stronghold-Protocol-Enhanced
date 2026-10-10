@@ -96,7 +96,7 @@ function withDom({ rem, hudTop = 0, hudBottom = null, corner = null, coarse = fa
 /** A one-row corner of `n` buttons `size` px high at bottom .24rem (css/screens/game.css .gm__corner). */
 const cornerRow = (h, rem, size, n = 4) => Array.from({ length: n }, () => ({ top: h - 0.24 * rem - size, height: size }));
 
-describe('hudBands: the folded shop\'s band', () => {
+describe('hudBands: the packaged Android folded shop\'s band', () => {
   test('HUD_REM mirrors the CSS of the folded tab and the corner', () => {
     const shop = read('public/css/screens/game-shop.css');
     const game = read('public/css/screens/game.css');
@@ -117,37 +117,38 @@ describe('hudBands: the folded shop\'s band', () => {
     withDom({ rem: 40 }, () => {
       for (const k of ['normal', 'unite', 'boss', 'pen']) assert.equal(hudBands(k, { width: 844, height: 390 }, { shop: false }), null, k);
       for (const k of ['prep', 'bossPrep']) {
-        const open = hudBands(k, { width: 844, height: 390 });
-        assert.deepEqual(hudBands(k, { width: 844, height: 390 }, { shop: true }), open);
+        const open = hudBands(k, { width: 844, height: 390 }, { android: true, shop: true });
+        assert.deepEqual(hudBands(k, { width: 844, height: 390 }, { android: true }), open);
         assert.ok(Math.abs(open.bottom - 108.6) < 1e-9, 'the bar: 2.64rem + 3 px');
-        const f = hudBands(k, { width: 844, height: 390 }, { shop: false });
+        const f = hudBands(k, { width: 844, height: 390 }, { android: true, shop: false });
         assert.equal(f.top, open.top, 'the top band does not change');
         assert.ok(Math.abs(f.bottom - 35) < 1e-9, `no corner on the page: the tab .8rem + 3 px (${f.bottom})`);
       }
     });
-    withDom({ rem: 100 }, () => assert.deepEqual(hudBands('prep', { width: 1920, height: 1080 }, { shop: false }), { top: 216, bottom: 83 }));
+    withDom({ rem: 100 }, () => assert.deepEqual(hudBands('prep', { width: 1920, height: 1080 }, { android: true, shop: false }), { top: 216, bottom: 83 }));
+    withDom({ rem: 40 }, () => assert.equal(hudBands('prep', { width: 844, height: 390 }, { android: false, shop: false }).bottom, 152, 'desktop keeps its open-shop framing'));
   });
 
   test('the corner buttons are measured, touch hit areas included; the tab sits above the bottom safe-area inset', () => {
     const h = 390, rem = 40;
     // desktop-like pointer: the buttons' own top
-    withDom({ rem, corner: cornerRow(h, rem, 34) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { shop: false }).bottom - (9.6 + 34)) < 1e-9));
+    withDom({ rem, corner: cornerRow(h, rem, 34) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { android: true, shop: false }).bottom - (9.6 + 34)) < 1e-9));
     // touch: a 44 px hit area centred on a 34 px button reaches 5 px higher
-    withDom({ rem, corner: cornerRow(h, rem, 34), coarse: true }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { shop: false }).bottom - (9.6 + 34 + 5)) < 1e-9));
+    withDom({ rem, corner: cornerRow(h, rem, 34), coarse: true }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { android: true, shop: false }).bottom - (9.6 + 34 + 5)) < 1e-9));
     // two rows (a narrow phone with the bar open would wrap them): the higher row decides
     const two = [...cornerRow(366, rem, 34, 1), { top: 366 - 9.6 - 34 - 4 - 34, height: 34 }];
-    withDom({ rem, corner: two, coarse: true }, () => assert.ok(Math.abs(hudBands('prep', { width: 756, height: 366 }, { shop: false }).bottom - (9.6 + 72 + 5)) < 1e-9));
+    withDom({ rem, corner: two, coarse: true }, () => assert.ok(Math.abs(hudBands('prep', { width: 756, height: 366 }, { android: true, shop: false }).bottom - (9.6 + 72 + 5)) < 1e-9));
     // a low corner: the tab wins; a notched phone's bottom inset lifts the tab (it lives inside the HUD layer)
-    withDom({ rem, corner: cornerRow(h, rem, 10) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { shop: false }).bottom - 35) < 1e-9));
-    withDom({ rem, hudBottom: h - 21, corner: cornerRow(h - 21, rem, 10) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { shop: false }).bottom - (21 + 35)) < 1e-9));
+    withDom({ rem, corner: cornerRow(h, rem, 10) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { android: true, shop: false }).bottom - 35) < 1e-9));
+    withDom({ rem, hudBottom: h - 21, corner: cornerRow(h - 21, rem, 10) }, () => assert.ok(Math.abs(hudBands('prep', { width: 844, height: h }, { android: true, shop: false }).bottom - (21 + 35)) < 1e-9));
     // clamped like the bar's band
-    withDom({ rem, corner: [{ top: 10, height: 34 }] }, () => assert.equal(hudBands('prep', { width: 640, height: 200 }, { shop: false }).bottom, 80));
+    withDom({ rem, corner: [{ top: 10, height: 34 }] }, () => assert.equal(hudBands('prep', { width: 640, height: 200 }, { android: true, shop: false }).bottom, 80));
   });
 });
 
 // ---- the camera itself (render/projection.js presetCamera with the folded band) ---------------------------------------
 
-describe('the folded board grows and every bench / temp tile stays clear of the folded HUD', () => {
+describe('the packaged Android folded board grows and every bench / temp tile stays clear of the folded HUD', () => {
   const stage = JSON.parse(read('data/stages.json')).act2autochess_m01;
   const H = { h: 0.42, '#': 0.3, X: 0.55, a: 0.16, A: 0.16 }; // render/style.js TILE_H by glyph
   const heightAt = (r, c) => H[stage.rows[r]?.[c]] ?? 0;
@@ -167,8 +168,8 @@ describe('the folded board grows and every bench / temp tile stays clear of the 
       for (const [kind, rows, opts] of [['prep', { bench: 7, temp: 8, back: 12 }, { rect: { ...GEO.NORMAL_RECT }, side: 'L' }],
         ['bossPrep', { bench: 0, temp: 1, back: 5 }, { side: 'L' }], ['bossPrep', { bench: 0, temp: 1, back: 5 }, { side: 'R' }]]) {
         const dom = { rem, corner: cornerRow(h, rem, btn), coarse };
-        const openHud = withDom(dom, () => hudBands(kind, { width: w, height: h }, { shop: true }));
-        const foldHud = withDom(dom, () => hudBands(kind, { width: w, height: h }, { shop: false }));
+        const openHud = withDom(dom, () => hudBands(kind, { width: w, height: h }, { android: true, shop: true }));
+        const foldHud = withDom(dom, () => hudBands(kind, { width: w, height: h }, { android: true, shop: false }));
         const openCam = presetCamera(kind, { width: w, height: h }, { ...opts, shop: true, hud: openHud });
         const foldCam = presetCamera(kind, { width: w, height: h }, { ...opts, shop: false, hud: foldHud });
         const tag = `${kind}${opts.side} ${w}×${h}`;
@@ -206,7 +207,8 @@ describe('wiring', () => {
     const game = read('public/js/screens/game.js');
     assert.match(game, /const shopFolded = showShop && \(pen \? penRef\.current\.collapsed : collapsed\);/);
     // entering prep and the boss-prep re-frame take the fold state; a fold / unfold re-frames through foldCamera
-    assert.equal((game.match(/const pc = prepCameraFor\(pub, myId, shopFolded\);/g) || []).length, 2);
-    assert.match(game, /const next = foldCamera\(\{\n\s+pub, myId, folded: shopFolded, ownPrep: !!view && viewModeRef\.current === 'prep' && showPrep,\n\s+pen, busy: !!drag \|\| !!facing, current: camRef\.current,\n\s+\}\);\n\s+if \(next\) setCam\(next\.kind, next\.opts\);\n\s+\}, \[view, shopFolded, showPrep, pen, !!drag, !!facing, prepCamKey\]\);/);
+    assert.match(game, /const cameraFolded = prepCameraShopOptions\(prepCam\.opts, \{ collapsed: shopFolded, shopVisible: showShop \}\)\.shop === false;/);
+    assert.equal((game.match(/const pc = prepCameraFor\(pub, myId, cameraFolded\);/g) || []).length, 2);
+    assert.match(game, /const next = foldCamera\(\{\n\s+pub, myId, folded: cameraFolded, ownPrep: !!view && viewModeRef\.current === 'prep' && showPrep,\n\s+pen, busy: !!drag \|\| !!facing, current: camRef\.current,\n\s+\}\);\n\s+if \(next\) setCam\(next\.kind, next\.opts\);\n\s+\}, \[view, cameraFolded, showPrep, pen, !!drag, !!facing, prepCamKey\]\);/);
   });
 });

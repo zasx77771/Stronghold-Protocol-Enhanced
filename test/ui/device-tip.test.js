@@ -282,5 +282,5 @@ test('a device target resolves into the panel card; a malformed one resolves to 
   assert.equal(resolveDetail(null, new Map()), null);
   assert.equal(closesOnFieldPress({ kind: 'device', device: info }), true, 'the next field press closes the device card');
   assert.equal(closesOnFieldPress({ kind: 'terrain' }), true);
-  assert.equal(closesOnFieldPress({ kind: 'enemy' }), false);
+  assert.equal(closesOnFieldPress({ kind: 'enemy' }), true, 'enhanced mode closes every detail card on the next field press');
 });

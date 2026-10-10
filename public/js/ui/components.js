@@ -851,11 +851,11 @@ export function DifficultyTag({ difficulty, size = 'md', class: cls, code }) {
 
 /**
  * Bracketed text input.
- * @param {{ label?: any, micro?: string, value: string, onInput: (v: string) => void, onEnter?: Function,
+ * @param {{ label?: any, micro?: string, labelEnd?: any, value: string, onInput: (v: string) => void, onEnter?: Function,
  *   placeholder?: string, maxLength?: number, transform?: (v: string) => string, autoFocus?: boolean,
  *   disabled?: boolean, size?: 'md'|'lg'|'code', icon?: string, class?: string, inputRef?: any, name?: string }} props
  */
-export function TextField({ label, micro, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid }) {
+export function TextField({ label, micro, labelEnd, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid }) {
   const localRef = useRef(null);
   const ref = inputRef || localRef;
   const composing = useRef(false);
@@ -872,7 +872,7 @@ export function TextField({ label, micro, value, onInput, onEnter, placeholder, 
   };
   const id = useMemo(() => `tf-${Math.random().toString(36).slice(2, 8)}`, []);
   return html`<label class=${cx('field', `field--${size}`, disabled && 'is-disabled', invalid && 'is-invalid', cls)} for=${id}>
-    ${label || micro ? html`<span class="field__label">${label}${micro ? html`<span class="micro">${micro}</span>` : null}</span>` : null}
+    ${label || micro || labelEnd ? html`<span class="field__label">${label}${micro ? html`<span class="micro">${micro}</span>` : null}${labelEnd ? html`<span class="field__label-end">${labelEnd}</span>` : null}</span>` : null}
     <span class="field__box brackets">
       ${icon ? html`<${Icon} name=${icon} class="field__icon" />` : null}
       <input id=${id} ref=${ref} class="field__input" name=${name} value=${value} placeholder=${placeholder}

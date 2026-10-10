@@ -91,9 +91,13 @@ export function parseTrustProxy(v) {
   return 'auto';
 }
 
+/** Common truthy environment values. @param {unknown} value */
+export function envEnabled(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
+}
+
 /** The console logger (`quiet` → silent; debug lines only with DEBUG set). */
-export function makeLogger(quiet) {
-  if (quiet) return noopLog;
+export function makeLogger(quiet) {  if (quiet) return noopLog;
   return {
     info: (...a) => console.log(...a),
     warn: (...a) => console.warn(...a),

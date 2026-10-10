@@ -656,7 +656,8 @@ export function specBounds(spec, gd = null) {
   }
   const derived = new Set();
   for (const k of keyCounts.keys()) for (const d of derivedKeys(gd, k)) derived.add(d);
-  const maxTotal = spawnCount * 4 + 100;
+  const progressMax = ((spec.spawns?.length || 0) + 1) * 400;
+  const maxTotal = Math.max(spawnCount * 4 + 100, progressMax);
   // 联防: `${childKey}|${sourcePlayerId}` → how many content-spawned children the enemies that leaker sent in can leave
   // (offspringPerParent per parent; maxTotal when the data gives no bound) — a survivor of a split / summon is billed
   // only to a leaker whose own enemies can have produced it

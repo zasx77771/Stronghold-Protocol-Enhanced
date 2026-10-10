@@ -23,12 +23,14 @@
 // The server only auto-listens when this file is the process entry point.
 
 import http from 'node:http';
+import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, envEnabled } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
-import { MIME, COMPRESSIBLE, acceptsGzip, parseRange } from './http/files.js';
+import { ReplayStore } from './replay/store.js';
+import { startTcpServer } from './tcp.js';import { MIME, COMPRESSIBLE, acceptsGzip, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
 import { answerClientError } from './http/common.js';
@@ -60,22 +62,32 @@ export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
   const log = opts.log || makeLogger(!!opts.quiet);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
-
+  const replayEnabled = opts.replayEnabled ?? (opts.replayStore ? true : (opts.port !== 0 && process.env.SP_REPLAYS !== '0'));
+  const ownReplayStore = !!replayEnabled && !opts.replayStore;
+  const replays = replayEnabled ? (opts.replayStore || new ReplayStore({
+    file: opts.replayFile || process.env.SP_REPLAY_DB || path.join(ROOT, 'var', 'replays.sqlite'), log,
+  })) : null;
+  const serveClient = opts.serveClient ?? !envEnabled(process.env.SP_SERVER_ONLY);
+  const tcpPortValue = opts.tcpPort ?? (process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT) : null);
+  if (tcpPortValue != null && (!Number.isInteger(tcpPortValue) || tcpPortValue < 0 || tcpPortValue > 65535)) {
+    if (ownReplayStore) replays?.close();
+    throw new RangeError(`invalid TCP_PORT ${tcpPortValue}`);
+  }
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
-  const { registry, lobby, network } = createSessionStack(opts, { data, log });
-  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
+  const { registry, lobby, network } = createSessionStack(opts, { data, log, replayStore: replays });  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, log });
+  const serveStatic = serveClient ? createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, log }) : null;
   const startedAt = Date.now();
-  // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
+  const health = { startedAt, network, registry, lobby, serveClient, tcpPort: null };  // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
   buildTag();
 
-  const server = http.createServer(createRequestHandler({ serveStatic, health: { startedAt, network, registry, lobby }, log }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health, replays, log }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log });
+  let tcpListener = null;
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost;
@@ -108,13 +120,25 @@ export async function startServer(opts = {}) {
     boundHost = bound;
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    if (ownReplayStore) replays?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
-
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
   const url = `http://${displayHost(boundHost)}:${actualPort}`;
+  if (tcpPortValue != null) {
+    try {
+      tcpListener = await startTcpServer({ network, host, port: tcpPortValue, log });
+      health.tcpPort = tcpListener.port;
+    } catch (e) {
+      network.close();
+      try { wss.close(); } catch { /* ignore */ }
+      await new Promise((resolve) => server.close(() => resolve()));
+      if (ownReplayStore) replays?.close();
+      throw e;
+    }
+  }
 
   let closing = null;
   async function close() {
@@ -122,17 +146,19 @@ export async function startServer(opts = {}) {
     closing = (async () => {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
+      await tcpListener?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
       try { wss.close(); } catch { /* ignore */ }
-    })();
-    return closing;
+      if (ownReplayStore) replays?.close();
+    })();    return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, close };
+  return { port: actualPort, tcpPort: tcpListener?.port ?? null, host: boundHost, url, serveClient, server,
+    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, replays, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

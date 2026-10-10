@@ -26,6 +26,7 @@ import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
+import { buildInviteLink, loadEndpointAddress, loadTransportMode } from '../serverAddress.js';
 
 /**
  * Seats padded to the room's capacity (co-op 4, solo 1), each null or a seat record.
@@ -84,11 +85,10 @@ export function aiLastOption(room, myId) {
   return { on: room.aiPicksLast === true, editable: room.hostId != null && room.hostId === myId };
 }
 
-/** Invite link for a room code (current page URL with ?room=CODE). */
-export function inviteLink(code) {
-  const loc = globalThis.location;
-  const base = loc ? `${loc.origin}${loc.pathname}` : '';
-  return `${base}?room=${encodeURIComponent(code)}`;
+/** Invite link for a room code, rooted at the selected game server rather than the local client. */
+export function inviteLink(code, serverAddress, transportMode) {
+  const transport = transportMode || loadTransportMode();
+  return buildInviteLink(serverAddress ?? loadEndpointAddress(transport), code, transport);
 }
 
 /**
@@ -138,7 +138,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       <span class="seat__name">${seat.name || t('博士')}</span>
       ${isMe ? html`<span class="seat__you">${t('你')}</span>` : null}
     </div>
-    <${MicroLabel}>${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${doctorNo(seat.playerId)}`}<//>
+    <${MicroLabel}>${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${seat.tag || doctorNo(seat.playerId)}`}<//>
     <footer class="seat__foot">
       <span class=${`seat__state seat__state--${state}`}>
         ${state === 'ready' ? html`<${Icon} name="check" />${t('已就绪')}`

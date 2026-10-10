@@ -42,65 +42,79 @@ export function hudPadding(kind, size) {
 /**
  * HUD geometry (rem) the prep cameras keep clear (they mirror the CSS; test/ui/playtest5-ui.test.js checks the rules):
  * the bond strip's bottom edge (css/screens/game.css .gm__bonds top 1.36rem + a .bslot: disc .52rem + name ≈
- * 2.15rem measured) and the shop bar's top edge above the viewport's bottom (css/screens/game-shop.css .shopbar
- * bottom .2rem + .shopbar__row padding .1rem ×2 + card height 2.24rem, plus its 2 px + 1 px borders). The shop bar
- * sits on the viewport's bottom edge even on a notched phone (css/devices.css, DESIGN §18.1).
- * The folded shop (public issue #5): the tab's top edge (.shopbar-tab bottom .2rem + padding .08rem ×2 + its .44rem
- * button, plus its 2 px + 1 px borders; it sits inside the HUD layer, above the bottom safe-area inset) and the corner
- * buttons' top edge (css/screens/game.css .gm__corner bottom .24rem + a .56rem row — the fallback when the corner
- * cannot be measured: on phones its buttons grow to 34 px and below 768 CSS px of width they wrap into two rows,
- * css/devices.css).
+ * 2.15rem measured) and a conservative fallback for the complete shop bar (tools + gap + card row). hudBands reads
+ * the live bar rectangle when it exists, so future CSS changes cannot silently put the bench behind the controls. The
+ * folded Android shop keeps only its tab and the bottom-corner touch targets clear.
  */
 export const HUD_REM = Object.freeze({
-  bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3, shopTabTop: 0.8, shopTabBorderPx: 3, cornerTop: 0.8,
+  bondStripBottom: 2.16, shopBarTop: 3.8, shopBarBorderPx: 0, shopTabTop: 0.8, shopTabBorderPx: 3, cornerTop: 0.8,
 });
 
 /**
- * CSS px of HUD along the top edge (top bar + bond strip) and the bottom edge of the viewport during prep — the own
- * board ('prep') or the Final Assault half ('bossPrep'); null for every other camera. The prep camera keeps the bench /
- * temp rows and the field's back row clear of them (render/projection.js clearHud; user playtest #5 item 9: the rem
- * floor of 40 px makes the HUD relatively taller on phones in landscape and the shop bar covered the bench).
- * The bottom band is the shop bar's — also for an eliminated player's own board (no shop bar: the band only costs size
- * there, while a camera following the bar's presence would have to re-frame whenever it appears, e.g. when the private
- * state arrives after the prep camera was set) — unless `opts.shop === false`: the player folded the shop (收起) and the
- * own prep board moved to the official shop-collapsed camera (public issue #5: the board did not grow; screens/game.js
- * asks for it only while a folded bar is shown). Its band is the higher of the folded tab (bottom right) and the corner
- * buttons' hit areas (交流 / ⚙ / 📖 / ⛶, bottom left, measured by `cornerBand`: on a narrow phone two rows of 34 px buttons
- * with 44 px touch areas) — under the official collapsed camera the bench's left pads reach under the corner, and with
- * the tab alone it would cover bench pad 0 at the user's 756×366 Android and the near edge of pads 0–2 at 844×390; both
- * are 1-D bands like the bar's, so every bench pad stays fully pressable. Scouting a
- * teammate's board uses the 'normal' camera: no band. An armed shop card (two-tap buy, css/screens/game-shop.css
- * .scard.is-armed) rises 4 px above the bar's top on a phone and covers the bench pads' near corners by ≈ 3 px while it
- * stays armed — less than under the unchanged official camera at 1920×1080 (13 px above the bar, ≈ 11 px over the pads).
+ * The packaged Android client keeps the original open-shop framing. Measuring the whole shop bar made the board too
+ * small on short landscape phones. This remains Android-only: desktop and ordinary browser clients retain the
+ * measured HUD avoidance above and do not change camera merely because the shop was folded.
+ */
+export const ANDROID_LEGACY_HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3 });
+
+export function isPackagedAndroidHost(loc = globalThis.location, bridge = globalThis.StrongholdAndroid) {
+  if (bridge) return true;
+  try { return new URLSearchParams(loc?.search || '').get('android') === '1'; } catch { return false; }
+}
+
+/**
+ * Connect the Android shop's collapsed state to the official no-shop prep camera. Browser and desktop clients keep
+ * their existing camera options, so collapsing their shop remains a HUD-only operation.
+ */
+export function prepCameraShopOptions(options, { android, collapsed = false, shopVisible = true } = {}) {
+  const base = options && typeof options === 'object' ? options : {};
+  const packaged = android ?? isPackagedAndroidHost();
+  if (!packaged || !shopVisible) return base;
+  return { ...base, shop: !collapsed };
+}
+
+/**
+ * CSS px of HUD along the top and bottom edges during prep. On packaged Android, a folded shop uses the official
+ * no-shop camera and reserves only the folded tab / corner touch targets; desktop and ordinary browser clients keep
+ * their existing prep camera. Scouting a teammate's board uses the normal camera and therefore no band.
  * @param {string} kind
  * @param {{ width: number, height: number }} size
- * @param {{ shop?: boolean }} [opts] `shop: false` = the folded shop's band
+ * @param {{ android?: boolean, shop?: boolean }} [runtime] explicit runtime/camera override for tests
  * @returns {{ top: number, bottom: number }|null}
  */
-export function hudBands(kind, size, opts) {
+export function hudBands(kind, size, runtime) {
   if (kind !== 'prep' && kind !== 'bossPrep') return null;
-  const folded = !!opts && opts.shop === false;
+  const android = runtime?.android ?? isPackagedAndroidHost();
+  const folded = android && runtime?.shop === false;
   const h = size?.height || 1080;
   let rem = 100;
   let safeTop = 0;
   let safeBottom = 0;
   let corner = 0;
+  let measuredBottom = 0;
   try {
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 100;
-    // the HUD layer starts below the top safe-area inset and ends above the bottom one (css/devices.css .gm__hud)
     const hud = document.querySelector('.gm__hud')?.getBoundingClientRect();
     safeTop = Math.max(0, hud?.top || 0);
     if (folded) {
       if (hud && hud.bottom > 0) safeBottom = Math.max(0, h - hud.bottom);
       corner = cornerBand(h);
     }
+    if (!android) {
+      const fieldRect = document.querySelector('.gm__field')?.getBoundingClientRect();
+      const shopRect = document.querySelector('.gm__hud > .shopbar')?.getBoundingClientRect();
+      if (fieldRect && shopRect && shopRect.width > 0 && shopRect.height > 0) {
+        measuredBottom = Math.max(0, fieldRect.bottom - shopRect.top);
+      }
+    }
   } catch { /* ignore */ }
+  const geometry = android ? ANDROID_LEGACY_HUD_REM : HUD_REM;
   const bottom = folded
     ? Math.max(safeBottom + rem * HUD_REM.shopTabTop + HUD_REM.shopTabBorderPx, corner || safeBottom + rem * HUD_REM.cornerTop)
-    : rem * HUD_REM.shopBarTop + HUD_REM.shopBarBorderPx;
+    : measuredBottom || rem * geometry.shopBarTop + geometry.shopBarBorderPx;
   return {
-    top: Math.min(h * 0.4, safeTop + rem * HUD_REM.bondStripBottom),
-    bottom: Math.min(h * 0.4, bottom),
+    top: Math.min(h * 0.4, safeTop + rem * geometry.bondStripBottom),
+    bottom: Math.min(h * (android ? 0.4 : 0.49), bottom),
   };
 }
 

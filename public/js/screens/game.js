@@ -67,8 +67,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
-import { useGameData, GIcon } from '../ui/gameComponents.js';
-import { useFieldView } from '../ui/fieldHost.js';
+import { useGameData, GIcon, isPackagedAndroid } from '../ui/gameComponents.js';
+import { prepCameraShopOptions, useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
 import { TeamPanel } from '../ui/teamPanel.js';
@@ -95,7 +95,7 @@ import { pieceTile } from '../render/drag.js';
 import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
   battleOverSfx, uniteResultBox, battleResultBox,
-  snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, normalizePersonalChoice, sortedPlayers,
+  snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, detailPressIsInternal, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, normalizePersonalChoice, sortedPlayers,
   terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
@@ -112,7 +112,7 @@ import { isClientCombat, observeTarget, teammateProgress, cameraLayers, layerCam
 import { screenStrip, playerBonds, playerLayer, detailBondOwner, toggleBond, popupView } from '../ui/watchBonds.js';
 import { data, getMode } from '../data.js';
 import { audio, resultSpeaker, resultVoiceSlot } from '../audio.js';
-import { useDocClass, FullscreenButton } from '../ui/device.js';
+import { useDocClass, fullscreen, FullscreenButton } from '../ui/device.js';
 // MatchEnded, PausedOverlay, the highlight styles and keepEarly live in ./game/*.js.
 import { HUD_HZ_MS, MERGE_HL, SEL_RANGE, cx } from './game/marks.js';
 import { keepEarly, audioEarly } from './game/early.js';
@@ -205,6 +205,7 @@ function MatchScreen() {
   const [pauseBusy, setPauseBusy] = useState(false);
   const [armedCard, setArmedCard] = useState(null);     // the shop bar's armed card { kind, id } (merge tile cue)
   const cc = isClientCombat(pub);
+  const androidClient = useMemo(() => isPackagedAndroid(), []);
   const battleState = useStore((s) => s.match.battle, shallowEqual); // local battle runner (client-side combat)
 
   const phase = pub?.phase;
@@ -295,13 +296,15 @@ function MatchScreen() {
   // own board's layout there (every coordinate the UI handles is a board coordinate either way) and draws the tiles of
   // that half (ui/fallbackField.js: the legal fence tiles are floor, not the normal field's walls; user playtest #5 item 7).
   const prepCam = prepCamera(pub, myId);
-  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}`;
-  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
   const camRef = useRef({ kind: 'prep', opts: { rect: { ...GEO.NORMAL_RECT }, side: 'L' } });
   const penRef = useRef({ on: false, collapsed: false });
   // the shop bar is shown folded (收起; the pen folds it for itself: the player's own state is the one it returns to) —
-  // the own prep board then takes the official shop-collapsed camera (public issue #5, gameLogic prepCameraFor)
+  // only the packaged Android client then takes the official shop-collapsed camera. Desktop keeps its established
+  // framing; prepCameraShopOptions performs the host gate.
   const shopFolded = showShop && (pen ? penRef.current.collapsed : collapsed);
+  const cameraFolded = prepCameraShopOptions(prepCam.opts, { collapsed: shopFolded, shopVisible: showShop }).shop === false;
+  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}:${cameraFolded ? 'folded' : 'fixed'}`;
+  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
   // 准备就绪 folds the shop bar, cancelling it unfolds the bar again (GitHub #138; gameLogic readyShopFold): the board is set,
   // the fight is what to look at — the board camera follows the fold like a hand-made one (the effect below). Inside the pen
   // the bar is folded for itself: the state it returns to is the one that changes.
@@ -417,7 +420,7 @@ function MatchScreen() {
         // the battle we just left (or whatever was stored before mount) must not be re-entered next combat;
         // an m.field that arrives during prep (the upcoming battle) is a new object and will be entered
         staleFieldRef.current = field;
-        const pc = prepCameraFor(pub, myId, shopFolded);
+        const pc = prepCameraFor(pub, myId, cameraFolded);
         setCam(pc.kind, pc.opts);
         prepCamSeen.current = prepCamKey;
         viewModeRef.current = 'prep';
@@ -576,7 +579,7 @@ function MatchScreen() {
     if (!view || viewModeRef.current !== 'prep' || !showPrep) return;
     if (live.current.facing) cancelFacingRef.current();
     setSel(null);
-    const pc = prepCameraFor(pub, myId, shopFolded);
+    const pc = prepCameraFor(pub, myId, cameraFolded);
     setCam(pc.kind, pc.opts);
   }, [view, prepCamKey, showPrep]);
 
@@ -587,11 +590,11 @@ function MatchScreen() {
   // effect runs again when that ends (gameLogic foldCamera). Picking reads the camera of every frame (render/pick.js).
   useEffect(() => {
     const next = foldCamera({
-      pub, myId, folded: shopFolded, ownPrep: !!view && viewModeRef.current === 'prep' && showPrep,
+      pub, myId, folded: cameraFolded, ownPrep: !!view && viewModeRef.current === 'prep' && showPrep,
       pen, busy: !!drag || !!facing, current: camRef.current,
     });
     if (next) setCam(next.kind, next.opts);
-  }, [view, shopFolded, showPrep, pen, !!drag, !!facing, prepCamKey]);
+  }, [view, cameraFolded, showPrep, pen, !!drag, !!facing, prepCamKey]);
 
   // 联防 / 最终攻势: the ‹ › pill moves the camera between the field's halves and 全景 (research 09 §3.1)
   useEffect(() => {
@@ -1154,6 +1157,27 @@ function MatchScreen() {
   }, [detail, field]);
   const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces, { priv, backups: gd.backups }), [detailTarget, placeCtx, gd.ready, data.locale()]);
   useEffect(() => { if (detail && !resolved && detail.kind === 'piece') setDetail(null); }, [resolved]);
+  // Attach only after a panel exists so the pointer event that opened it cannot immediately close it.
+  // The selected piece's underframe remains part of the active interaction.
+  useEffect(() => {
+    if (!resolved) return undefined;
+    const onOutside = (e) => {
+      if (detailPressIsInternal(e.target)) return;
+      setDetail(null);
+      setSel(null);
+    };
+    document.addEventListener('pointerdown', onOutside, true);
+    return () => document.removeEventListener('pointerdown', onOutside, true);
+  }, [!!resolved]);
+  useEffect(() => {
+    if (!bondOpen) return undefined;
+    const onBondOutside = (e) => {
+      if (e.target?.closest?.('.bpop')) return;
+      setBondOpen(null);
+    };
+    document.addEventListener('pointerdown', onBondOutside, true);
+    return () => document.removeEventListener('pointerdown', onBondOutside, true);
+  }, [!!bondOpen]);
   const snapHp = (() => {
     const id = resolved?.unitId;
     const t = id != null ? snapUnitsRef.current.get(id) : null;
@@ -1208,10 +1232,21 @@ function MatchScreen() {
 
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
+    if (androidClient) return undefined;
     const onKey = async (e) => {
       const act = shortcutFor(e, settingsStore.get().keys); // the player's key map (设置 → 快捷键)
       const L = live.current;
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat
+        && (e.code === 'Enter' || e.key === 'Enter')) {
+        const target = e.target;
+        const tag = target && typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !target?.isContentEditable) {
+          e.preventDefault();
+          await fullscreen.toggle();
+        }
+        return;
+      }
       if (shortcutBlocked(act, { modal: !!document.querySelector('.modal, .guide'), drawer: !!L.drawer })) return;
       if (L.hasPersonalChoice) {
         if (act !== 'escape') e.preventDefault();
@@ -1266,7 +1301,7 @@ function MatchScreen() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [androidClient]);
 
   // ---- render ---------------------------------------------------------------------------------------------------
   const readyCount = players.filter((p) => p.ready || p.status === 'ready').length;
@@ -1463,7 +1498,7 @@ function MatchScreen() {
         ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
-        <${FullscreenButton} class="gm__gear gm__fs" />
+        ${!androidClient ? html`<${FullscreenButton} class="gm__gear gm__fs" />` : null}
       </div>
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}

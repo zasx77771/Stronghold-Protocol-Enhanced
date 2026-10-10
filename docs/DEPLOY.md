@@ -13,7 +13,7 @@
 | 磁盘 | 素材约 550 MB（`public/assets`，含中文约 65 MB、日文约 85 MB 两套干员语音）+ 依赖约 125 MB（`node_modules`；整合包只带运行依赖，约 65 MB）；可选的本地提取约 40 MB（`.venv-extract`）+ 70 MB 贴图（见第 6 节）。完整包解压后约 710 MB。 |
 | 玩家设备 | 支持 WebGL 的现代浏览器（Chrome / Edge / Firefox / Safari 最新版），电脑或手机平板（横屏）。老旧设备可在设置里调低画质或访问 `/?board=2d`。 |
 
-服务器**无状态**：房间和对局只存在内存里，没有数据库和存档，**不需要备份**。重启服务器会结束正在进行的对局（包括断线后本可在 24 小时内回来继续的独立模拟）。
+房间和正在进行的对局仍只存在内存中，重启服务器会结束它们。增强版的身份、对局记录和回放索引写入 `SP_REPLAY_DB`（默认 `var/replays.sqlite`），升级、迁移或替换服务端前必须备份该数据库；生产部署建议把它放在不会被程序包覆盖的持久数据目录。
 
 ## 1. Windows 小主机：一步步
 
@@ -26,11 +26,13 @@
    ```
    装完**关闭并重新打开**终端，`node -v` 应显示 v22 或更高（winget 的 LTS 目前是 v24.x，同样可用）。没有 winget 时从 <https://nodejs.org/zh-cn/download> 和 <https://git-scm.com/download/win> 下载安装。
 2. 下载，三选一。建议放在一个固定、短、**不在 OneDrive 同步范围内**的目录，例如 `C:\Stronghold-Protocol`：
+   - **完整包（推荐）**：在增强版仓库的 [Releases](https://github.com/zasx77771/Stronghold-Protocol-Enhanced/releases) 页面下载最新完整 Windows 客户端或服务端包；包内已含运行依赖、前端库和运行所需素材。素材版权归上海鹰角网络 / Yostar，仅限非商业使用，见 [NOTICE.md](../NOTICE.md)。
+   - **精简包**：同一页面的 `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）。代码、运行依赖和前端库与完整包相同，但不带素材：美术、Spine 模型、音频、字体、表情和「玩法说明」教程图在首次启动时由 setup 从公开镜像下载（约 460 MB，显示进度，可中断续传；镜像设置见下面的「国内镜像下载」）。官方 3D 棋盘等本地客户端素材需要用本机客户端提取，或从同一版本的完整包复制（第 6 节）。适合下载大文件不方便、或想先下一个小包的情况；放置方式同完整包。
    - **完整包（推荐）**：在仓库的 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases) 页面下载最新版本的 `Stronghold-Protocol-v<版本>.zip`（约 505 MB，解压后约 710 MB；已含运行依赖、前端库和全部素材，包括中文、日文两套干员语音和官方 3D 棋盘等本地客户端素材），解压后把里面的 `Stronghold-Protocol` 文件夹放到上述位置。不需要 Git，首次启动也不用再下载素材。素材版权归上海鹰角网络 / Yostar，仅限非商业使用，见 [NOTICE.md](../NOTICE.md)。
    - **精简包**：同一页面的 `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）。代码、运行依赖和前端库与完整包相同，但不带素材：美术、Spine 模型、音频（含两套干员语音）、字体、表情和「玩法说明」教程图在首次启动时由 setup 从公开镜像下载（约 550 MB，显示进度，可中断续传；镜像设置见下面的「国内镜像下载」）。官方 3D 棋盘等本地客户端素材需要用本机客户端提取，或从同一版本的完整包复制（第 6 节）。适合下载大文件不方便、或想先下一个小包的情况；放置方式同完整包。
    - **源码**：
      ```powershell
-     git clone https://github.com/sganggs/Stronghold-Protocol.git C:\Stronghold-Protocol
+     git clone --branch enhanced-mode https://github.com/zasx77771/Stronghold-Protocol-Enhanced.git C:\Stronghold-Protocol
      ```
 3. 双击 `C:\Stronghold-Protocol\scripts\start-windows.bat`。首次会：安装依赖（`npm ci`；整合包已含，跳过）→ 复制前端库（整合包已含，跳过）→ 下载约 550 MB 素材（完整包已含，跳过；精简包和源码在这一步下载，显示进度，中断后再次启动会续传）→ 若检测到本机的明日方舟客户端，询问是否提取官方贴图（可跳过）→ 启动服务器并打开浏览器。
 4. 窗口里会打印朋友可用的地址，例如 `http://192.168.1.23:3000`。用另一台设备打开它确认能进入。关闭窗口即停止服务器。
@@ -66,8 +68,9 @@ $env:SP_ASSET_SOURCE = 'mirror'             # 也可用环境变量显式启用
 - 第一次启动时 Windows 会弹出「Windows 安全中心警报」：勾选**专用网络**并点「允许访问」。
 - 没弹窗或点错了，用**管理员** PowerShell 添加规则（下面的开机自启脚本也会自动添加）：
   ```powershell
-  netsh advfirewall firewall add rule name="Stronghold Protocol" dir=in action=allow protocol=TCP localport=3000 profile=private,domain
+  netsh advfirewall firewall add rule name="Stronghold Protocol" dir=in action=allow protocol=TCP localport=3000,3001 profile=private,domain
   ```
+- 回放服务默认使用独立 TCP 端口 `3002`。只在受信任的专用网络中按需放行；四位 tag 不是公网认证，不要直接把回放端口暴露到公网。
 - 家里的网络要是「公用网络」，Windows 会拦截入站连接。改成专用（管理员 PowerShell；网卡名用 `Get-NetConnectionProfile` 查看）：
   ```powershell
   Set-NetConnectionProfile -InterfaceAlias "以太网" -NetworkCategory Private
@@ -90,7 +93,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1
 
 | 需求 | 命令（都加在 `powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1` 之后） |
 |---|---|
-| 换端口 / 其他设置 | `-Port 8080`、`-Verify sample`、`-Combat server`、`-BindHost 127.0.0.1`（只给反向代理用） |
+| 换端口 / 其他设置 | `-Port 8080 -TcpPort 8081`、`-Verify sample`、`-Combat server`、`-BindHost 127.0.0.1`（只给反向代理用） |
 | 公用网络也放行 | `-AllowPublicNetwork`（一般不需要；Tailscale 网卡被识别为公用网络时可能需要） |
 | 查看状态和最近日志 | `-Status` |
 | 重启（更新代码后） | `-Restart` |
@@ -106,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1
 winget install NSSM.NSSM            # 或从 https://nssm.cc 下载
 nssm install StrongholdProtocol "C:\Program Files\nodejs\node.exe" server\index.js
 nssm set StrongholdProtocol AppDirectory C:\Stronghold-Protocol
-nssm set StrongholdProtocol AppEnvironmentExtra PORT=3000 HOST=::
+nssm set StrongholdProtocol AppEnvironmentExtra PORT=3000 TCP_PORT=3001 SPECTATOR_PORT=3002 HOST=:: SP_REPLAY_DB=D:\StrongholdData\replays.sqlite
 nssm set StrongholdProtocol AppStdout C:\Stronghold-Protocol\logs\server.log
 nssm set StrongholdProtocol AppStderr C:\Stronghold-Protocol\logs\server.log
 nssm start StrongholdProtocol
@@ -175,10 +178,12 @@ cloudflared tunnel --url http://localhost:3000
 仅当你有**公网 IPv4**（很多宽带是运营商级 NAT，没有公网 IP，此时请用 2.1 / 2.2）：
 
 1. 先按 1.3 固定主机的局域网 IP。
-2. 路由器「虚拟服务器 / 端口转发」：外部端口 3000（或任意端口）→ 内部 `主机IP:3000`，TCP。
-3. 朋友访问 `http://<你的公网 IP>:外部端口`。
+2. WebSocket / 网页方式：把外部 TCP 端口 3000（或任意端口）转发到 `主机IP:3000`。
+3. Windows / Android 客户端若使用 TCP 直连，再把另一个外部 TCP 端口转发到 `主机IP:3001`；浏览器不能使用原始 TCP。
+4. 回放服务使用独立的 `SPECTATOR_PORT`（默认 3002），未增加独立认证和访问控制前不要转发到公网。
+5. WebSocket 客户端访问 `http://<你的公网 IP>:外部端口`，原生客户端填写相应 HTTP 或 `tcp://` 地址。
 
-注意：游戏没有账号系统，知道地址的人都能进来。服务器对来自互联网的连接有按网络的数量限制（每个网络最多 64 个连接，房间 / 对局数量也有上限），但仍建议不玩时关掉转发，或优先用 Tailscale。
+注意：四位 tag 只用于个人服务中的身份区分，不是公网认证。知道地址的人仍可尝试连接；建议优先使用 Tailscale，并在不玩时关闭公网转发。
 
 ### 2.4 反向代理与 HTTPS（有域名时）
 

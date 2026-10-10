@@ -83,15 +83,18 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** One logical player identity; survives socket reconnects for the reconnect window. */
 export class Session {
   /**
-   * @param {{ playerId: string, token: string, name: string, now?: number }} init
+   * @param {{ playerId: string, token: string, name: string, userId?: string|null, profileTag?: string|null, now?: number }} init
    */
-  constructor({ playerId, token, name, now = Date.now() }) {
+  constructor({ playerId, token, name, userId = null, profileTag = null, now = Date.now() }) {
     /** @type {string} public id, shared with other players */
     this.playerId = playerId;
     /** @type {string} secret 128-bit hex reconnect token (only ever sent to its owner) */
     this.token = token;
     /** @type {string} sanitized nickname */
     this.name = name;
+    /** Persistent replay profile, distinct from the temporary network playerId. */
+    this.userId = userId;
+    this.profileTag = profileTag;
     /** @type {import('ws').WebSocket | null} currently bound socket */
     this.ws = null;
     /** @type {boolean} */
@@ -154,13 +157,13 @@ export class SessionRegistry {
    * @param {string} name
    * @returns {Session | null}
    */
-  create(name) {
+  create(name, profile = null) {
     if (this.byPlayerId.size >= this.maxSessions && !this.evictOne()) return null;
     let playerId;
     do playerId = 'p_' + randomBytes(5).toString('hex'); while (this.byPlayerId.has(playerId));
     let token;
     do token = newToken(); while (this.byTokenMap.has(token));
-    const s = new Session({ playerId, token, name, now: this.now() });
+    const s = new Session({ playerId, token, name, userId: profile?.userId || null, profileTag: profile?.tag || null, now: this.now() });
     this.byPlayerId.set(playerId, s);
     this.byTokenMap.set(token, s);
     return s;
@@ -515,9 +518,10 @@ export class Network {
    *   options?: Partial<typeof NET_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {} }) {
+  constructor({ registry, handler, profileStore = null, log = noopLog, now = Date.now, options = {} }) {
     this.registry = registry;
     this.handler = handler;
+    this.profileStore = profileStore;
     this.log = log;
     this.now = now;
     this.opts = { ...NET_DEFAULTS, ...options };
@@ -646,6 +650,12 @@ export class Network {
     let session = conn.session;
     let resumed = false;
     const repeat = !!session;
+    let profile = null;
+    if (this.profileStore) {
+      try { profile = this.profileStore.resolveProfile(name, msg.profileTag ?? null, session?.userId ?? null); }
+      catch (e) { this.log.error('[net] profile lookup failed', e); this.reply(conn, errorMsg(ERR.INTERNAL, rid)); return; }
+      if (!profile) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'profile not found')); return; }
+    }
     if (!session) {
       session = msg.token ? this.registry.byToken(msg.token) : null;
       if (session) {
@@ -657,7 +667,7 @@ export class Network {
         resumed = true;
         if (session.ws && session.ws !== conn.ws) this.detachReplaced(session.ws);
       } else {
-        session = this.registry.create(name);
+        session = this.registry.create(name, profile);
         if (!session) { this.reply(conn, errorMsg(ERR.INTERNAL, rid, 'server full')); return; }
       }
       conn.session = session;
@@ -667,14 +677,14 @@ export class Network {
       session.disconnectedAt = null;
     }
     session.name = name;
+    if (profile) { session.userId = profile.userId; session.profileTag = profile.tag; }
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
 
     let extra = null;
     try { extra = this.handler.welcomeInfo?.() ?? null; } catch (e) { this.log.error('[net] welcomeInfo crashed', e); }
-    const welcome = { ...(extra && typeof extra === 'object' ? extra : null), t: 'welcome', playerId: session.playerId, token: session.token, name: session.name, serverNow: now, version: PROTOCOL_VERSION, resumed };
-    if (validRid(rid)) welcome.rid = rid;
+    const welcome = { ...(extra && typeof extra === 'object' ? extra : null), t: 'welcome', playerId: session.playerId, token: session.token, name: session.name, profileTag: session.profileTag, serverNow: now, version: PROTOCOL_VERSION, resumed };    if (validRid(rid)) welcome.rid = rid;
     this.reply(conn, welcome);
     try {
       this.handler.onHello?.(session, { resumed, repeat });

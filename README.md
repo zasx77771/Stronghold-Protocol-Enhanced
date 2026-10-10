@@ -2,7 +2,7 @@
 
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.2.3-2ea44f)
+![version](https://img.shields.io/badge/version-2.3.0-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -37,7 +37,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前版本 0.2.3：自选编队新增六星克莱门莎，黍和乌尔比安新增模组；新增文字大小、逐干员语音语言、添加到桌面、开局重刷和恢复本机对局，并修复了 0.2.2 发布后玩家和 GitHub 上反馈的问题，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
+- 当前增强代码版本 2.3.0 已同步上游 0.2.3：自选编队新增六星克莱门莎，黍和乌尔比安新增模组，并新增文字大小、逐干员语音语言、添加到桌面、开局重刷和恢复本机对局；同时保留 Windows / Android 客户端、TCP 直连、四位 tag、观战、对局记录、独立回放服务和更新器。代码版本不等同于已经打包或发布，正式状态以 Git 标签和 GitHub Release 为准。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能一览
 
@@ -51,7 +51,7 @@ English summary: [below](#english).
 - **自动作战**：技能按官方「技能策略」自动释放；按接触半径阻挡，阻挡者倒下时由接触的干员接替；元素损伤与元素爆发；召唤物由玩家手动摆放；推开 / 拉拽按力度与重量计算；被击倒的干员留在原地显示再部署倒计时。
 - **地形与敌人**：阻隔工事、射击台、源石流吹风机、沼泽、排气格栅、涨潮等地形装置；空中与近地悬浮敌人、悬赏敌人。
 - **联防**：有人漏怪、又有人完美作战时，完美作战的队友带着阵容帮忙拦截漏掉的敌人。
-- **最终攻势与隐秘核心**：两人共享一个战场，全队共同削减同一条领袖血条；10 个敌方领袖，巨型领袖约 5×3 格的受击范围，以及官方的限伤规则。
+- **最终攻势与隐秘核心**：两人共享一个战场，全队共同削减同一条领袖血条；10 个敌方领袖，巨型领袖约 5×3 格的受击范围，以及官方的限伤规则；首领血池按开战时存活人数增加，不再附加增强版承伤倍率。
 - **结算称号**：卫戍之星、不朽盟约、坚若磐石等 6 个称号。
 - **断线重连**：同盟模拟断线后 10 分钟内重新打开页面即可回到原座位，掉线期间按原阵容自动作战，也可以「暂离」交给 AI 托管；独立模拟 24 小时内可以回来继续（同一个浏览器）。
 - **交互细节**：漏怪时顶栏的目标生命值实时减少（结算时确定）；点选、拖放和配发装备都按地上的方格；购买、升级和机变选卡都需要点两次确认；只有一名玩家时除作战外不计时。
@@ -83,8 +83,8 @@ English summary: [below](#english).
 ### 方式二：从源码运行
 
 ```bash
-git clone https://github.com/sganggs/Stronghold-Protocol.git
-cd Stronghold-Protocol
+git clone --branch enhanced-mode https://github.com/zasx77771/Stronghold-Protocol-Enhanced.git
+cd Stronghold-Protocol-Enhanced
 npm install        # 安装依赖（postinstall 会把 pixi / preact / three 复制到 public/vendor）
 npm run setup      # 检查环境，并从公开镜像下载约 550 MB 美术 / 音频（可中断，再次运行会续传）
 npm start          # 启动服务器：http://localhost:3000
@@ -108,11 +108,17 @@ npm start          # 启动服务器：http://localhost:3000
 
 ### 端口与配置
 
-默认监听 **TCP 3000**。换端口：启动脚本加 `--port 3001`，或设置环境变量 `PORT`。
+默认网页 / WebSocket 端口为 `3000`，原生游戏 TCP 端口为 `3001`，独立回放 TCP 端口为 `3002`。端口都可配置，浏览器只能使用网页 / WebSocket。
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `3000` | 监听端口 |
+| `TCP_PORT` | `3001`（直接启动时） | Windows / Android 原生客户端的游戏 TCP 端口；程序化启动未设置时不监听 |
+| `SPECTATOR_PORT` | `3002` | TCP-only 回放服务端口；设为 `0` / `off` 可关闭 |
+| `SPECTATOR_HOST` | 与 `HOST` 相同 | 回放服务监听地址 |
+| `SP_REPLAY_DB` | `var/replays.sqlite` | 对局记录数据库；生产部署建议放到程序目录外的持久数据盘 |
+| `SP_REPLAYS` | `1` | 设为 `0` 可关闭记录存储和回放服务 |
+| `SP_SERVER_ONLY` | 空 | 设为 `1` 时只运行联机服务，不提供网页客户端静态文件 |
 | `HOST` | `::` | 监听地址。默认 `::` 是双栈：同一个端口同时接受 IPv6 和 IPv4；`0.0.0.0` = 只 IPv4；`127.0.0.1` = 只允许本机，放在反向代理后面时使用 |
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
