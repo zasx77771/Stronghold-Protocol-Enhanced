@@ -1,5 +1,11 @@
 # 更新记录
 
+## 2.3.0 — 2026-10-10
+
+- 同步 Git 上游 Stronghold Protocol 0.2.3：恢复本机对局、加入开局重刷、文字大小设置、逐干员语音、PWA 安装支持及位移朝向修复，并纳入克莱门莎、新模组与社区修复。
+- 保持增强版 Windows、Android、TCP、账户与四位 tag、观战、记录、TCP-only 回放、更新器和详情卡交互；`hello` 协议兼容增强版 `profileTag` 与上游 `noReplace` / `claimAt` 字段。
+- 增强版版本更新为 2.3.0，Android `versionCode` 更新为 22；Windows 主线增量包从 2.2.1 更新到 2.3.0。
+
 ## 2.2.1 — 2026-10-09
 
 - 修复 Android 完整包缺少 Preact、Pixi、HTM 等浏览器依赖和字体 CSS，导致启动时提示“游戏脚本加载失败”的问题。

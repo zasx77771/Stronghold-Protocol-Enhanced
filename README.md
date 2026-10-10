@@ -2,7 +2,7 @@
 
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-2.2.1-2ea44f)
+![version](https://img.shields.io/badge/version-2.3.0-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -37,7 +37,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前增强代码版本 2.2.1 已同步上游 0.2.3：自选编队新增六星克莱门莎，黍和乌尔比安新增模组，并新增文字大小、逐干员语音语言、添加到桌面、开局重刷和恢复本机对局；同时保留 Windows / Android 客户端、TCP 直连、四位 tag、观战、对局记录、独立回放服务和更新器。代码版本不等同于已经打包或发布，正式状态以 Git 标签和 GitHub Release 为准。详见 [CHANGELOG.md](CHANGELOG.md)。
+- 当前增强代码版本 2.3.0 已同步上游 0.2.3：自选编队新增六星克莱门莎，黍和乌尔比安新增模组，并新增文字大小、逐干员语音语言、添加到桌面、开局重刷和恢复本机对局；同时保留 Windows / Android 客户端、TCP 直连、四位 tag、观战、对局记录、独立回放服务和更新器。代码版本不等同于已经打包或发布，正式状态以 Git 标签和 GitHub Release 为准。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能一览
 

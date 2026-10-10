@@ -1,6 +1,6 @@
 {
   "name": "stronghold-protocol-portable-client",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "private": true,
   "productName": "Stronghold Protocol Client",
   "main": "main.cjs"
