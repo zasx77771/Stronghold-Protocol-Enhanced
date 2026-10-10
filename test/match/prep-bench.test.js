@@ -37,7 +37,7 @@ test('#44 prep scout: held pieces are units on the hand row; deploying moves the
     const u = first.units.find((x) => x.uid === piece.uid);
     assert.ok(u, `${pid}: the held operator is a unit of the scout`);
     assert.deepEqual([u.x, u.y], [0, GEO.HAND_ROW], `${pid}: standing on the first hand slot`);
-    assert.equal(u.area, 'hand');
+    assert.equal(u.area, 'hand', 'tagged with its area: the bond popup counts it as held, not in play (GitHub #385)');
     assert.equal(u.kind, 'op');
     assert.equal(u.items, undefined, 'no items equipped yet');
   }
