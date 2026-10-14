@@ -11,6 +11,7 @@
 import { PROTOCOL_VERSION, APP_VERSION } from '../../shared/constants.js';
 import { buildTag } from './buildTag.js';
 import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
+import { clientAddress, isLocalIp } from '../net.js';
 
 const MAX_URL_LENGTH = 4096;
 
@@ -19,8 +20,8 @@ const MAX_URL_LENGTH = 4096;
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, serveClient?: boolean, tcpPort?: number|null }} health
  */
-export function healthReport({ startedAt, network, registry, lobby, serveClient = true, tcpPort = null }) {
-  return {
+export function healthReport({ startedAt, network, registry, lobby, traffic, assetIndex, views, serveClient = true, tcpPort = null }, withTraffic = false) {
+  const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     mode: serveClient ? 'integrated' : 'network-only', clientAssets: serveClient,
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -28,7 +29,12 @@ export function healthReport({ startedAt, network, registry, lobby, serveClient 
     build: buildTag(),
     sockets: network.connectionCount, tcpPort, sessions: registry.size, ...lobby.stats(),
   };
+  if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  if (withTraffic) report.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
+  return report;
 }
+
+const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.test(query || '');
 /**
  * The request listener for `http.createServer`.
  * @param {{ serveStatic: null|((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
@@ -36,7 +42,7 @@ export function healthReport({ startedAt, network, registry, lobby, serveClient 
  *           health: Parameters<typeof healthReport>[0], replays?: import('../replay/store.js').ReplayStore|null, log: object }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, replays = null, log }) {
+export function createRequestHandler({ serveStatic, health, replays = null, log, trustProxy = 'auto' }) {
   async function handleRequest(req, res) {    const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
@@ -47,7 +53,8 @@ export function createRequestHandler({ serveStatic, health, replays = null, log 
       return;
     }
     if (parts.rawPath === '/healthz') {
-      sendJson(req, res, 200, healthReport(health));
+      const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
+      sendJson(req, res, 200, healthReport(health, withTraffic));
       return;
     }
     if (parts.rawPath === '/api/profiles') {
@@ -65,6 +72,7 @@ export function createRequestHandler({ serveStatic, health, replays = null, log 
 
   return (req, res) => {
     setSecurityHeaders(res);
+    if (health.traffic) health.traffic.meter(res, splitUrl(req.url || '/')?.rawPath || '/');
     handleRequest(req, res).catch((e) => {
       log.error('[http] request failed', e);
       sendError(req, res, 500, '服务器内部错误 · Internal error');
