@@ -327,7 +327,7 @@ export function LobbyScreen() {
           <${AvatarFrame} size="sm" name=${me.name} seat=${0} self=${true} />
           <span class="me-chip__text">
             <span class="me-chip__name">${me.name || t('博士')}</span>
-            <${MicroLabel}>${me.playerId != null ? `DOCTOR #${me.tag || doctorNo(me.playerId)}` : 'DOCTOR'}<//>
+            <${MicroLabel}>${me.playerId != null ? `DOCTOR #${doctorNo(me.playerId)}` : 'DOCTOR'}<//>
           </span>
           <${Icon} name="chart" class="me-chip__stats" />
         </button>

@@ -1,3 +1,7 @@
+## 未发布
+
+- 移除增强版账户与回放功能：服务端不再创建或读取身份/记录数据库（`SP_REPLAY_DB` / `var/replays.sqlite`），不再提供 `/api/profiles` 身份查询接口和独立回放 TCP 端口（`SPECTATOR_PORT` / `SPECTATOR_HOST` / `SP_REPLAYS` 一并失效），`hello` 协议不再有 `profileTag` 字段，客户端移除 `#tag` 输入、同名档案选择、「对局记录」界面和回放 TCP 客户端。已有数据库和录像文件不会被删除，也不再被读取或写入。
+
 ## 2.6.0 — 2026-10-14
 
 - 同步上游 Stronghold Protocol 0.2.6，包含官方场景、3D 棋盘、渲染、战斗规则、网络压缩与带宽优化更新。
