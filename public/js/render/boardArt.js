@@ -33,7 +33,7 @@ export function sourceUrl(assets, path) {
 /** @param {any} assets store of public/js/assets.js (needs local(), localUrl(), image()) */
 export function loadBoardArt(assets) {
   if (cached) return cached;
-  cached = (async () => {
+  const pending = (async () => {
     if (!assets || typeof assets.local !== 'function' || typeof assets.image !== 'function') return null;
     const manifest = await assets.local().catch(() => null);
     if (!manifest) return null;
@@ -50,13 +50,17 @@ export function loadBoardArt(assets) {
     await Promise.all(Object.entries(tiles.source).map(async ([k, s]) => {
       const url = isObj(s) && typeof s.path === 'string' && s.path ? sourceUrl(assets, s.path) : null;
       if (!url) return;
-      const img = await assets.image(url).catch(() => null);
+      const img = await assets.image(url, { retry: true }).catch(() => null);
       if (img && img.width > 0) images[k] = img;
     }));
     if (!images.D) return null;
     return { key: `${atlasUrl}#${tiles.version || 0}`, tiles, images };
-  })().catch(() => null);
-  return cached;
+  })().catch(() => null).then((art) => {
+    if (!art && cached === pending) cached = null;
+    return art;
+  });
+  cached = pending;
+  return pending;
 }
 
 /** Forget the cached art (tests / hot reload). */

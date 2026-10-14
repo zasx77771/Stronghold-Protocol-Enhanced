@@ -313,6 +313,13 @@ describe('local-art manifest helpers', () => {
     assert.equal(missing.localUrl('map/autochess', 'TX_autochessi_D'), null);
     const broken = createAssets({ manifest: {}, fetch: async () => { throw new Error('offline'); } });
     assert.equal(await broken.local(), null);
+    let localAttempts = 0;
+    const recovers = createAssets({ manifest: {}, fetch: async () => (++localAttempts === 1
+      ? { ok: false, status: 503 }
+      : { ok: true, json: async () => m }) });
+    assert.equal(await recovers.local(), null);
+    assert.deepEqual(await recovers.local(), m);
+    assert.equal(localAttempts, 2);
   });
 
   test('board art loads the crop-table textures at the URLs the manifest lists (one download with the 3D board)', async () => {
@@ -331,6 +338,30 @@ describe('local-art manifest helpers', () => {
       const art = await loadBoardArt(store);
       assert.ok(art?.images.D && art.images.common && art.images.BG);
       assert.deepEqual(asked.sort(), [at('TX_autochessi_BG', 'webp'), at('TX_autochessi_D', 'webp'), at('TX_autochessi_common_D', 'png')]);
+    } finally {
+      globalThis.fetch = realFetch;
+      resetBoardArt();
+    }
+  });
+  test('a temporary local manifest or atlas failure does not permanently select the default board', async () => {
+    const url = '/assets/local/map/autochess/TX_autochessi_D.png';
+    const manifest = { groups: { 'map/autochess': { TX_autochessi_D: { path: url } } } };
+    let local = null, imageAttempts = 0;
+    const store = {
+      local: async () => local,
+      localUrl: (g, n) => localAssetUrl(local, g, n),
+      image: async (_u, { retry } = {}) => (++imageAttempts === 1 ? null : { width: retry ? 8 : 0 }),
+    };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ materials: {}, source: { D: { path: url } } }) });
+    try {
+      resetBoardArt();
+      assert.equal(await loadBoardArt(store), null);
+      local = manifest;
+      assert.equal(await loadBoardArt(store), null);
+      const art = await loadBoardArt(store);
+      assert.ok(art?.images.D);
+      assert.equal(imageAttempts, 2);
     } finally {
       globalThis.fetch = realFetch;
       resetBoardArt();
