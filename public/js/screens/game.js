@@ -99,7 +99,7 @@ import {
   terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits, deviceUnitsForEntry,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
-  mergeTarget, modeOffBonds, readyFundsPrompt, readyShopFold, ownerBandId, ownDiyRecord, ownStandIn, detailPressIsInternal,
+  mergeTarget, modeOffBonds, readyFundsPrompt, readyShopFold, ownerBandId, ownDiyRecord, ownStandIn, detailPressIsInternal, roundStartReplay,
 } from '../ui/gameLogic.js';
 import { toast } from '../ui/toasts.js';
 import { BriefingScreen } from './briefing.js';
@@ -518,6 +518,12 @@ function MatchScreen() {
       setHud(hudRef.current);
     }
   }, [view, showPrep, priv, editable, field, combat, mode, watchingOther, watching, holdSeq]);
+
+  const replayedRef = useRef(null);
+  useEffect(() => {
+    const plan = roundStartReplay({ phase, round: pub?.round, replayed: replayedRef.current, ownBoard: showPrep && alive && !spectator, board: priv?.board });
+    if (plan && view && view.replayDeploys?.(plan.uids) > 0) replayedRef.current = plan.round;
+  }, [view, phase, pub?.round, priv, showPrep, alive, spectator]);
 
   // battle frames straight from the socket (server-run combat, 20 Hz) or from the local simulation (client-side combat,
   // battle/runner.js, every animation frame) — never through the store. Frames go to the view as received: the game
