@@ -25,21 +25,24 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, envEnabled } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, envEnabled, assetIndexOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
 import { ReplayStore } from './replay/store.js';
-import { startTcpServer } from './tcp.js';import { MIME, COMPRESSIBLE, acceptsGzip, parseRange } from './http/files.js';
+import { startTcpServer } from './tcp.js';import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { createTrafficCounter } from './http/traffic.js';
+import { createAssetIndex } from './http/assetIndex.js';
+import { createManifestViews } from './http/assetViews.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
 export {
   ROOT, WS_MAX_PAYLOAD, DATA_SHIM_JS, MIME, COMPRESSIBLE, BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag,
-  acceptsGzip, parseRange, createStaticHandler, lanUrls, parseTrustProxy,
+  acceptsGzip, pickEncoding, parseRange, createStaticHandler, lanUrls, parseTrustProxy,
 };
 
 /**
@@ -52,11 +55,13 @@ export {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
+ *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number },
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPackRegistry>,
- *                     close: () => Promise<void> }>}
+ *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
+ *                     views: ReturnType<typeof createManifestViews> | null, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
@@ -78,15 +83,19 @@ export async function startServer(opts = {}) {
   const { registry, lobby, network } = createSessionStack(opts, { data, log, replayStore: replays });  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
-  const serveStatic = serveClient ? createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, log }) : null;
+  const indexOptions = assetIndexOptionsFrom(opts, publicDir);
+  const assetIndex = indexOptions ? createAssetIndex({ publicDir, log, ...indexOptions }) : null;
+  const views = assetIndex ? createManifestViews({ dataDir, index: assetIndex, log }) : null;
+  const serveStatic = serveClient ? createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, log, assetIndex, views }) : null;
   const startedAt = Date.now();
-  const health = { startedAt, network, registry, lobby, serveClient, tcpPort: null };  // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
+  const traffic = createTrafficCounter();
+  const health = { startedAt, network, registry, lobby, traffic, assetIndex, views, serveClient, tcpPort: null };  // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
   buildTag();
 
-  const server = http.createServer(createRequestHandler({ serveStatic, health, replays, log }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health, replays, log, trustProxy: network.opts.trustProxy }));
   server.on('clientError', answerClientError);
-  const wss = attachWebSocket(server, { network, log });
+  const wss = attachWebSocket(server, { network, log, traffic });
   let tcpListener = null;
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
@@ -120,10 +129,13 @@ export async function startServer(opts = {}) {
     boundHost = bound;
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    assetIndex?.close();
     if (ownReplayStore) replays?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
+  assetIndex?.start();
+
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
   const url = `http://${displayHost(boundHost)}:${actualPort}`;
@@ -146,6 +158,7 @@ export async function startServer(opts = {}) {
     closing = (async () => {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
+      assetIndex?.close();
       await tcpListener?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
@@ -158,7 +171,7 @@ export async function startServer(opts = {}) {
   }
 
   return { port: actualPort, tcpPort: tcpListener?.port ?? null, host: boundHost, url, serveClient, server,
-    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, replays, close };
+    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, traffic, assetIndex, views, replays, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).
