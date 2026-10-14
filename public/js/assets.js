@@ -859,7 +859,7 @@ export function createAssets(options) {
   /** Optional local-client art manifest (null when absent: every consumer falls back). Fetched once (or seeded). */
   function local() {
     if (!localPromise) {
-      localPromise = (async () => {
+      const pending = (async () => {
         try {
           const res = await doFetch(localUrl, { cache: 'no-cache' });
           if (!res || !res.ok) return localManifest;
@@ -867,7 +867,11 @@ export function createAssets(options) {
           if (!localManifest && isObj(json) && isObj(json.groups)) { localManifest = json; notify('local'); }
         } catch { /* optional art: absent */ }
         return localManifest;
-      })();
+      })().then((value) => {
+        if (!value && localPromise === pending) localPromise = null;
+        return value;
+      });
+      localPromise = pending;
     }
     return localPromise;
   }
