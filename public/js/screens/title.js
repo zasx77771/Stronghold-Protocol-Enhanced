@@ -19,6 +19,7 @@ import { openStats } from './stats.js';
 import { toast } from '../ui/toasts.js';
 import { net, identity } from '../net.js';
 import { store, useStore, shallowEqual } from '../store.js';
+import { loadProfile, saveProfile, setPlayerName, setRememberName as withRememberName } from '../ui/profileModel.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, PwaInstallButton, detectFeatures } from '../ui/device.js';
 import { LangToggle, useLang } from '../ui/lang.js';
@@ -107,6 +108,9 @@ export function enterSession(rawName, rememberName = true) {
   if (rememberName) identity.saveName(name);
   else identity.clearName();
   identity.setEntered(true);
+  // The display name is part of the device-local profile (ui/profileModel.js); the pre-model `sp.name` /
+  // `sp.rememberName` keys above stay the source older readers use, so both are written.
+  saveProfile(withRememberName(setPlayerName(loadProfile(), rememberName ? name : ''), rememberName));
   store.set((s) => ({ me: { ...s.me, name }, session: { ...s.session, entered: true } }));
   net.setIdentity(name);
   return true;
@@ -249,8 +253,14 @@ export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
-  const [rememberName, setRememberName] = useState(() => identity.loadRememberName());
-  const [name, setName] = useState(() => store.get().me.name || (identity.loadRememberName() ? identity.loadName() : '') || '');
+  // Device-local profile (ui/profileModel.js): the display name the player typed last time. An existing install's
+  // pre-model `sp.name` / `sp.rememberName` keys are folded in on the first load, and every write mirrors back to them.
+  const [profile, setProfile] = useState(() => loadProfile({
+    legacyName: identity.loadName(),
+    legacyRemember: identity.loadRememberName(),
+  }));
+  const [rememberName, setRememberName] = useState(() => profile.rememberName);
+  const [name, setName] = useState(() => store.get().me.name || (profile.rememberName ? profile.name : '') || '');
   const [transport, setTransport] = useState(() => loadTransportMode());
   const [server, setServer] = useState(() => loadEndpointAddress(loadTransportMode()));
   const [roomCode, setRoomCode] = useState(() => pendingJoin || '');
@@ -382,6 +392,9 @@ export function TitleScreen() {
     setServerError('');
   };
 
+  // Per keystroke only the pre-model key is written (the legacy `sp.name` every reader uses); the profile
+  // (ui/profileModel.js) picks the name up on 开始 (enterSession) and when the switch is toggled, so typing never
+  // rewrites the stored 配队 list.
   const updateName = (value) => {
     setName(value);
     if (!rememberName) return;
@@ -397,6 +410,7 @@ export function TitleScreen() {
       const clean = parseDoctorIdentity(name).name;
       if (clean) identity.saveName(clean);
     }
+    setProfile(saveProfile(withRememberName(setPlayerName(loadProfile(), on ? parseDoctorIdentity(name).name : ''), on)));
   };
 
   // Read only on the initial title entry in this page/app run. Returning from the lobby/game must
