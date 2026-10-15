@@ -6,6 +6,12 @@ param(
   [string]$CurrentAndroidApk = '',
   [string]$OutputRoot = '',
   [string]$UpstreamMainlineVersion = '',
+  [string]$PreviousAssetDir = '',
+  [string]$CurrentAssetDir = '',
+  [string]$AssetCacheRoot = '',
+  [int]$AssetMaxChain = 3,
+  [string]$AssetIndexBaseUrl = '',
+  [switch]$SkipAssetPackages,
   [switch]$MainlineUpdate,
   [switch]$KeepExpanded
 )
@@ -84,6 +90,28 @@ Keep the full client ZIP as a recovery option; this update package cannot downgr
 
 Compress-Archive -LiteralPath (Get-ChildItem -LiteralPath $WindowsDir -Force | Select-Object -ExpandProperty FullName) -DestinationPath $WindowsZip -CompressionLevel Optimal
 
+# Runtime asset packages. The Android client updates its art from R2: one baseline ZIP for a fresh
+# install or a repair, and a delta ZIP for the usual release. `scripts\build-asset-packages.ps1` decides
+# which packages this release needs and refreshes the index. The packages sit next to the Windows
+# incremental package, so one release directory holds every artifact of that release; R2 only carries
+# the assets and the index.
+$AssetSummary = $null
+if (-not $SkipAssetPackages) {
+  $AssetArguments = @{
+    PassThru = $true
+    Version = $Version
+    OutputRoot = $OutputRoot
+    PreviousVersion = $PreviousVersion
+    MaxChain = $AssetMaxChain
+    MainlineUpdate = [bool]$MainlineUpdate
+  }
+  if ($CurrentAssetDir) { $AssetArguments.CurrentAssetDir = $CurrentAssetDir }
+  if ($PreviousAssetDir) { $AssetArguments.PreviousAssetDir = $PreviousAssetDir }
+  if ($AssetCacheRoot) { $AssetArguments.AssetCacheRoot = $AssetCacheRoot }
+  if ($AssetIndexBaseUrl) { $AssetArguments.IndexBaseUrl = $AssetIndexBaseUrl }
+  $AssetSummary = & (Join-Path $PSScriptRoot 'build-asset-packages.ps1') @AssetArguments
+}
+
 $Release = [ordered]@{
   format = 'stronghold-client-release-v3'
   updateKind = $UpdateKind
@@ -92,6 +120,7 @@ $Release = [ordered]@{
   toVersion = $Version
   windows = [ordered]@{ full = $CurrentWindowsClient; update = $WindowsZip; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $WindowsZip).Hash }
   android = [ordered]@{ full = $CurrentAndroidApk; apkSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $CurrentAndroidApk).Hash }
+  assets = $AssetSummary
 }
 $ReleasePath = Join-Path $OutputRoot "Stronghold-Protocol-Client-v$PreviousVersion-to-v$Version-update-manifest.json"
 $Release | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReleasePath -Encoding utf8
@@ -103,6 +132,11 @@ Write-Host "Windows incremental package ready:" -ForegroundColor Green
 Write-Host "  Windows update: $WindowsZip"
 Write-Host "  Android full APK: $CurrentAndroidApk"
 Write-Host "  Manifest: $ReleasePath"
+if ($AssetSummary) {
+  if ($AssetSummary.base) { Write-Host "  Asset baseline: $(Join-Path $OutputRoot $AssetSummary.base)" }
+  if ($AssetSummary.delta) { Write-Host "  Asset delta: $(Join-Path $OutputRoot $AssetSummary.delta)" }
+  Write-Host "  Asset index: $($AssetSummary.index)"
+}
 
 if ($MainlineUpdate) {
   # A mainline update is deliberately based on the previous mainline full package, not the

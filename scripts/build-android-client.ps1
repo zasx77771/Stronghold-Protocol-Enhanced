@@ -3,6 +3,10 @@ param(
   [string]$OutputDir = '',
   [string]$CacheRoot = '',
   [string]$ResourceSourceDir = '',
+  [string]$AssetIndexUrl = '',
+  [string]$AssetIndexBaseUrl = '',
+  [int]$AssetMaxChain = 3,
+  [switch]$AssetAllowHttp,
   [switch]$Clean
 )
 
@@ -70,6 +74,37 @@ Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\data.js') -Desti
 
 & node (Join-Path $ProjectRoot 'tools\validate-client-runtime.mjs') $AssetsDir
 if ($LASTEXITCODE -ne 0) { throw 'Android embedded client runtime validation failed.' }
+
+# The embedded art is the runtime asset floor. Stamp its inventory so the client can prove what the APK
+# already ships and only ever download the difference. The state describes the assets, it is not an asset.
+Write-Host 'Stamping the embedded runtime asset state...'
+& node (Join-Path $ProjectRoot 'tools\assets-r2.mjs') state --root $AssetsDir --version $Version | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Unable to stamp the embedded runtime asset state (asset-state.json).' }
+$StatePath = Join-Path $AssetsDir 'asset-state.json'
+$StateJson = (Get-Content -Raw -Encoding utf8 -LiteralPath $StatePath) | ConvertFrom-Json
+Write-Host ("Embedded asset floor: {0} files, {1:N1} MiB, inventory {2}" -f $StateJson.count, ($StateJson.bytes / 1MB), $StateJson.inventory)
+
+# Public runtime configuration. The index URL is not a secret, but it must never carry credentials or
+# signed query parameters, so it goes through the same validator the client uses. Without a URL the
+# updater stays off and the APK keeps serving its embedded assets.
+if (-not $AssetIndexUrl) { $AssetIndexUrl = [string]$env:SP_ASSET_INDEX_URL }
+if (-not $AssetIndexUrl -and -not $AssetIndexBaseUrl) { $AssetIndexBaseUrl = [string]$env:SP_ASSET_BASE_URL }
+if (-not $AssetIndexUrl -and $AssetIndexBaseUrl) { $AssetIndexUrl = $AssetIndexBaseUrl.TrimEnd('/') + '/assets-index.json' }
+$ConfigPath = Join-Path $AssetsDir 'asset-config.json'
+if (Test-Path -LiteralPath $ConfigPath) { Remove-Item -LiteralPath $ConfigPath -Force }
+if ($AssetIndexUrl) {
+  $ConfigArguments = @((Join-Path $ProjectRoot 'tools\assets-r2.mjs'), 'config', '--index-url', $AssetIndexUrl, '--out', $ConfigPath)
+  if ($AssetAllowHttp) { $ConfigArguments += '--allow-http' }
+  if ($AssetMaxChain -gt 0) { $ConfigArguments += @('--max-chain', [string]$AssetMaxChain) }
+  & node @ConfigArguments | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to write the embedded runtime asset configuration (asset-config.json).' }
+  $env:SP_ASSET_INDEX_URL = $AssetIndexUrl
+  $env:SP_ASSET_MAX_CHAIN = [string]$AssetMaxChain
+  if ($AssetAllowHttp) { $env:SP_ASSET_ALLOW_HTTP = 'true' }
+  Write-Host "Runtime asset index: $AssetIndexUrl"
+} else {
+  Write-Host 'Runtime asset updates are disabled for this build (pass -AssetIndexUrl to enable them).' -ForegroundColor Yellow
+}
 
 $env:JAVA_HOME = $JdkRoot
 $env:ANDROID_HOME = $SdkRoot

@@ -19,6 +19,7 @@
 | 上游历史与同步说明 | `docs/UPSTREAM-UPDATE.md`、`docs/UPSTREAM-SYNC-FLOW.md` |
 | 版本映射与发布元数据 | `docs/RELEASE-POLICY.md`、`release-policy.json` |
 | 完整包和增量包 | `scripts/CLIENT-UPDATES.md` |
+| 运行时素材包（R2 素材增量） | `docs/ASSETS.md`、`scripts/CLIENT-UPDATES.md` |
 | 产品功能 | `docs/FEATURES.md`、`docs/DESIGN.md` |
 | 游戏逻辑 | `docs/DESIGN.md`、`docs/SIM.md`、`docs/META.md`、`docs/DATA.md`、`docs/BALANCE.md` |
 | 部署 | `docs/DEPLOY.md` |
@@ -41,3 +42,4 @@
 - 2026-10-08：个人 `master` 只做 Sync Fork；`enhanced-mode` 通过同步分支合并上游，再以独立分支完成必要增强适配。
 - 2026-10-08：一轮经用户确认的 PR 全部合并后自动完成版本升级、打包、标签和个人仓库 GitHub Release。
 - 2026-10-08：新增强标签不再包含 Android `versionCode`；公开 Android 版本统一使用 `M.N.R`。
+- 2026-10-08：Android 素材改为经 R2 发布索引做文件级增量更新（基线包 + 增量包 + 小索引，ZIP 承载，先校验整体与逐文件 SHA-256 再原子切换，失败绝不破坏旧缓存，不以 APK 版本号判断素材更新）；Windows 更新器只更新程序本体；素材包与 Windows 产物同目录保管，R2 只承载运行时素材与索引，上传由维护者用本人凭据手工完成，仓库与配置中不得出现密钥或账户信息。
