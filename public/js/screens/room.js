@@ -138,7 +138,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       <span class="seat__name">${seat.name || t('博士')}</span>
       ${isMe ? html`<span class="seat__you">${t('你')}</span>` : null}
     </div>
-    <${MicroLabel}>${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${seat.tag || doctorNo(seat.playerId)}`}<//>
+    <${MicroLabel}>${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${doctorNo(seat.playerId)}`}<//>
     <footer class="seat__foot">
       <span class=${`seat__state seat__state--${state}`}>
         ${state === 'ready' ? html`<${Icon} name="check" />${t('已就绪')}`

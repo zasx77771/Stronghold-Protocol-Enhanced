@@ -39,10 +39,10 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  * The request listener for `http.createServer`.
  * @param {{ serveStatic: null|((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
  *             rawPath: string, query: string) => Promise<void>,
- *           health: Parameters<typeof healthReport>[0], replays?: import('../replay/store.js').ReplayStore|null, log: object }} deps
+ *           health: Parameters<typeof healthReport>[0], log: object }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, replays = null, log, trustProxy = 'auto' }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto' }) {
   async function handleRequest(req, res) {    const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
@@ -55,12 +55,6 @@ export function createRequestHandler({ serveStatic, health, replays = null, log,
     if (parts.rawPath === '/healthz') {
       const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
       sendJson(req, res, 200, healthReport(health, withTraffic));
-      return;
-    }
-    if (parts.rawPath === '/api/profiles') {
-      const name = new URLSearchParams(parts.query).get('name') || '';
-      const profiles = replays ? replays.profileCandidates(name).map((p) => ({ name: p.name, tag: p.tag })) : [];
-      sendJson(req, res, 200, { profiles });
       return;
     }
     if (!serveStatic) {

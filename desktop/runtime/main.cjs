@@ -13,8 +13,7 @@ const path = require('node:path');
 
 const CLIENT_ROOT = path.resolve(__dirname, 'client');
 const HOST = '127.0.0.1';
-// Game frames remain limited by the game server, while replay responses may carry a compressed
-// recording up to the separate replay service's 32 MiB protocol limit.
+// Defensive ceiling for client-side TCP frames; the game server itself caps frames at 64 KiB.
 const TCP_FRAME_MAX_BYTES = 32 << 20;
 const smokeArg = process.argv.find((arg) => arg.startsWith('--smoke-test='));
 const smokePathInput = process.env.SP_SMOKE_PATH || (smokeArg ? smokeArg.slice('--smoke-test='.length) : '');

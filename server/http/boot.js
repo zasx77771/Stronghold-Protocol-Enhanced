@@ -16,7 +16,6 @@ import { fileURLToPath } from 'node:url';
 import { APP_VERSION, DEV_BUILD } from '../../shared/constants.js';
 import { limitKeyOf } from '../net.js';
 import { applyPendingUpdate } from '../update.js';
-import { startSpectatorServer } from '../spectator.js';
 import { ROOT } from './config.js';
 
 /**
@@ -75,7 +74,6 @@ export function printBanner(srv) {
     console.log(`  Health:  ${srv.url}/healthz`);
     console.log(`  WebSocket: ${srv.url.replace(/^http/, 'ws')}/ws`);
   }
-  if (srv.replayPort != null) console.log(`  Replay TCP: tcp://${srv.host === '0.0.0.0' || srv.host === '::' ? 'localhost' : srv.host}:${srv.replayPort}`);
   if (srv.host === '0.0.0.0' || srv.host === '::') {    for (const u of lanUrls(srv.port)) console.log(srv.serveClient !== false ? `  LAN:     ${u}` : `  LAN WebSocket: ${u.replace(/^http/, 'ws')}/ws`);
   }
   console.log('  Internet: cloudflared tunnel --url ' + `http://localhost:${srv.port}` + '\n');
@@ -93,30 +91,23 @@ export async function runMain(start) {
   // Nothing is listening yet, so returning ends the process with exit code 1 once the message is written.
   if (applyPendingUpdate(ROOT).state === 'failed') { process.exitCode = 1; return; }
   let srv;
-  let spectator;
   try {
     const httpPort = process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000;
     const tcpPort = process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT)
       : (Number.isInteger(httpPort) && httpPort >= 0 && httpPort < 65535 ? httpPort + 1 : 3001);
     srv = await start({ tcpPort });
-    const spectatorValue = String(process.env.SPECTATOR_PORT ?? '3002').trim().toLowerCase();
-    if (spectatorValue !== 'off' && spectatorValue !== 'false' && srv.replays) {
-      const spectatorPort = Number(spectatorValue);
-      if (!Number.isInteger(spectatorPort) || spectatorPort < 1 || spectatorPort > 65535) throw new RangeError('invalid SPECTATOR_PORT');
-      spectator = await startSpectatorServer({ store: srv.replays, port: spectatorPort, host: process.env.SPECTATOR_HOST || srv.host });
-    }
   } catch (e) {    if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
     else console.error('[boot] failed to start', e);
     process.exit(1);
   }
-  printBanner({ ...srv, replayPort: spectator?.port ?? null });
+  printBanner(srv);
   let stopping = false;
   const stop = (signal) => {
     if (stopping) { console.log('forced exit'); process.exit(1); }
     stopping = true;
     console.log(`\n[${signal}] shutting down…`);
     setTimeout(() => process.exit(0), 5000).unref();
-    Promise.all([spectator?.close(), srv.close()]).then(() => process.exit(0), () => process.exit(1));
+    srv.close().then(() => process.exit(0), () => process.exit(1));
   };
   process.on('SIGINT', () => stop('SIGINT'));
   process.on('SIGTERM', () => stop('SIGTERM'));

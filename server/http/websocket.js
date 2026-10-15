@@ -50,15 +50,15 @@ export function narrowDeflateOffer(header) {
 /**
  * The session stack of one server.
  * @param {{ MatchClass?: Function, seedFn?: () => number, [option: string]: any }} opts startServer() options
- * @param {{ data: object, log: object, replayStore?: import('../replay/store.js').ReplayStore|null }} deps
+ * @param {{ data: object, log: object }} deps
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, replayStore = null }) {
+export function createSessionStack(opts, { data, log }) {
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = lobbyOptionsFrom(opts);
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, replayStore, options: lobbyOptions });
-  const network = new Network({ registry, handler: lobby, profileStore: replayStore, log, options: netOptions });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
+  const network = new Network({ registry, handler: lobby, log, options: netOptions });
   return { registry, lobby, network };
 }
 

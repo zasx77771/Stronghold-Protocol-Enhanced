@@ -29,7 +29,6 @@ import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustP
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
-import { ReplayStore } from './replay/store.js';
 import { startTcpServer } from './tcp.js';import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
@@ -67,20 +66,14 @@ export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
   const log = opts.log || makeLogger(!!opts.quiet);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
-  const replayEnabled = opts.replayEnabled ?? (opts.replayStore ? true : (opts.port !== 0 && process.env.SP_REPLAYS !== '0'));
-  const ownReplayStore = !!replayEnabled && !opts.replayStore;
-  const replays = replayEnabled ? (opts.replayStore || new ReplayStore({
-    file: opts.replayFile || process.env.SP_REPLAY_DB || path.join(ROOT, 'var', 'replays.sqlite'), log,
-  })) : null;
   const serveClient = opts.serveClient ?? !envEnabled(process.env.SP_SERVER_ONLY);
   const tcpPortValue = opts.tcpPort ?? (process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT) : null);
   if (tcpPortValue != null && (!Number.isInteger(tcpPortValue) || tcpPortValue < 0 || tcpPortValue > 65535)) {
-    if (ownReplayStore) replays?.close();
     throw new RangeError(`invalid TCP_PORT ${tcpPortValue}`);
   }
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
-  const { registry, lobby, network } = createSessionStack(opts, { data, log, replayStore: replays });  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
+  const { registry, lobby, network } = createSessionStack(opts, { data, log });  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
@@ -93,7 +86,7 @@ export async function startServer(opts = {}) {
   resetBuildTag();
   buildTag();
 
-  const server = http.createServer(createRequestHandler({ serveStatic, health, replays, log, trustProxy: network.opts.trustProxy }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health, log, trustProxy: network.opts.trustProxy }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
   let tcpListener = null;
@@ -130,7 +123,6 @@ export async function startServer(opts = {}) {
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
     assetIndex?.close();
-    if (ownReplayStore) replays?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -147,7 +139,6 @@ export async function startServer(opts = {}) {
       network.close();
       try { wss.close(); } catch { /* ignore */ }
       await new Promise((resolve) => server.close(() => resolve()));
-      if (ownReplayStore) replays?.close();
       throw e;
     }
   }
@@ -166,12 +157,11 @@ export async function startServer(opts = {}) {
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
       try { wss.close(); } catch { /* ignore */ }
-      if (ownReplayStore) replays?.close();
     })();    return closing;
   }
 
   return { port: actualPort, tcpPort: tcpListener?.port ?? null, host: boundHost, url, serveClient, server,
-    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, traffic, assetIndex, views, replays, close };
+    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, traffic, assetIndex, views, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

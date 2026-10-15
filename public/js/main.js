@@ -151,10 +151,8 @@ function onWelcome(msg) {
   const prev = store.get();
   const prevId = prev.me.playerId;
   const name = typeof msg.name === 'string' && msg.name ? msg.name : prev.me.name;
-  const tag = typeof msg.profileTag === 'string' && /^\d{4}$/.test(msg.profileTag) ? msg.profileTag : prev.me.tag || null;
   identity.saveName(name);
-  if (tag) identity.saveProfileTag(tag);
-  store.set({ me: { playerId: msg.playerId ?? null, name, tag, token: typeof msg.token === 'string' ? msg.token : null } });
+  store.set({ me: { playerId: msg.playerId ?? null, name, token: typeof msg.token === 'string' ? msg.token : null } });
   welcomeAt = Date.now();
 
   if (prevId != null && prevId !== msg.playerId) {
@@ -358,7 +356,6 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
-  const savedTag = identity.loadProfileTag();
   const savedAddress = loadServerAddress();
   const savedServer = savedAddress ? normalizeServerAddress(savedAddress) : null;
   // A clean standalone install contains no server address. Keep it on the title screen until the user supplies one.
@@ -366,7 +363,7 @@ async function boot() {
   // If boot resumes straight into the lobby, a later return to the title is not the startup entry.
   if (entered) skipStartupClipboardProbe();
   store.set((s) => ({
-    me: { ...s.me, name: savedName, tag: savedTag },
+    me: { ...s.me, name: savedName },
     session: { entered },
     ui: { ...s.ui, pendingJoin },
   }));
@@ -387,7 +384,7 @@ async function boot() {
   data.load('local').catch(() => {});
 
   const connectWhenReady = identityReady.then(() => {
-    if (entered) net.setIdentity(savedName, savedTag);
+    if (entered) net.setIdentity(savedName);
   });
   // the language (and its UI translations) before the first render: no Chinese flash for an English player
   const langReady = initLang().catch((err) => console.warn('[app] language setup failed', err));

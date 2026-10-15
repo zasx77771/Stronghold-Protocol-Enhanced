@@ -13,7 +13,7 @@
 | 磁盘 | 素材约 550 MB（`public/assets`，含中文约 65 MB、日文约 85 MB 两套干员语音）+ 依赖约 125 MB（`node_modules`；整合包只带运行依赖，约 65 MB）；可选的本地提取约 40 MB（`.venv-extract`）+ 70 MB 贴图（见第 6 节）。完整包解压后约 710 MB。 |
 | 玩家设备 | 支持 WebGL 的现代浏览器（Chrome / Edge / Firefox / Safari 最新版），电脑或手机平板（横屏）。老旧设备可在设置里调低画质或访问 `/?board=2d`。 |
 
-房间和正在进行的对局仍只存在内存中，重启服务器会结束它们。增强版的身份、对局记录和回放索引写入 `SP_REPLAY_DB`（默认 `var/replays.sqlite`），升级、迁移或替换服务端前必须备份该数据库；生产部署建议把它放在不会被程序包覆盖的持久数据目录。
+房间和正在进行的对局仍只存在内存中，重启服务器会结束它们。增强版此前的身份、对局记录与回放索引数据库（`SP_REPLAY_DB`，默认 `var/replays.sqlite`）已随账户与回放功能下线而不再被读取或写入；服务器不会删除任何已有文件，需要保留历史记录请自行备份。
 
 ## 1. Windows 小主机：一步步
 
@@ -68,7 +68,6 @@ $env:SP_ASSET_SOURCE = 'mirror'             # 也可用环境变量显式启用
   ```powershell
   netsh advfirewall firewall add rule name="Stronghold Protocol" dir=in action=allow protocol=TCP localport=3000,3001 profile=private,domain
   ```
-- 回放服务默认使用独立 TCP 端口 `3002`。只在受信任的专用网络中按需放行；四位 tag 不是公网认证，不要直接把回放端口暴露到公网。
 - 家里的网络要是「公用网络」，Windows 会拦截入站连接。改成专用（管理员 PowerShell；网卡名用 `Get-NetConnectionProfile` 查看）：
   ```powershell
   Set-NetConnectionProfile -InterfaceAlias "以太网" -NetworkCategory Private
@@ -107,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1
 winget install NSSM.NSSM            # 或从 https://nssm.cc 下载
 nssm install StrongholdProtocol "C:\Program Files\nodejs\node.exe" server\index.js
 nssm set StrongholdProtocol AppDirectory C:\Stronghold-Protocol
-nssm set StrongholdProtocol AppEnvironmentExtra PORT=3000 TCP_PORT=3001 SPECTATOR_PORT=3002 HOST=:: SP_REPLAY_DB=D:\StrongholdData\replays.sqlite
+nssm set StrongholdProtocol AppEnvironmentExtra PORT=3000 TCP_PORT=3001 HOST=::
 nssm set StrongholdProtocol AppStdout C:\Stronghold-Protocol\logs\server.log
 nssm set StrongholdProtocol AppStderr C:\Stronghold-Protocol\logs\server.log
 nssm start StrongholdProtocol
@@ -178,10 +177,9 @@ cloudflared tunnel --url http://localhost:3000
 1. 先按 1.3 固定主机的局域网 IP。
 2. WebSocket / 网页方式：把外部 TCP 端口 3000（或任意端口）转发到 `主机IP:3000`。
 3. Windows / Android 客户端若使用 TCP 直连，再把另一个外部 TCP 端口转发到 `主机IP:3001`；浏览器不能使用原始 TCP。
-4. 回放服务使用独立的 `SPECTATOR_PORT`（默认 3002），未增加独立认证和访问控制前不要转发到公网。
-5. WebSocket 客户端访问 `http://<你的公网 IP>:外部端口`，原生客户端填写相应 HTTP 或 `tcp://` 地址。
+4. WebSocket 客户端访问 `http://<你的公网 IP>:外部端口`，原生客户端填写相应 HTTP 或 `tcp://` 地址。
 
-注意：四位 tag 只用于个人服务中的身份区分，不是公网认证。知道地址的人仍可尝试连接；建议优先使用 Tailscale，并在不玩时关闭公网转发。
+注意：服务端没有账户或身份认证，也不识别玩家是谁。知道地址的人仍可尝试连接；建议优先使用 Tailscale，并在不玩时关闭公网转发。
 
 ### 2.4 反向代理与 HTTPS（有域名时）
 

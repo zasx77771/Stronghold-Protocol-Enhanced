@@ -5,7 +5,7 @@
 ## 分类与事实源
 
 - 游戏代码类：本体、干员、技能、敌人、盟约、战斗规则及可提交上游的通用修复。
-- 增强功能类：Windows、Android、TCP、账户、记录、回放、更新器及不提交上游的增强行为。
+- 增强功能类：Windows、Android、TCP、更新器、本机资料复用及不提交上游的增强行为。
 - 明确要求提交主仓库或 `upstream/master` 时按游戏代码类处理；明确要求只进入 `enhanced-mode` 时按增强功能类处理。仅说提交 `enhanced-mode` 时仍需确认分类。
 - 未声明“有意差异”时，依次核对上游 Git、官方数据、可核验资料、研究记录、代码与测试。无法确认的行为标记为“推断”或 `ASSUMED`。
 - 用户提供的 ZIP 只用于素材复用，代码和规则以 Git 为准。
@@ -19,8 +19,6 @@
 | 上游历史与同步说明 | `docs/UPSTREAM-UPDATE.md` |
 | 版本映射与发布元数据 | `docs/RELEASE-POLICY.md`、`release-policy.json` |
 | 完整包和增量包 | `scripts/CLIENT-UPDATES.md` |
-| 账户和身份 | `docs/ACCOUNT.md` |
-| 对局记录和回放 | `docs/REPLAY.md` |
 | 产品功能 | `docs/FEATURES.md`、`docs/DESIGN.md` |
 | 游戏逻辑 | `docs/DESIGN.md`、`docs/SIM.md`、`docs/META.md`、`docs/DATA.md`、`docs/BALANCE.md` |
 | 部署 | `docs/DEPLOY.md` |
