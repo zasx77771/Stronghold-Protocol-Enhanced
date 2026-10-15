@@ -16,7 +16,7 @@
 |---|---|
 | 开发、分支、PR、同步、发布 | `docs/DEVELOPMENT-WORKFLOW.md` |
 | 当前易变状态 | `docs/PROJECT-STATE.md` |
-| 上游历史与同步说明 | `docs/UPSTREAM-UPDATE.md` |
+| 上游历史与同步说明 | `docs/UPSTREAM-UPDATE.md`、`docs/UPSTREAM-SYNC-FLOW.md` |
 | 版本映射与发布元数据 | `docs/RELEASE-POLICY.md`、`release-policy.json` |
 | 完整包和增量包 | `scripts/CLIENT-UPDATES.md` |
 | 产品功能 | `docs/FEATURES.md`、`docs/DESIGN.md` |
