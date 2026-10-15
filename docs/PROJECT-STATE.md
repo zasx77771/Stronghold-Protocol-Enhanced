@@ -6,10 +6,10 @@
 
 ## 版本基线
 
-- 上游代码基线：`0.2.2`
-- 当前增强代码版本：`2.2.1`
-- Android `versionName`：`2.6.0`
-- Android 内部 `versionCode`：`24`
+- 上游代码基线：`0.2.6`
+- 当前增强代码版本：`2.6.1`
+- Android `versionName`：`2.6.1`
+- Android 内部 `versionCode`：`25`
 - `release-policy.json` 已使用通用 `0.M.N -> M.N.R` 映射。
 
 以上只描述代码与元数据，不等同于已经打包、打标签或发布。必须分别核验 Git 标签、产物和 GitHub Release。
