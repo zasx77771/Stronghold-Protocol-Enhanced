@@ -7,7 +7,7 @@ A release now produces three kinds of artifact, and they serve different halves 
 | Artifact | Reaches the client as | Updates |
 | --- | --- | --- |
 | Windows client ZIP / update ZIP | the Windows updater | program files only |
-| Android APK | the Play/sideload install | the program and the art it is built with |
+| Android APK | the Play/sideload install | program files plus public R2 configuration; configured releases fetch runtime art from R2 |
 | Runtime asset packages + `assets-index.json` | Cloudflare R2, fetched by the Android client itself | `assets/`, `fonts/`, `data/assets.json`, `data/local-assets.json` only |
 
 The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. Art changes reach Android in the background, through R2, without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
@@ -70,11 +70,14 @@ pwsh -ExecutionPolicy Bypass -File scripts/build-asset-packages.ps1 `
 
 The current asset tree defaults to `06-构建环境与缓存\android-embedded-assets` (what the APK embeds, with its stamped `asset-state.json`); the previous tree defaults to the previous Windows client directory, whose `public/assets` and `public/fonts` are the bytes the previous clients shipped. `-CurrentAssetDir`, `-PreviousAssetDir` and `-AssetCacheRoot` override that. Pass `-SkipAssetPackages` to the release scripts when a release must not touch the channel directory.
 
+For a configured thin APK that staging directory deliberately no longer contains the runtime art, so
+`build-asset-packages.ps1` falls back to the current Windows client directory. Keep that directory available until
+the asset packages and index have been built.
 Rules that are easy to get wrong:
 
 - A delta is only published when the previous tree's inventory digest matches what the index published for that version. Otherwise a client whose files are gone could never verify it, so the release publishes a baseline instead (the script says so in its notes).
 - The index is uploaded **last**. Clients always read it first, so it must never point at a package that is not there yet.
-- The Android APK's asset updater is only enabled when the build was given an index URL (`-AssetIndexUrl`, `-AssetIndexBaseUrl`, or `SP_ASSET_INDEX_URL` / `SP_ASSET_BASE_URL`). Without it the APK serves the art it embedded and never contacts the network. See `scripts/build-android-client.ps1`.
+- The Android APK's asset updater is only enabled when the build was given an index URL (`-AssetIndexUrl`, `-AssetIndexBaseUrl`, or `SP_ASSET_INDEX_URL` / `SP_ASSET_BASE_URL`). A configured release is thin: it removes `assets/`, `fonts/`, both runtime manifests and `asset-state.json` from the APK, downloads a base on first launch, then reloads the WebView after verified art lands. Without an index URL the APK retains its offline art floor and never contacts the network. See `scripts/build-android-client.ps1`.
 - The URL is public configuration. No key, token, signed URL or account id may appear in it, in the APK, in the index, or in any file of this repository; the upload is done by the maintainer with their own credentials.
 - Downloaded art and the packages themselves are never committed.
 - Old baselines and their deltas stay on R2 until no supported version needs them. `node tools/assets-r2.mjs route --index assets-index.json --root <asset tree>` is the check that every version a release still supports can reach the new one; the release scripts fail the release when one cannot.
@@ -82,7 +85,7 @@ Rules that are easy to get wrong:
 ## Package contents
 
 - The Windows ZIP contains only changed files, a deletion list, and a native Windows update client. The update client verifies every base and resulting file with SHA-256 and does not depend on PowerShell. It is program-only and never writes the art.
-- Android releases always use the complete, consistently signed APK. It can be installed directly over the previous release when the signing key is unchanged. The APK embeds its art plus an `asset-state.json` stamp (the immutable floor) and, when configured, an `asset-config.json` with the public index URL and limits.
+- Android releases always use the complete, consistently signed APK. It can be installed directly over the previous release when the signing key is unchanged. A configured R2 APK embeds its program plus `asset-config.json`, but not runtime art; an offline build embeds its art plus the `asset-state.json` floor.
 - Runtime asset packages are ZIPs of art files only, verified end to end with SHA-256: the whole archive against the index, then every entry and the resulting inventory against the package manifest.
 
 Each Windows update package is valid for exactly one source and destination version. Small-release packages use the immediately prior release; mainline packages use the prior mainline baseline and therefore already include all intermediate changes.

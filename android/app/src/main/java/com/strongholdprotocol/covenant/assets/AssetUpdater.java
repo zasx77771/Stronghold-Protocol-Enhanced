@@ -29,6 +29,11 @@ public final class AssetUpdater {
         void onResult(String message);
     }
 
+
+    /** Receives the final result after the background update check has stopped. */
+    public interface CompletionListener {
+        void onComplete(Outcome outcome);
+    }
     /** The outcome of one check. */
     public static final class Outcome {
         public final String status;
@@ -54,10 +59,23 @@ public final class AssetUpdater {
 
     /** Run one update check on a background thread and return it. */
     public static Thread start(final AssetStore store, final AssetConfig config, final File cacheDir, final Listener listener) {
+        return start(store, config, cacheDir, listener, null);
+    }
+
+    /** Run one update check and notify a caller that may need to refresh a thin client's WebView. */
+    public static Thread start(final AssetStore store, final AssetConfig config, final File cacheDir,
+                               final Listener listener, final CompletionListener completion) {
         Thread thread = new Thread(new Runnable() {
             @Override
             public void run() {
-                update(store, config, cacheDir, listener);
+                Outcome outcome = update(store, config, cacheDir, listener);
+                if (completion != null) {
+                    try {
+                        completion.onComplete(outcome);
+                    } catch (RuntimeException ignored) {
+                        // A UI notification must not make the updater thread fail.
+                    }
+                }
             }
         }, "sp-asset-update");
         thread.setDaemon(true);

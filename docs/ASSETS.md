@@ -505,9 +505,9 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
 
 ## Runtime asset packages (R2, enhanced clients)
 
-The art itself is downloaded at install time, never committed. A released client therefore starts with the art
-the packaging step embedded in it, and later art changes have to reach an installed Android client without a new
-APK. Since the enhanced 2.6.x line the enhanced clients read a small **release index** from Cloudflare R2 and pull
+The art itself is downloaded at install time, never committed. An Android build with a public R2 index is a thin
+APK: it contains program files and public configuration, then downloads a verified baseline on first launch.
+Offline builds retain the art floor; later art changes still reach installed R2 clients without a new APK. Since the enhanced 2.6.x line the enhanced clients read a small **release index** from Cloudflare R2 and pull
 **asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
 
 ### What a package may contain
@@ -596,6 +596,11 @@ asset-runtime/
   asset-retired/                    files an update removed, kept one cycle for streams that are still open
 ```
 
+That is the offline floor mode. A build with an `asset-config.json` index URL removes the floor's
+`assets/`, `fonts/`, two runtime manifests and `asset-state.json` before Gradle packages the APK. It opens an
+empty store, fetches a baseline on first launch, then reloads the WebView only after the complete verified route
+has been applied; a failed network update leaves any already installed layers untouched.
+
 The client: SHA-256s the whole ZIP against the index entry, extracts it into `asset-staging/`, checks every
 entry's size and SHA-256 against `ASSETS.json`, and checks the resulting inventory digest. Commits are
 serialized, and publication is one step: the pointer (`asset-store.json`) is replaced atomically — the fast path
@@ -628,6 +633,8 @@ The updater is configured with **public** data only — never a key, account id 
   written by `node tools/assets-r2.mjs config --index-url <url> --out <file>`. Assets override `BuildConfig`.
 - The index URL must be `https` (unless `allowHttp` is set for a private test), must not carry credentials, and
   must not carry signing or token query parameters; `checkConfig` / `AssetConfig.from()` refuse those.
+- A configured build is thin and requires a reachable published baseline on its first launch. Its public index is
+  verified before any art is served, and the WebView reloads after a successful initial route.
 - Unconfigured means disabled: the client logs one line, never contacts the network and serves the APK's art. No
   failure can turn into a broken client.
 

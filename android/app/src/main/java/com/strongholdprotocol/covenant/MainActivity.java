@@ -266,24 +266,32 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * Open the layered runtime asset store. The published state stamped into the APK is the immutable
-     * floor; downloaded packages layer on top. Anything unreadable simply leaves the store closed and
-     * the WebView keeps serving the packaged assets.
+     * Open the layered runtime asset store. A normal offline APK has its stamped art as the immutable
+     * floor; a thin R2 APK has no floor and starts with an empty store until its baseline arrives.
+     * A bad stamp is ignored so the updater can repair the store from a published baseline.
      */
     private AssetStore openAssetStore() {
-        try {
-            String text = readPackagedText(AssetPaths.STATE_FILE);
-            if (text == null) {
-                Log.i(TAG, "no packaged asset state; runtime assets use the APK as they are");
-                return null;
+        AssetApkSource floor = null;
+        AssetInventory floorInventory = null;
+        String floorVersion = null;
+        String text = readPackagedText(AssetPaths.STATE_FILE);
+        if (text != null) {
+            try {
+                Map<String, Object> state = AssetJson.object(AssetJson.parse(text));
+                floorInventory = AssetInventory.fromState(state);
+                floorVersion = AssetJson.string(AssetJson.get(state, "version"), null);
+                floor = new AssetApkSource(getAssets());
+            } catch (IllegalArgumentException error) {
+                Log.w(TAG, "ignoring the packaged asset state; a baseline can repair it", error);
             }
-            Map<String, Object> state = AssetJson.object(AssetJson.parse(text));
-            AssetInventory floorInventory = AssetInventory.fromState(state);
-            String floorVersion = AssetJson.string(AssetJson.get(state, "version"), null);
+        } else {
+            Log.i(TAG, "thin R2 APK: no packaged runtime art");
+        }
+        try {
             return AssetStore.open(new File(getFilesDir(), ASSET_STORE_DIR),
-                    new AssetApkSource(getAssets()), floorInventory, floorVersion);
-        } catch (IOException | IllegalArgumentException error) {
-            Log.w(TAG, "runtime asset store unavailable; serving the packaged assets", error);
+                    floor, floorInventory, floorVersion);
+        } catch (IOException error) {
+            Log.w(TAG, "runtime asset store unavailable", error);
             return null;
         }
     }
@@ -298,7 +306,13 @@ public final class MainActivity extends Activity {
         final AssetConfig config = loadAssetConfig();
         Log.i(TAG, "asset runtime: " + assetStore.describe() + "; " + config.describe());
         if (!config.enabled) return;
-        AssetUpdater.start(assetStore, config, getCacheDir(), message -> Log.i(TAG, message));
+        final String initialInventory = assetStore.inventoryDigest();
+        AssetUpdater.start(assetStore, config, getCacheDir(), message -> Log.i(TAG, message), outcome -> {
+            boolean changed = !initialInventory.equals(assetStore.inventoryDigest());
+            if (changed && ("repair".equals(outcome.status) || "update".equals(outcome.status)) && webView != null) {
+                webView.post(() -> webView.reload());
+            }
+        });
     }
 
     /** Public configuration only: the packaged file wins, then the build-time defaults. */

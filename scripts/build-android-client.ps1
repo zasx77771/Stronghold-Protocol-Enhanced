@@ -102,6 +102,14 @@ if ($AssetIndexUrl) {
   $env:SP_ASSET_MAX_CHAIN = [string]$AssetMaxChain
   if ($AssetAllowHttp) { $env:SP_ASSET_ALLOW_HTTP = 'true' }
   Write-Host "Runtime asset index: $AssetIndexUrl"
+
+  # A configured release is a thin APK: program files and public R2 configuration remain, while the
+  # runtime art and its APK-floor stamp are removed after their inventory was used to build packages.
+  foreach ($RelativePath in @('assets', 'fonts', 'data\assets.json', 'data\local-assets.json', 'asset-state.json')) {
+    $Target = Join-Path $AssetsDir $RelativePath
+    if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Recurse -Force }
+  }
+  Write-Host 'Android thin APK: runtime art will be downloaded from R2 on first launch.'
 } else {
   Write-Host 'Runtime asset updates are disabled for this build (pass -AssetIndexUrl to enable them).' -ForegroundColor Yellow
 }
