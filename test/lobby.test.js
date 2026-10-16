@@ -19,7 +19,7 @@ import { sanitizeName, TokenBucket, SessionRegistry, clientAddress, normalizeIp,
 import { StubMatch as Match } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ERR, MAX_SEATS, MAX_SPECTATORS, PHASE, EMOTES } from '../shared/constants.js';
+import { ERR, MAX_SEATS, MAX_SPECTATORS, NAME_MAX_LEN, PHASE, EMOTES } from '../shared/constants.js';
 
 const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{4}$`);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -568,7 +568,7 @@ describe('websocket lobby', () => {
 
     await expectError(c, { t: 'hello', name: '   ' }, ERR.BAD_MSG);
     await expectError(c, { t: 'hello', name: 'x', version: 999 }, ERR.BAD_MSG);
-    await expectError(c, { t: 'hello', name: 'x'.repeat(13) }, ERR.BAD_MSG);
+    await expectError(c, { t: 'hello', name: 'x'.repeat(NAME_MAX_LEN + 1) }, ERR.BAD_MSG);
     // repeated hello updates the name, keeps identity
     const again = await c.hello('Renamed');
     assert.equal(again.playerId, w.playerId);
@@ -2112,7 +2112,7 @@ describe('platform units', () => {
     assert.equal(sanitizeName(String.fromCharCode(0xd800)), null);
     assert.equal(sanitizeName(''), null);
     assert.equal(sanitizeName(42), null);
-    assert.equal([...sanitizeName('😀'.repeat(20))].length, 12);
+    assert.equal([...sanitizeName('😀'.repeat(20))].length, NAME_MAX_LEN);
   });
 
   test('TokenBucket refills continuously up to burst', () => {

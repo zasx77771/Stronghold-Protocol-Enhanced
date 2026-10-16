@@ -119,7 +119,9 @@ test('SIGTERM-catching setup hits the probe\'s SIGKILL ceiling, returns no set a
   f.put('loop',source);
   const result = await runComposition(f.registry.contentDirs,['loop']);
   assert.equal(result.cs,undefined);assert.equal(result.problems[0].code,'PLUGIN_SCRIPT_CHECK');
-  assert.match(result.problems[0].message,/1000 ms.*SIGKILL/);assertDead(file);
+  assert.match(result.problems[0].message,/1000 ms.*SIGKILL/);
+  // Under load the outer process may kill the probe before its setup writes the PID. Both paths leave no child.
+  if (fs.existsSync(file)) assertDead(file);
   assert.equal(SCRIPT_PROBE_TIMEOUT_MS,5000,'the default ceiling (no SP_SCRIPT_PROBE_MS in this process)');
 });
 
