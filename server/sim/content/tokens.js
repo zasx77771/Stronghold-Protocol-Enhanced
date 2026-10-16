@@ -90,16 +90,14 @@
 
 import { COLS, ROWS, MOVE_SCALE, FORCED_EXIT } from '../constants.js';
 import { absoluteRangeKeys, sortEnemyTargets, canTargetEnemy } from '../targeting.js';
-import { bodyOnTile, bodyInRange } from '../body.js';
+import { bodyInKeys, bodyOnTile } from '../body.js';
 import { hasHp } from '../damage.js';
-import { textCount } from '../../../shared/plugins/textNumber.js';
 import { genericKit } from './generic.js';
 import { bardRegen } from '../professions.js';
 import { normDir, localOrder } from '../dir.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
 import { hypot } from '../detmath.js';
 import { atPotential } from '../../../shared/potential.js';
-import { textFinite } from '../../../shared/plugins/textNumber.js';
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : d));
 const GRID_3X3 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1, -1], [-1, 0], [-1, 1]]);
@@ -251,7 +249,7 @@ function enemiesOnKeys(battle, keys) {
   const out = [];
   for (const e of battle.enemies) {
     if (!e.alive || e.hidden) continue;
-    if (bodyInRange(e, set)) out.push(e);
+    if (bodyInKeys(e, set)) out.push(e);
   }
   return out;
 }
@@ -499,10 +497,7 @@ function healDrone() {
       const v = variantOf(unit);
       const sk = v?.skill ?? unit.def?.raw?.skill ?? null;
       let life = /^skcom_withdraw/.test(String(sk?.skillId ?? sk?.id ?? '')) ? num(sk.duration, 0) : 0;
-      if (!(life > 0)) {
-        const secs = textFinite(String(sk?.desc ?? sk?.description ?? ''), /(\d+(?:\.\d+)?)秒后自动销毁/, NaN);
-        if (Number.isFinite(secs)) life = secs;
-      }
+      if (!(life > 0)) { const m = String(sk?.desc ?? sk?.description ?? '').match(/(\d+(?:\.\d+)?)秒后自动销毁/); if (m) life = +m[1]; }
       onDeploy(battle, unit, () => scheduleLifetime(battle, unit, life));
     },
   };
@@ -770,8 +765,8 @@ function wolfPack(bb, raw, def) {
   const lb = leader?.bb ?? {};
   const interval = wolfShadowInterval(def);
   const perBlock = num(lb['vigil_wolf_t_1_enhance[trigger].block_cnt'] ?? lb.block_cnt, 1);
-  // (counts read from text are capped like every other — textCount, DESIGN §32.5; the official 至多3只 reads 3)
-  const maxShadows = textCount(leader?.description, /至多(\d+)只/, 1 + num(lb['vigil_wolf_t_1_enhance[trigger].max_stack_cnt'], 0), 'at-most-pack');
+  const mMax = String(leader?.description ?? '').match(/至多(\d+)只/);
+  const maxShadows = mMax ? +mMax[1] : 1 + num(lb['vigil_wolf_t_1_enhance[trigger].max_stack_cnt'], 0);
   const defPen = num(talentBb(def, 'def_penetrate_fixed').def_penetrate_fixed, 0);
   const guardMul = num(talentWith(def, 'prob')?.bb?.damage_scale, 1); // module: 援军受到来自自身阻挡单位的伤害降低
   const s3Key = Object.keys(bb || {}).find((k) => /atk_scale$/.test(k));
@@ -787,7 +782,8 @@ function wolfPack(bb, raw, def) {
       unit.mem.wolfCapacity = maxShadows; // (b.snap `wolves`, snapshot.js wolfView: the pips under the HP bar)
       // initial shadows: 伺夜's talent text ("初始两只"), else one below the maximum
       const ot = (ownerOf(unit)?.def?.talents || []).map((t) => t.description || '').join(' ');
-      const initShadows = Math.max(1, Math.min(maxShadows, textCount(ot, /初始(两|二|\d+)只/, maxShadows - 1, 'initial-pack')));
+      const mi = ot.match(/初始(两|二|\d+)只/);
+      const initShadows = Math.max(1, Math.min(maxShadows, mi ? (/\d/.test(mi[1]) ? +mi[1] : 2) : maxShadows - 1));
       onDeploy(battle, unit, () => {
         // back from its 战术点形态 (wolfReturnNow): 1 狼影 (PRTS 狼群 "从战术点形态转变为召唤物形态后拥有1只“狼影”") and a
         // fresh growth cycle; any other deployment: the initial count

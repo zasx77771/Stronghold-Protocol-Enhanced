@@ -3,7 +3,6 @@
 
 import { sortEnemyTargets } from '../../../targeting.js';
 import { num, talentBb, skillRec, batMod } from '../shared/tier1.js';
-import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
@@ -18,7 +17,7 @@ export default {
   chess_char_1_17_a: (bb, chess, def) => {
     const t = talentBb(chess, 0);
     const dScale = num(bb['indigo_s_2[damage].atk_scale']);
-    const dIv = stepOf('indigo_s_2[damage].interval', num(bb['indigo_s_2[damage].interval'], 0.5), 0.5);
+    const dIv = num(bb['indigo_s_2[damage].interval'], 0.5);
     const bound = (e) => !!e.s.flags.bind;
     const r1 = skillRec(chess, 'skchr_indigo_1');
     const b1 = r1?.bb ?? {};
@@ -49,8 +48,7 @@ export default {
         onTick({ battle, unit, dt }) {
           if (!(dScale > 0) || !(dIv > 0)) return;
           unit.mem.indigoAcc = (unit.mem.indigoAcc ?? 0) + dt;
-          let guard = 0;
-          while (unit.mem.indigoAcc >= dIv - 1e-9 && guard++ < STEP_PER_TICK) { // loop-cap: stepOf interval
+          while (unit.mem.indigoAcc >= dIv - 1e-9) {
             unit.mem.indigoAcc -= dIv;
             for (const e of battle.enemiesInKeys(unit.rangeKeys, unit, { canHitFly: true })) {
               if (bound(e)) battle.dealDamage(unit, e, { amount: unit.s.atk * dScale, type: 'arts', isSkill: true, canDodge: false, tags: ['dot'] });

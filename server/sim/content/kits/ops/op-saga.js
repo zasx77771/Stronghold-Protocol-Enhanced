@@ -47,7 +47,6 @@
 // Melee physical, ground-only (canHitFly false), ground enemies target her normally (no 起飞 / 迷彩 / 隐匿).
 
 import { num, talentBb, moduleBb, traitBb, skillRec, toggleBuff, batMod, giveSp, up } from '../shared/tier1.js';
-import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
 import { absoluteRangeKeys, canTargetEnemy, sortEnemyTargets } from '../../../targeting.js';
 
 const S1 = 'skcom_charge_cost[3]';
@@ -143,11 +142,10 @@ export default {
           onStart({ unit }) { unit.mem.sagaDp = { acc: 0, got: 0 }; },
           onTick({ battle, unit, dt }) {
             const st = unit.mem.sagaDp;
-            const iv = stepOf('interval', num(b3.interval, 1), 1), n = stepOf('cost', num(b3.cost), 1), total = num(b3.value);
+            const iv = num(b3.interval, 1), n = num(b3.cost), total = num(b3.value);
             if (!st || !(iv > 0) || !(n > 0)) return;
             st.acc += dt;
-            let guard = 0;
-            while (st.acc + 1e-9 >= iv && st.got + n <= total + 1e-9 && guard++ < STEP_PER_TICK) { // loop-cap: stepOf interval/cost
+            while (st.acc + 1e-9 >= iv && st.got + n <= total + 1e-9) {
               st.acc -= iv;
               st.got += n;
               battle.addDp(unit.ownerId, n);
