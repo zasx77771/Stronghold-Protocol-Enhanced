@@ -20,7 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { PLUGIN_APP_VERSION } from '../../shared/constants.js';
+import { APP_VERSION } from '../../shared/constants.js';
 import { CONTENT_HASH_VERSION, contentHashOf, simHashOf } from '../../shared/plugins/identity.js';
 
 /** data/*.json files that only the browser's presentation reads (never part of `cs`). */
@@ -100,7 +100,7 @@ export function gameplayDataFiles(dataDir) {
  *   shim: the /data.js stand-in's text; hash: SHA-256 of bytes as hex (default node:crypto)
  * @returns {VanillaContent}
  */
-export function computeVanillaContent({ simDir, sharedDir, dataDir, shim, app = PLUGIN_APP_VERSION, hash = nodeSha256, log = noopLog }) {
+export function computeVanillaContent({ simDir, sharedDir, dataDir, shim, app = APP_VERSION, hash = nodeSha256, log = noopLog }) {
   if (typeof shim !== 'string') throw new TypeError('computeVanillaContent: shim (the /data.js text) required');
   /** @type {Record<string, string>} */
   const simFiles = {};

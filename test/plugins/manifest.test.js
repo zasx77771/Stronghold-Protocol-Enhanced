@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { APP_VERSION, PLUGIN_API } from '../../shared/constants.js';
 import {
   PLUGIN_CLASSES, PACK_TYPES, PERMISSIONS, PLUGIN_LIMITS, ASSET_EXT, isPluginId, isPackId, isSemver, readPluginManifest, readPackManifest,
-  declaredPaths, checkPluginFiles, checkJsonLimits, classStatus, pluginIndexEntry, buildPluginIndex,
+  declaredPaths, checkPluginFiles, checkJsonLimits, classStatus, pluginIndexEntry, buildPluginIndex, pluginAppVersionMatches,
 } from '../../shared/plugins/manifest.js';
 import { normalizeManifest, PACK_TYPES as PACK_TYPES_COMPAT, isPackPath as isPackPathCompat, appVersionMatches } from '../../shared/packs.js';
 
@@ -215,6 +215,8 @@ test('the classes: lang and cosmetic load (P1a), content loads (P1b), ui loads (
   assert.ok(!PLUGIN_CLASSES.cosmetic.ext.includes('.js') && !PLUGIN_CLASSES.content.ext.includes('.js'), 'no code in art or data');
   assert.equal(isPackPathCompat('a/b.json'), true);
   assert.equal(appVersionMatches('>=0.3.0 <0.4.0', '0.3.0-dev'), true);
+  assert.equal(pluginAppVersionMatches('>=0.3.0 <0.4.0'), true, 'the enhanced build accepts its synchronized upstream plugin baseline');
+  assert.equal(pluginAppVersionMatches('>=0.3.0 <0.4.0', '2.6.1'), false, 'an explicitly supplied app version stays exact');
   assert.deepEqual(['ab', 'a-b', '0x', 'a'.repeat(32), 'a', '-a', 'A', 'a_b', 'a.b', 'a'.repeat(33)].map(isPluginId),
     [true, true, true, true, false, false, false, false, false, false]);
   assert.equal(isPackId('pt-BR'), true);

@@ -329,13 +329,6 @@ function MatchScreen() {
   const prepCam = prepCamera(pub, myId);
   const camRef = useRef({ kind: 'prep', opts: { rect: { ...GEO.NORMAL_RECT }, side: 'L' } });
   const penRef = useRef({ on: false, collapsed: false });
-  // the shop bar is shown folded (收起; the pen folds it for itself: the player's own state is the one it returns to) —
-  // only the packaged Android client then takes the official shop-collapsed camera. Desktop keeps its established
-  // framing; prepCameraShopOptions performs the host gate.
-  const baseShopFolded = showShop && (pen ? penRef.current.collapsed : collapsed);
-  const cameraFolded = prepCameraShopOptions(prepCam.opts, { collapsed: baseShopFolded, shopVisible: showShop }).shop === false;
-  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}:${cameraFolded ? 'folded' : 'fixed'}`;
-  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
   // 准备就绪 folds the shop bar, cancelling it unfolds the bar again (GitHub #138; gameLogic readyShopFold): the board is set,
   // the fight is what to look at — the board camera follows the fold like a hand-made one (the effect below). Inside the pen
   // the bar is folded for itself: the state it returns to is the one that changes.
@@ -431,6 +424,9 @@ function MatchScreen() {
   const shopFolded = showShop && (pen ? penRef.current.collapsed : (collapsed || deployFold));
   // the shop bar / board layout's displayed fold: the player's 收起 state, temporarily folded while deploying.
   const barCollapsed = collapsed || deployFold;
+  const cameraFolded = prepCameraShopOptions(prepCam.opts, { collapsed: shopFolded, shopVisible: showShop }).shop === false;
+  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}:${cameraFolded ? 'folded' : 'fixed'}`;
+  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
 
   // own board (prep, or a battle field the player fights on) → the stage with the player's overrides; a teammate's
   // board → the plain stage (their overrides are not known here)
@@ -483,7 +479,7 @@ function MatchScreen() {
         // the battle we just left (or whatever was stored before mount) must not be re-entered next combat;
         // an m.field that arrives during prep (the upcoming battle) is a new object and will be entered
         staleFieldRef.current = field;
-        const pc = prepCameraFor(pub, myId, cameraFolded);
+        const pc = prepCameraFor(pub, myId, shopFolded);
         setCam(pc.kind, pc.opts);
         prepCamSeen.current = prepCamKey;
         viewModeRef.current = 'prep';
@@ -668,7 +664,7 @@ function MatchScreen() {
     if (!view || viewModeRef.current !== 'prep' || !showPrep) return;
     if (live.current.facing) cancelFacingRef.current();
     setSel(null);
-    const pc = prepCameraFor(pub, myId, cameraFolded);
+    const pc = prepCameraFor(pub, myId, shopFolded);
     setCam(pc.kind, pc.opts);
   }, [view, prepCamKey, showPrep]);
 
@@ -689,11 +685,11 @@ function MatchScreen() {
       return;
     }
     const next = foldCamera({
-      pub, myId, folded: cameraFolded, ownPrep: !!view && viewModeRef.current === 'prep' && showPrep,
+      pub, myId, folded: shopFolded, ownPrep: !!view && viewModeRef.current === 'prep' && showPrep,
       pen, busy: !!drag || !!facing, current: camRef.current,
     });
     if (next) setCam(next.kind, { ...next.opts, ms: FOLD_CAMERA_MS });
-  }, [view, deployFold, shopFolded, cameraFolded, showPrep, pen, !!drag, !!facing, prepCamKey]);
+  }, [view, deployFold, shopFolded, showPrep, pen, !!drag, !!facing, prepCamKey]);
 
   // 联防 / 最终攻势: the ‹ › pill moves the camera between the field's halves and 全景 (research 09 §3.1)
   useEffect(() => {

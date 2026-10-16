@@ -7,10 +7,11 @@ export const PROTOCOL_VERSION = 1;
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
 export const APP_VERSION = '2.6.1';
 /**
- * Upstream game baseline used by plugin manifests and content-set hashes. This stays separate
- * from APP_VERSION because enhanced releases use the M.N.R version line.
+ * Upstream game baseline accepted by the plugin loader in addition to APP_VERSION. It must not
+ * be used as the displayed version, plugin index version, or content-hash identity: enhanced
+ * plugins continue to target the enhanced release line.
  */
-export const PLUGIN_APP_VERSION = '0.3.0';
+export const UPSTREAM_PLUGIN_APP_VERSION = '0.3.0';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
@@ -30,7 +31,7 @@ export const MAX_SEATS = 4;
  */
 export const MAX_SPECTATORS = 2;
 export const ROOM_CODE_LEN = 4;
-export const NAME_MAX_LEN = 16;
+export const NAME_MAX_LEN = 12;
 
 export const DIFFICULTIES = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
 export const DIFFICULTY_NAMES = { FUNNY: N_('标准模拟'), NORMAL: N_('险境模拟'), HARD: N_('绝境模拟'), ABYSS: N_('终极模拟') };

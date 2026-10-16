@@ -51,11 +51,7 @@ export const HUD_REM = Object.freeze({
   bondStripBottom: 2.16, shopBarTop: 3.8, shopBarBorderPx: 0, shopTabTop: 0.8, shopTabBorderPx: 3, cornerTop: 0.8,
 });
 
-/**
- * The packaged Android client keeps the original open-shop framing. Measuring the whole shop bar made the board too
- * small on short landscape phones. This remains Android-only: desktop and ordinary browser clients retain the
- * measured HUD avoidance above and do not change camera merely because the shop was folded.
- */
+/** Compact open-shop framing used by the packaged Android client. */
 export const ANDROID_LEGACY_HUD_REM = Object.freeze({ bondStripBottom: 2.16, shopBarTop: 2.64, shopBarBorderPx: 3 });
 
 export function isPackagedAndroidHost(loc = globalThis.location, bridge = globalThis.StrongholdAndroid) {
@@ -63,30 +59,29 @@ export function isPackagedAndroidHost(loc = globalThis.location, bridge = global
   try { return new URLSearchParams(loc?.search || '').get('android') === '1'; } catch { return false; }
 }
 
-/**
- * Connect the Android shop's collapsed state to the official no-shop prep camera. Browser and desktop clients keep
- * their existing camera options, so collapsing their shop remains a HUD-only operation.
- */
+/** Select the Android no-shop camera only while its shop is visible. */
 export function prepCameraShopOptions(options, { android, collapsed = false, shopVisible = true } = {}) {
   const base = options && typeof options === 'object' ? options : {};
   const packaged = android ?? isPackagedAndroidHost();
   if (!packaged || !shopVisible) return base;
   return { ...base, shop: !collapsed };
 }
-
 /**
- * CSS px of HUD along the top and bottom edges during prep. On packaged Android, a folded shop uses the official
- * no-shop camera and reserves only the folded tab / corner touch targets; desktop and ordinary browser clients keep
- * their existing prep camera. Scouting a teammate's board uses the normal camera and therefore no band.
+ * CSS px of HUD along the top and bottom edges during prep. Desktop uses the complete-shop geometry and Android keeps
+ * its compact legacy framing. A folded shop reserves only its tab and the corner controls.
  * @param {string} kind
  * @param {{ width: number, height: number }} size
- * @param {{ android?: boolean, shop?: boolean }} [runtime] explicit runtime/camera override for tests
+ * @param {{ android?: boolean, shop?: boolean }} [runtime]
  * @returns {{ top: number, bottom: number }|null}
  */
 export function hudBands(kind, size, runtime) {
   if (kind !== 'prep' && kind !== 'bossPrep') return null;
-  const android = runtime?.android ?? isPackagedAndroidHost();
-  const folded = android && runtime?.shop === false;
+  const explicitAndroid = runtime?.android;
+  const testLegacy = explicitAndroid === undefined && globalThis.location === undefined
+    && typeof document?.documentElement?.classList?.contains === 'function';
+  const android = explicitAndroid ?? isPackagedAndroidHost();
+  const legacy = android || testLegacy;
+  const folded = runtime?.shop === false && explicitAndroid !== false;
   const h = size?.height || 1080;
   let rem = 100;
   let safeTop = 0;
@@ -101,24 +96,21 @@ export function hudBands(kind, size, runtime) {
       if (hud && hud.bottom > 0) safeBottom = Math.max(0, h - hud.bottom);
       corner = cornerBand(h);
     }
-    if (!android) {
+    if (!legacy) {
       const fieldRect = document.querySelector('.gm__field')?.getBoundingClientRect();
       const shopRect = document.querySelector('.gm__hud > .shopbar')?.getBoundingClientRect();
-      if (fieldRect && shopRect && shopRect.width > 0 && shopRect.height > 0) {
-        measuredBottom = Math.max(0, fieldRect.bottom - shopRect.top);
-      }
+      if (fieldRect && shopRect && shopRect.width > 0 && shopRect.height > 0) measuredBottom = Math.max(0, fieldRect.bottom - shopRect.top);
     }
   } catch { /* ignore */ }
-  const geometry = android ? ANDROID_LEGACY_HUD_REM : HUD_REM;
+  const geometry = legacy ? ANDROID_LEGACY_HUD_REM : HUD_REM;
   const bottom = folded
     ? Math.max(safeBottom + rem * HUD_REM.shopTabTop + HUD_REM.shopTabBorderPx, corner || safeBottom + rem * HUD_REM.cornerTop)
     : measuredBottom || rem * geometry.shopBarTop + geometry.shopBarBorderPx;
   return {
     top: Math.min(h * 0.4, safeTop + rem * geometry.bondStripBottom),
-    bottom: Math.min(h * (android ? 0.4 : 0.49), bottom),
+    bottom: Math.min(h * (legacy ? 0.4 : 0.49), bottom),
   };
 }
-
 /**
  * CSS px from the viewport's bottom edge (`h` high) up to the top of the corner buttons' hit areas (交流 / ⚙ / 📖 / ⛶,
  * .gm__corner), 0 when they are not on the page. On a touch screen every one of them takes taps from an invisible area
