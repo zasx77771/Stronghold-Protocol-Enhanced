@@ -9,8 +9,19 @@
 // Backdrop art: if data/assets.json lists a UI backdrop (`ui.titleBackdrop`, or one of the
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
+//
+// The full art, under the login box: 下载完整素材 (ui/assetDownload.js — its dialog downloads from this server) and
+// 导入素材包 (ui/assetImport.js — the player's own folder or zip, no server download) side by side, so an import never
+// opens the download (docs/history/0.3.0.md §32.14.39).
+//
+// Plugins (DESIGN §32 P1a, the design study's §7.4): when the server has unofficial plugins (content.plugins of /healthz or
+// welcome — content.js installedCount), the footer says 「本服务器安装了 N 个插件」 — a button that loads the list
+// (ui/pluginPanel.js InstalledPlugins, which fetches the catalogue when it opens); nothing on a server without any, which
+// the page never asks for its catalogue — and the title page loads none of the panel's code.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
+import { AssetDownloadButton } from '../ui/assetDownload.js';
+import { AssetImportButton } from '../ui/assetImport.js';
 import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
@@ -33,6 +44,7 @@ import {
   loadEndpointAddress, loadTransportMode, normalizeRoomCode, parseInviteText, readClipboardText,
   saveEndpointAddress, saveTransportMode,
 } from '../serverAddress.js';
+import { installedCount } from '../content.js';
 
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
 // the client accepts is never rejected by the server's hello validation.
@@ -253,6 +265,7 @@ export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
+  const currentName = useStore((s) => s.me.name);
   // Device-local profile (ui/profileModel.js): the display name the player typed last time. An existing install's
   // pre-model `sp.name` / `sp.rememberName` keys are folded in on the first load, and every write mirrors back to them.
   const [profile, setProfile] = useState(() => loadProfile({
@@ -267,7 +280,17 @@ export function TitleScreen() {
   const [pastedInvite, setPastedInvite] = useState(null);
   const [serverError, setServerError] = useState('');
   const [starting, setStarting] = useState(false);
+  // An import may restore the current name while this screen remains behind the stats overlay.
+  useEffect(() => {
+    if (currentName) setName((draft) => draft || currentName);
+  }, [currentName]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
+  const [Installed, setInstalled] = useState(null);
+  const openPlugins = () => {
+    import('../ui/pluginPanel.js').then((m) => setInstalled(() => m.InstalledPlugins), (err) => console.warn('[plugins] the list did not load', err));
+  };
+  const installed = useStore(installedCount);
   const assetsSettled = useData('assets');
   const assets = data.get('assets');
   const backdrop = findUiAsset(assets, BACKDROP_KEYS);
@@ -514,13 +537,20 @@ export function TitleScreen() {
           ${!androidClient ? html`<${FullscreenButton} class="title-fs" />` : null}
         </div>
       </div>
+      <div class="title-assets">
+        <${AssetDownloadButton} />
+        <${AssetImportButton} />
+      </div>
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
+    ${Installed ? html`<${Installed} open=${true} onClose=${() => setInstalled(null)} />` : null}
 
     <footer class="title-foot">
       <${ResumeMatchButton} />
       <${PwaInstallButton} />
+      ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${openPlugins}>
+        <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed })}</button>` : null}
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <span class="title-foot__meta">
         <a class="title-repo" href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a>
