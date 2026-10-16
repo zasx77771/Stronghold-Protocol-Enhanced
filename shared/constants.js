@@ -31,7 +31,7 @@ export const MAX_SEATS = 4;
  */
 export const MAX_SPECTATORS = 2;
 export const ROOM_CODE_LEN = 4;
-export const NAME_MAX_LEN = 12;
+export const NAME_MAX_LEN = 16;
 
 export const DIFFICULTIES = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
 export const DIFFICULTY_NAMES = { FUNNY: N_('标准模拟'), NORMAL: N_('险境模拟'), HARD: N_('绝境模拟'), ABYSS: N_('终极模拟') };

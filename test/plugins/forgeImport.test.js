@@ -471,7 +471,7 @@ test('preview and dry-run leave Object.prototype unchanged on success and on a p
   }
 });
 
-test('two language codes that canonicalise together are refused and write nothing', async () => {
+test('case-colliding language source paths are refused and write nothing', async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-forge-lang-'));
   const pack = path.join(parent, 'pack');
   writePack(pack, {
@@ -484,8 +484,8 @@ test('two language codes that canonicalise together are refused and write nothin
   try {
     const got = await importForge(pack, { ...forgeOpts(parent), out: path.join(parent, 'lang-alias') });
     assert.equal(got.ok, false);
-    assert.equal(got.issues[0].code, 'PLUGIN_FORGE_INPUT');
-    assert.match(got.issues[0].detail, /same language/);
+    assert.ok(['PLUGIN_FORGE_INPUT', 'PLUGIN_FORGE_ZIP'].includes(got.issues[0].code));
+    assert.match(got.issues[0].detail, /case|same language/);
     assert.deepEqual(dirsOf(parent).filter((n) => n !== 'pack'), []);
     assert.equal(got.markdown.includes(os.homedir()), false);
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }

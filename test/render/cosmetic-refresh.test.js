@@ -265,6 +265,6 @@ describe('the field view follows the manifest (render/app.js)', () => {
     assert.match(app, /const url = assets\.ui \? assets\.ui\('battle\/sprite_shadow'\) : null;\n {4}if \(url === shadowUrl\) return;/);
     assert.match(app, /if \(!url\) \{ setShadow\(shadowTexture\(\)\); return; \}/, 'none named any more: the procedural shadow');
     assert.doesNotMatch(app, /mountainsAsked|shadowAsked/, 'never asked only once');
-    assert.match(app, /function onAssets\(\) \{\n {4}if \(destroyed\) return;\n {4}retryBoard\(\);\n {4}loadShadow\(\);\n {4}loadMountains\(\);/);
+    assert.match(app, /function onAssets\(\) \{\n {4}if \(destroyed\) return;\n {4}retryArt\(\);\n {4}retryBoard\(\);\n {4}loadShadow\(\);\n {4}loadMountains\(\);/);
   });
 });

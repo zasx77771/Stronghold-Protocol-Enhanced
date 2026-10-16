@@ -274,10 +274,11 @@ export function appVersionMatches(range, version = APP_VERSION) {
  * Enhanced builds accept their own release version and the synchronized upstream plugin
  * baseline. An explicitly supplied app version remains an exact compatibility check for tools.
  * @param {unknown} range
- * @param {unknown} [app]
+ * @param {unknown[]} apps
  */
-export function pluginAppVersionMatches(range, app = APP_VERSION) {
-  return appVersionMatches(range, app === APP_VERSION ? [app, UPSTREAM_PLUGIN_APP_VERSION] : app);
+export function pluginAppVersionMatches(range, ...apps) {
+  const [app = APP_VERSION, allowUpstream = false] = apps;
+  return appVersionMatches(range, apps.length === 0 || allowUpstream ? [app, UPSTREAM_PLUGIN_APP_VERSION] : app);
 }
 
 // ---- the normalised manifest ------------------------------------------------------------------------------------------
@@ -388,7 +389,7 @@ export function readPackManifest(raw, ctx) {
   const range = str(m.app, 60);
   const app = ctx.app ?? APP_VERSION;
   if (range && !isVersionRange(range)) list.warning('PLUGIN_APP', `"app": "${range}" is not a version range (">=0.2.0", "0.2.x" …)`, { at: ['app'], app });
-  const compatible = pluginAppVersionMatches(range, app);
+  const compatible = pluginAppVersionMatches(range, app, app === APP_VERSION);
   if (!compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const cls = kind ? kind.class : 'lang';
   /** @type {PluginManifest} */
@@ -623,7 +624,7 @@ export function readPluginManifest(raw, ctx) {
   const app = ctx.app ?? APP_VERSION;
   if (m.app !== undefined && (typeof m.app !== 'string' || range.length > 60 || !isVersionRange(range))) list.problem('PLUGIN_APP', `"app": ${short(m.app)} is not a version range (">=0.3.0 <0.4.0", "0.3.x" …)`, { at: ['app'], app });
   else if (!range && !isLang) list.problem('PLUGIN_APP', 'no "app" (the game versions it is made for, e.g. ">=0.3.0 <0.4.0")', { at: ['app'], app });
-  const compatible = pluginAppVersionMatches(range, app);
+  const compatible = pluginAppVersionMatches(range, app, app === APP_VERSION);
   if (range && !compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const supported = ctx.api ?? PLUGIN_API;
   const apiAt = { at: ['api'], min: supported.min, current: supported.current };

@@ -217,6 +217,7 @@ test('the classes: lang and cosmetic load (P1a), content loads (P1b), ui loads (
   assert.equal(appVersionMatches('>=0.3.0 <0.4.0', '0.3.0-dev'), true);
   assert.equal(pluginAppVersionMatches('>=0.3.0 <0.4.0'), true, 'the enhanced build accepts its synchronized upstream plugin baseline');
   assert.equal(pluginAppVersionMatches('>=0.3.0 <0.4.0', '2.6.1'), false, 'an explicitly supplied app version stays exact');
+  assert.equal(readPluginManifest(marathon(), { id: 'marathon', app: APP_VERSION }).manifest.compatible, true, 'the enhanced runtime accepts the synchronized upstream baseline');
   assert.deepEqual(['ab', 'a-b', '0x', 'a'.repeat(32), 'a', '-a', 'A', 'a_b', 'a.b', 'a'.repeat(33)].map(isPluginId),
     [true, true, true, true, false, false, false, false, false, false]);
   assert.equal(isPackId('pt-BR'), true);
