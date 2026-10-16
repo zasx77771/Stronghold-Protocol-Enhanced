@@ -3,6 +3,7 @@ param(
   [string]$ElectronZip = '',
   [string]$OutputRoot = '',
   [string]$CacheDir = '',
+  [string]$AssetSourceDir = '',
   [string]$AssetIndexUrl = '',
   [string]$AssetTokenUrl = '',
   [int]$AssetMaxChain = 3,
@@ -14,6 +15,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot '..'))
+$DefaultAssetSourceDir = Join-Path $ProjectRoot 'public'
+if (-not $AssetSourceDir) { $AssetSourceDir = $DefaultAssetSourceDir }
+$AssetSourceDir = [IO.Path]::GetFullPath($AssetSourceDir)
+if (-not (Test-Path -LiteralPath $AssetSourceDir -PathType Container)) {
+  throw "Windows asset source directory was not found: $AssetSourceDir"
+}
 $PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
@@ -82,8 +89,17 @@ Write-Host 'Copying local client code and resources...'
 $ThinClient = [bool]$AssetIndexUrl
 if ($ThinClient -and -not $AssetTokenUrl) { throw 'A thin Windows client requires -AssetTokenUrl.' }
 Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'public') -Force |
-  Where-Object { $_.Name -notin $(if ($ThinClient) { @('dev', 'assets', 'fonts') } else { @('dev') }) } |
+  Where-Object { $_.Name -notin @('dev', 'assets', 'fonts') } |
   Copy-Item -Destination $ClientDir -Recurse -Force
+if (-not $ThinClient) {
+  foreach ($AssetDirectory in @('assets', 'fonts')) {
+    $Source = Join-Path $AssetSourceDir $AssetDirectory
+    if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
+      throw "Windows full client requires $AssetDirectory under asset source: $AssetSourceDir"
+    }
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $ClientDir $AssetDirectory) -Recurse -Force
+  }
+}
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'data') -Destination (Join-Path $ClientDir 'data') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'shared') -Destination (Join-Path $ClientDir 'shared') -Recurse -Force
 
