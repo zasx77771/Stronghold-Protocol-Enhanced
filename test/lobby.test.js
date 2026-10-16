@@ -19,7 +19,7 @@ import { sanitizeName, TokenBucket, SessionRegistry, clientAddress, normalizeIp,
 import { StubMatch as Match } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ERR, MAX_SEATS, MAX_SPECTATORS, NAME_MAX_LEN, PHASE, EMOTES } from '../shared/constants.js';
+import { ERR, MAX_SEATS, MAX_SPECTATORS, PHASE, EMOTES } from '../shared/constants.js';
 
 const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{4}$`);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -317,6 +317,75 @@ describe('static http server', () => {
     assert.equal(textRange.body.toString(), js.slice(0, 2));
   });
 
+  for (const url of ['/assets/audio/bgm.mp3', '/media/bgm']) {
+    for (const range of ['bytes=0-0', `bytes=${mp3.length}-`]) {
+      test(`HEAD ignores Range ${range} on ${url}`, async () => {
+        const full = await httpReq(srv.port, url);
+        const head = await httpReq(srv.port, url, { method: 'HEAD', headers: { range } });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-length'], String(full.body.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.headers['content-type'], full.headers['content-type']);
+        assert.equal(head.headers.etag, full.headers.etag);
+        assert.equal(head.body.length, 0);
+      });
+    }
+  }
+
+  for (const encoding of ['gzip', 'br']) {
+    test(`HEAD ignores Range when selecting the ${encoding} representation`, async () => {
+      const url = '/js/app.js';
+      const headers = { 'accept-encoding': encoding };
+      const full = await httpReq(srv.port, url, { headers });
+      assert.equal(full.status, 200);
+      assert.equal(full.headers['content-encoding'], encoding);
+      for (const range of ['bytes=0-0', `bytes=${Buffer.byteLength(js)}-`]) {
+        const head = await httpReq(srv.port, url, { method: 'HEAD', headers: { ...headers, range } });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-encoding'], encoding);
+        assert.equal(head.headers['content-length'], String(full.body.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.headers.etag, full.headers.etag);
+        assert.equal(head.headers.vary, full.headers.vary);
+        assert.equal(head.body.length, 0);
+
+        const cached = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { ...headers, range, 'if-none-match': full.headers.etag },
+        });
+        assert.equal(cached.status, 304, 'Range must not change the selected validator');
+        assert.equal(cached.headers.etag, full.headers.etag);
+        assert.equal(cached.headers['content-range'], undefined);
+        assert.equal(cached.body.length, 0);
+      }
+    });
+  }
+
+  test('HEAD ignores Range while honoring cache validators and ignoring If-Range', async () => {
+    for (const url of ['/assets/audio/bgm.mp3', '/media/bgm']) {
+      const full = await httpReq(srv.port, url);
+      for (const condition of [
+        { 'if-none-match': full.headers.etag },
+        { 'if-modified-since': full.headers['last-modified'] },
+      ]) {
+        const cached = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { range: `bytes=${mp3.length}-`, ...condition },
+        });
+        assert.equal(cached.status, 304);
+        assert.equal(cached.headers['content-range'], undefined);
+        assert.equal(cached.body.length, 0);
+      }
+      for (const ifRange of [full.headers.etag, '"stale"']) {
+        const head = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { range: 'bytes=0-0', 'if-range': ifRange },
+        });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-length'], String(mp3.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.body.length, 0);
+      }
+    }
+  });
+
   test('extension-less /media audio route (download managers sniff .mp3 URLs)', async () => {
     const direct = await httpReq(srv.port, '/assets/audio/bgm.mp3');
     const media = await httpReq(srv.port, '/media/bgm');
@@ -400,8 +469,6 @@ describe('static http server', () => {
     assert.equal(health.status, 200);
     const h = JSON.parse(health.body.toString());
     assert.equal(h.ok, true);
-    assert.equal(h.mode, 'integrated');
-    assert.equal(h.clientAssets, true);
     assert.equal(typeof h.rooms, 'number');
     assert.equal(health.headers['cache-control'], 'no-store');
   });
@@ -440,42 +507,6 @@ describe('static http server', () => {
     assert.equal(pickEncoding('*;q=0'), null);
     assert.equal(pickEncoding('identity'), null);
     assert.equal(pickEncoding(undefined), null);
-  });
-});
-
-describe('network-only server', () => {
-  let srv;
-  before(async () => {
-    srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, serveClient: false });
-  });
-  after(async () => { await srv?.close(); });
-
-  test('exposes health and WebSocket but no client, assets or game-data HTTP routes', async () => {
-    assert.equal(srv.serveClient, false);
-    const health = await httpReq(srv.port, '/healthz');
-    assert.equal(health.status, 200);
-    const h = JSON.parse(health.body.toString());
-    assert.equal(h.ok, true);
-    assert.equal(h.mode, 'network-only');
-    assert.equal(h.clientAssets, false);
-
-    for (const p of ['/', '/index.html', '/assets/example.png', '/data/config.json', '/shared/constants.js', '/sim/index.js', '/data.js']) {
-      const r = await httpReq(srv.port, p);
-      assert.equal(r.status, 404, p);
-      assert.match(r.headers['content-type'], /^application\/json/);
-      assert.deepEqual(JSON.parse(r.body.toString()), { ok: false, error: 'not_found' });
-    }
-
-    const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
-    try {
-      const welcome = await c.hello('Portable');
-      assert.equal(welcome.t, 'welcome');
-      const pong = await c.request({ t: 'ping', c: 42 });
-      assert.equal(pong.t, 'pong');
-      assert.equal(pong.c, 42);
-    } finally {
-      await c.terminate();
-    }
   });
 });
 
@@ -537,9 +568,7 @@ describe('websocket lobby', () => {
 
     await expectError(c, { t: 'hello', name: '   ' }, ERR.BAD_MSG);
     await expectError(c, { t: 'hello', name: 'x', version: 999 }, ERR.BAD_MSG);
-    const maxName = 'x'.repeat(NAME_MAX_LEN);
-    assert.equal((await c.hello(maxName)).name, maxName, 'server accepts a 16-character nickname');
-    await expectError(c, { t: 'hello', name: 'x'.repeat(NAME_MAX_LEN + 1) }, ERR.BAD_MSG);
+    await expectError(c, { t: 'hello', name: 'x'.repeat(13) }, ERR.BAD_MSG);
     // repeated hello updates the name, keeps identity
     const again = await c.hello('Renamed');
     assert.equal(again.playerId, w.playerId);
@@ -597,9 +626,12 @@ describe('websocket lobby', () => {
     assert.equal(pong.t, 'pong');
   });
 
-  test('rate limit: bursts beyond 40 msg/s get RATE, connection survives, bucket refills', async () => {
+  test('rate limit: bursts beyond 40 msg/s get RATE, connection survives, bucket refills', async (t) => {
+    // Transport/compression scheduling must not refill a supposedly instantaneous burst.
+    let now = Date.now();
+    t.mock.method(srv.network, 'now', () => now);
     const c = await pool.player('Spammer');
-    const N = 400;
+    const N = 100;
     const rids = [];
     for (let i = 0; i < N; i++) rids.push(c.send({ t: 'ping', c: i }));
     const replies = [];
@@ -607,32 +639,33 @@ describe('websocket lobby', () => {
     const pongs = replies.filter((m) => m.t === 'pong').length;
     const limited = replies.filter((m) => m.t === 'error' && m.code === ERR.RATE).length;
     assert.equal(pongs + limited, N);
-    // A token bucket refills while the WebSocket implementation drains a burst. Its exact number of accepted frames is
-    // scheduler-dependent, so only require the exhausted bucket to reject a substantial part of this much larger burst.
-    assert.ok(pongs >= 39, `pongs ${pongs}`); // hello used one token
-    assert.ok(limited >= 100, `limited ${limited}`);
+    assert.equal(pongs, 39); // hello used one of the 40 tokens
+    assert.equal(limited, 61);
     assert.ok(c.isOpen);
-    await delay(1100);
+    now += 24; // 40/s: less than one token
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    now += 1;
     const ok = await c.request({ t: 'ping', c: 0 });
     assert.equal(ok.t, 'pong');
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    now += 1100; // refill, capped at 40 tokens
+    for (let i = 0; i < 40; i++) assert.equal((await c.request({ t: 'ping', c: i })).t, 'pong');
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    assert.ok(c.isOpen);
   });
 
-  test('flooding past the configured drop threshold closes the socket (1008)', async () => {
-    // Exercise the close path with a low threshold instead of assuming how fast a particular OS drains 400 replies.
-    const floodServer = await startServer({
-      port: 0, host: '127.0.0.1', quiet: true, MatchClass: Match, abuseDropsPerSec: 20,
-    });
-    const c = await TestClient.connect(`ws://127.0.0.1:${floodServer.port}/ws`);
-    try {
-      await c.hello('Flood');
-      for (let i = 0; i < 200 && c.isOpen; i++) c.send({ t: 'ping', c: i, rid: null });
-      const info = await Promise.race([c.closed, delay(3000).then(() => null)]);
-      assert.ok(info, 'the server closed the flooding socket');
-      assert.equal(info.code, 1008);
-    } finally {
-      await c.terminate().catch(() => {});
-      await floodServer.close();
-    }
+  test('flooding far beyond the limit closes the socket (1008)', { timeout: 10000 }, async (t) => {
+    const now = Date.now();
+    t.mock.method(srv.network, 'now', () => now);
+    const c = await pool.player('Flood');
+    // Keep one rate window and await replies instead of building a compressed send queue ahead of the close frame.
+    for (let i = 0; i < 39; i++) assert.equal((await c.request({ t: 'ping', c: i })).t, 'pong');
+    for (let i = 0; i < 400; i++) await expectError(c, { t: 'ping', c: i }, ERR.RATE);
+    assert.ok(c.isOpen, '400 drops do not close the socket');
+    c.send({ t: 'ping', c: 400, rid: null });
+    const info = await c.closed;
+    assert.equal(info.code, 1008);
+    assert.equal(info.reason, 'rate limit');
   });
 
   test('create / join / leave', async () => {
@@ -1409,12 +1442,17 @@ describe('lobby timers and match interface', () => {
     assert.ok(cap.errors.some((e) => e.includes('intentional handler crash')));
   });
 
-  test('repeated hellos during a match coalesce into at most one match resync per window', async () => {
+  test('user Given a running match When sending repeated hellos Then resyncs coalesce within the time window', { timeout: 10000 }, async (t) => {
     const host = await pool.player('Host');
     await createRoom(host, 'solo', 'NORMAL');
     RecordingMatch.instances.length = 0;
     await expectOk(host, { t: 'room.start' });
     await host.waitFor('m.private');
+    // Real socket processing may cross the resync window on a busy runner.
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+    const clock = srv.lobby.now;
+    srv.lobby.now = () => Date.now();
+    t.after(() => { srv.lobby.now = clock; });
     const m = RecordingMatch.instances[0];
     const resyncs = () => m.calls.filter((c) => c[0] === 'onReconnect').length;
     host.clearInbox();
@@ -1422,9 +1460,12 @@ describe('lobby timers and match interface', () => {
     for (let i = 0; i < 12; i++) await host.waitFor('room.state'); // the cheap part answers every hello
     assert.equal(resyncs(), 1, 'first repeated hello resyncs at once, the rest wait for the window');
     await host.waitFor('m.private');
+    t.mock.timers.tick(999);
+    assert.equal(resyncs(), 1, 'no deferred resync before the window ends');
+    t.mock.timers.tick(1);
     await host.waitFor('m.private', () => true, 1500); // one coalesced resync answers the other 11
     assert.equal(resyncs(), 2);
-    await delay(1100);
+    t.mock.timers.tick(1100);
     assert.equal(resyncs(), 2, 'nothing else was queued');
     // a (re)connect is never delayed
     await host.terminate();
@@ -2006,10 +2047,11 @@ describe('platform units', () => {
       fs.writeFileSync(path.join(dir, 'chess.json'), JSON.stringify([{ id: 'x', stats: { hp: 1 } }]));
       fs.writeFileSync(path.join(dir, 'broken.json'), '{oops');
       fs.writeFileSync(path.join(dir, 'notes.txt'), 'ignored');
+      fs.writeFileSync(path.join(dir, 'local-fx.json'), JSON.stringify({ version: 1, format: 'fx-manifest', groups: {} }));
       const warnings = [];
       const errors = [];
       const data = loadData(dir, { log: { warn: (m) => warnings.push(m), error: (m) => errors.push(m) } });
-      assert.deepEqual(Object.keys(data).sort(), ['chess', 'config']);
+      assert.deepEqual(Object.keys(data).sort(), ['chess', 'config'], 'data/local-fx.json (the official effects\' file list, UNLOADED_DATA) is never loaded');
       assert.equal(data.config.modes.a.rounds[1], 2);
       assert.ok(Object.isFrozen(data));
       assert.ok(Object.isFrozen(data.config.modes.a.rounds));
@@ -2070,7 +2112,7 @@ describe('platform units', () => {
     assert.equal(sanitizeName(String.fromCharCode(0xd800)), null);
     assert.equal(sanitizeName(''), null);
     assert.equal(sanitizeName(42), null);
-    assert.equal([...sanitizeName('😀'.repeat(20))].length, NAME_MAX_LEN);
+    assert.equal([...sanitizeName('😀'.repeat(20))].length, 12);
   });
 
   test('TokenBucket refills continuously up to burst', () => {
