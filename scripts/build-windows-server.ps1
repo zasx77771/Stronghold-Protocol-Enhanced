@@ -44,13 +44,48 @@ if (Test-Path -LiteralPath $OutputDir) {
 
 $DataTarget = Join-Path $OutputDir 'data'
 $ModulesTarget = Join-Path $OutputDir 'node_modules'
-New-Item -ItemType Directory -Force -Path $OutputDir, $DataTarget, $ModulesTarget | Out-Null
+$ToolsAssetsTarget = Join-Path $OutputDir 'tools/assets'
+New-Item -ItemType Directory -Force -Path $OutputDir, $DataTarget, $ModulesTarget, $ToolsAssetsTarget | Out-Null
 
 Write-Host 'Copying network server and private rule data...'
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'server') -Destination (Join-Path $OutputDir 'server') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'shared') -Destination (Join-Path $OutputDir 'shared') -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $ProjectRoot 'node_modules\ws') -Destination (Join-Path $ModulesTarget 'ws') -Recurse -Force
+foreach ($Tool in @('skel.mjs', 'anim-roles.mjs', 'atlas.mjs')) {
+  Copy-Item -LiteralPath (Join-Path $ProjectRoot "tools/assets/$Tool") -Destination $ToolsAssetsTarget -Force
+}
 
+function Copy-NodePackageClosure([string[]]$Roots) {
+  $Pending = [Collections.Generic.Queue[string]]::new()
+  $Copied = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($Root in $Roots) { $Pending.Enqueue($Root) }
+
+  while ($Pending.Count) {
+    $Name = $Pending.Dequeue()
+    if (-not $Copied.Add($Name)) { continue }
+    $Source = Join-Path $ProjectRoot "node_modules/$Name"
+    if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
+      throw "Portable server dependency was not found: $Source"
+    }
+    $Destination = Join-Path $ModulesTarget $Name
+    $DestinationParent = Split-Path -Parent $Destination
+    New-Item -ItemType Directory -Force -Path $DestinationParent | Out-Null
+    Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+
+    $ManifestPath = Join-Path $Source 'package.json'
+    $Manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+    foreach ($Field in @('dependencies', 'optionalDependencies', 'peerDependencies')) {
+      $Entries = $Manifest.$Field
+      if (-not $Entries) { continue }
+      foreach ($Property in $Entries.PSObject.Properties) {
+        $Optional = $Manifest.peerDependenciesMeta.$($Property.Name).optional
+        if ($Field -eq 'peerDependencies' -and $Optional -eq $true) { continue }
+        $Pending.Enqueue($Property.Name)
+      }
+    }
+  }
+}
+
+Copy-NodePackageClosure @('ws', '@pixi-spine/runtime-3.8')
 $ServerDataFiles = @(
   'bands.json', 'bonds.json', 'bosses.json', 'chess.json', 'choices.json', 'config.json',
   'effects.json', 'enemies.json', 'factions.json', 'garrisons.json', 'items.json',

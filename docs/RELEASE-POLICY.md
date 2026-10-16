@@ -22,6 +22,13 @@
 
 `release-policy.json` 不再保留已到期的 `legacyVersionLine`；后续上游更新继续直接使用通用映射。
 
+## 0.3.0 Compatibility Release
+
+On 2026-10-16, the user approved Stronghold Protocol 0.3.0 as Enhanced 2.6.3 and its
+2.6.* compatibility line. `release-policy.json` records this explicit baseline exception
+through `legacyVersionLine`; later upstream baselines continue to follow the normal
+`0.M.N -> M.N.R` mapping.
+
 ## 元数据
 
 正式增强版发布时同步更新：

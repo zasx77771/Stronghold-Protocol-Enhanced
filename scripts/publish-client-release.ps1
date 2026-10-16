@@ -6,6 +6,7 @@ param(
   [string]$ElectronVersion = '44.5.1',
   [string]$ElectronZip = '',
   [string]$WindowsCacheDir = '',
+  [string]$WindowsAssetSourceDir = '',
   [string]$AndroidToolchainDir = '',
   [string]$AndroidCacheRoot = '',
   [string]$AndroidResourceSourceDir = '',
@@ -56,6 +57,7 @@ if ($AssetMaxChain -gt 0) { $WindowsArguments.AssetMaxChain = $AssetMaxChain }
 if ($AssetAllowHttp) { $WindowsArguments.AssetAllowHttp = $true }
 if ($ElectronZip) { $WindowsArguments.ElectronZip = $ElectronZip }
 if ($WindowsCacheDir) { $WindowsArguments.CacheDir = $WindowsCacheDir }
+if ($WindowsAssetSourceDir) { $WindowsArguments.AssetSourceDir = $WindowsAssetSourceDir }
 
 Write-Host 'Building complete Windows client package...'
 & (Join-Path $PSScriptRoot 'build-windows-client.ps1') @WindowsArguments

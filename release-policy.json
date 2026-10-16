@@ -1,6 +1,10 @@
 {
   "format": "stronghold-release-policy-v2",
-  "upstreamMainlineVersion": "0.2.6",
+  "upstreamMainlineVersion": "0.3.0",
   "localVersionRule": "upstream 0.M.N maps to local M.N.<enhanced revision>",
-  "androidVersionCode": 26
+  "legacyVersionLine": {
+    "upstreamVersion": "0.3.0",
+    "localLine": "2.6"
+  },
+  "androidVersionCode": 27
 }
