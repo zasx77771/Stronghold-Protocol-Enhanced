@@ -10,9 +10,11 @@ const nodeNet = require('node:net');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const { RuntimeAssetUpdater } = require('./assets.cjs');
 
 const CLIENT_ROOT = path.resolve(__dirname, 'client');
 const HOST = '127.0.0.1';
+const RUNTIME_ASSET_ROOT = () => path.join(app.getPath('userData'), 'asset-runtime');
 // Defensive ceiling for client-side TCP frames; the game server itself caps frames at 64 KiB.
 const TCP_FRAME_MAX_BYTES = 32 << 20;
 const smokeArg = process.argv.find((arg) => arg.startsWith('--smoke-test='));
@@ -65,8 +67,13 @@ async function serve(req, res) {
   const parts = pathname.split('/').filter(Boolean);
   if (parts.some((part) => part === '.' || part === '..' || part.startsWith('.'))) { plain(res, 404, 'Not Found'); return; }
   if (!parts.length || pathname.endsWith('/')) parts.push('index.html');
-  const target = path.resolve(CLIENT_ROOT, ...parts);
-  if (target !== CLIENT_ROOT && !target.startsWith(CLIENT_ROOT + path.sep)) { plain(res, 403, 'Forbidden'); return; }
+  const bundledTarget = path.resolve(CLIENT_ROOT, ...parts);
+  if (bundledTarget !== CLIENT_ROOT && !bundledTarget.startsWith(CLIENT_ROOT + path.sep)) { plain(res, 403, 'Forbidden'); return; }
+  let target = bundledTarget;
+  if (runtimeAssets) {
+    const runtimeTarget = await runtimeAssets.lookup(parts.join('/'));
+    if (runtimeTarget) target = runtimeTarget;
+  }
 
   let stat;
   try { stat = await fsp.stat(target); }
@@ -108,6 +115,7 @@ function startAssetServer() {
 }
 
 let assetServer = null;
+let runtimeAssets = null;
 let mainWindow = null;
 const tcpSockets = new Map();
 
@@ -200,8 +208,22 @@ ipcMain.on('sp-tcp-close', (event, value = {}) => {
 
 ipcMain.handle('sp-read-clipboard', (event) => validTcpSender(event) ? clipboard.readText() : '');
 
+ipcMain.on('sp-asset-session-token', (event, token) => {
+  if (!validTcpSender(event) || !runtimeAssets) return;
+  runtimeAssets.update(token).then((result) => {
+    if (result.changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reloadIgnoringCache();
+  });
+});
+
 async function createWindow() {
   assetServer = await startAssetServer();
+  runtimeAssets = new RuntimeAssetUpdater({
+    clientRoot: CLIENT_ROOT,
+    stateRoot: RUNTIME_ASSET_ROOT(),
+    packageModule: path.join(__dirname, 'assetPackages.mjs'),
+    onChanged: () => console.info('[assets] update ready'),
+  });
+  await runtimeAssets.initialize();
   const port = assetServer.address().port;
   const localOrigin = `http://${HOST}:${port}`;
 

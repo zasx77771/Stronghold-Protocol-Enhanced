@@ -1,6 +1,7 @@
 param(
   [string]$NodeExe = '',
   [string]$OutputRoot = '',
+  [string]$ArtifactSuffix = '',
   [switch]$NoArchive
 )
 
@@ -11,6 +12,10 @@ $PackageInfo = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'package.js
 $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
 $ArtifactName = "Stronghold-Protocol-Server-v$Version-win-x64"
+if ($ArtifactSuffix) {
+  if ($ArtifactSuffix -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { throw "Invalid ArtifactSuffix: $ArtifactSuffix" }
+  $ArtifactName += "-$ArtifactSuffix"
+}
 if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\04-Windows服务端' }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
 $OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))

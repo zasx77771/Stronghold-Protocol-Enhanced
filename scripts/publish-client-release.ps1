@@ -10,7 +10,18 @@ param(
   [string]$AndroidCacheRoot = '',
   [string]$AndroidResourceSourceDir = '',
   [switch]$AndroidClean,
-  [string]$IncrementalOutputRoot = ''
+  [string]$IncrementalOutputRoot = '',
+  # Public runtime asset configuration for the Android client (baked into the APK and its asset-config.json).
+  [string]$AssetIndexUrl = '',
+  [string]$AssetTokenUrl = '',
+  [string]$AssetIndexBaseUrl = '',
+  [int]$AssetMaxChain = 3,
+  [switch]$AssetAllowHttp,
+  # Runtime asset packages (R2): where the asset trees come from and where the packages are written.
+  [string]$CurrentAssetDir = '',
+  [string]$PreviousAssetDir = '',
+  [string]$AssetCacheRoot = '',
+  [switch]$SkipAssetPackages
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +37,11 @@ if (-not $UpstreamMainlineVersion) {
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $PackageInfo = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $LocalVersion = [string]$PackageInfo.version
+if ($AssetIndexUrl -and -not $AssetTokenUrl) {
+  throw 'A private R2 release requires -AssetTokenUrl with -AssetIndexUrl.'
+}
+if ($AssetIndexUrl -and -not $CurrentAssetDir) { $CurrentAssetDir = $ProjectRoot }
+
 $PolicyArguments = @((Join-Path $ProjectRoot 'tools\release-policy.mjs'), '--upstream', $UpstreamMainlineVersion)
 if ($MainlineUpdate) { $PolicyArguments += '--mainline' }
 & node @PolicyArguments
@@ -34,6 +50,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Release policy validation failed.' }
 $WindowsArguments = @{
   ElectronVersion = $ElectronVersion
 }
+if ($AssetIndexUrl) { $WindowsArguments.AssetIndexUrl = $AssetIndexUrl }
+if ($AssetTokenUrl) { $WindowsArguments.AssetTokenUrl = $AssetTokenUrl }
+if ($AssetMaxChain -gt 0) { $WindowsArguments.AssetMaxChain = $AssetMaxChain }
+if ($AssetAllowHttp) { $WindowsArguments.AssetAllowHttp = $true }
 if ($ElectronZip) { $WindowsArguments.ElectronZip = $ElectronZip }
 if ($WindowsCacheDir) { $WindowsArguments.CacheDir = $WindowsCacheDir }
 
@@ -45,13 +65,29 @@ $AndroidArguments = @{}
 if ($AndroidToolchainDir) { $AndroidArguments.ToolchainDir = $AndroidToolchainDir }
 if ($AndroidCacheRoot) { $AndroidArguments.CacheRoot = $AndroidCacheRoot }
 if ($AndroidResourceSourceDir) { $AndroidArguments.ResourceSourceDir = $AndroidResourceSourceDir }
+if ($AssetTokenUrl) { $AndroidArguments.AssetTokenUrl = $AssetTokenUrl }
 if ($AndroidClean) { $AndroidArguments.Clean = $true }
+if ($AssetIndexUrl) { $AndroidArguments.AssetIndexUrl = $AssetIndexUrl }
+if ($AssetIndexBaseUrl) { $AndroidArguments.AssetIndexBaseUrl = $AssetIndexBaseUrl }
+if ($AssetMaxChain -gt 0) { $AndroidArguments.AssetMaxChain = $AssetMaxChain }
+if ($AssetAllowHttp) { $AndroidArguments.AssetAllowHttp = $true }
 
 Write-Host 'Building complete Android client package...'
 & (Join-Path $PSScriptRoot 'build-android-client.ps1') @AndroidArguments
 if (-not $?) { throw 'Android client build failed.' }
 
 if (-not $HasPreviousWindows) {
+  # A first release still needs a baseline on R2: it is the package a fresh install downloads before it
+  # has any asset version of its own.
+  if (-not $SkipAssetPackages) {
+    $BaselineArguments = @{ Version = $PackageInfo.version; AssetMaxChain = $AssetMaxChain }
+    if ($CurrentAssetDir) { $BaselineArguments.CurrentAssetDir = $CurrentAssetDir }
+    if ($AssetCacheRoot) { $BaselineArguments.AssetCacheRoot = $AssetCacheRoot }
+    if ($AssetIndexBaseUrl) { $BaselineArguments.IndexBaseUrl = $AssetIndexBaseUrl }
+    Write-Host 'Building the runtime asset baseline package...'
+    & (Join-Path $PSScriptRoot 'build-asset-packages.ps1') @BaselineArguments
+    if (-not $?) { throw 'Asset baseline package build failed.' }
+  }
   Write-Host 'First release complete: full Windows and Android packages are ready; no Windows incremental package was requested.' -ForegroundColor Green
   return
 }
@@ -63,8 +99,14 @@ if ($PreviousVersion) { $UpdateArguments.PreviousVersion = $PreviousVersion }
 $UpdateArguments.UpstreamMainlineVersion = $UpstreamMainlineVersion
 if ($MainlineUpdate) { $UpdateArguments.MainlineUpdate = $true }
 if ($IncrementalOutputRoot) { $UpdateArguments.OutputRoot = $IncrementalOutputRoot }
+if ($CurrentAssetDir) { $UpdateArguments.CurrentAssetDir = $CurrentAssetDir }
+if ($PreviousAssetDir) { $UpdateArguments.PreviousAssetDir = $PreviousAssetDir }
+if ($AssetCacheRoot) { $UpdateArguments.AssetCacheRoot = $AssetCacheRoot }
+if ($AssetMaxChain -gt 0) { $UpdateArguments.AssetMaxChain = $AssetMaxChain }
+if ($AssetIndexBaseUrl) { $UpdateArguments.AssetIndexBaseUrl = $AssetIndexBaseUrl }
+if ($SkipAssetPackages) { $UpdateArguments.SkipAssetPackages = $true }
 
-Write-Host 'Building Windows incremental package...'
+Write-Host 'Building Windows incremental package and runtime asset packages...'
 & (Join-Path $PSScriptRoot 'build-client-updates.ps1') @UpdateArguments
 if (-not $?) { throw 'Client incremental package build failed.' }
 

@@ -6,6 +6,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -20,27 +21,48 @@ import android.webkit.WebView;
 import androidx.annotation.Nullable;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
+import com.strongholdprotocol.covenant.assets.AssetApkSource;
+import com.strongholdprotocol.covenant.assets.AssetConfig;
+import com.strongholdprotocol.covenant.assets.AssetInventory;
+import com.strongholdprotocol.covenant.assets.AssetJson;
+import com.strongholdprotocol.covenant.assets.AssetPaths;
+import com.strongholdprotocol.covenant.assets.AssetStore;
+import com.strongholdprotocol.covenant.assets.AssetUpdater;
+import com.strongholdprotocol.covenant.assets.RuntimeAssetHandler;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONObject;
 
 public final class MainActivity extends Activity {
+    private static final String TAG = "StrongholdProtocol";
     private static final String START_URL =
             "https://appassets.androidplatform.net/index.html?desktop=1&android=1";
+    /** Where the runtime asset store lives inside the app's private files directory. */
+    private static final String ASSET_STORE_DIR = "asset-runtime";
     private WebView webView;
     private TcpBridge tcpBridge;
+    private AssetStore assetStore;
+    private AssetConfig assetConfig;
+    private boolean assetUpdateStarted;
+
+    private interface AssetSessionListener { void onToken(String token); }
 
     private static final class TcpBridge {
         private static final int MAX_FRAME = 64 * 1024;
         private final WebView webView;
+        private final AssetSessionListener assetSessionListener;
         private final ExecutorService executor = Executors.newCachedThreadPool();
         private final ConcurrentHashMap<String, Client> clients = new ConcurrentHashMap<>();
 
@@ -67,10 +89,15 @@ public final class MainActivity extends Activity {
             }
         }
 
-        TcpBridge(WebView webView) { this.webView = webView; }
+        TcpBridge(WebView webView, AssetSessionListener assetSessionListener) { this.webView = webView; this.assetSessionListener = assetSessionListener; }
 
         @JavascriptInterface
         public boolean available() { return true; }
+
+        @JavascriptInterface
+        public void setAssetSessionToken(String token) {
+            if (token != null && token.matches("[0-9a-f]{32}")) assetSessionListener.onToken(token);
+        }
 
         @JavascriptInterface
         public String readClipboardText() {
@@ -195,9 +222,11 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        assetStore = openAssetStore();
+
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidplatform.net")
-                .addPathHandler("/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .addPathHandler("/", new RuntimeAssetHandler(assetStore, new AssetApkSource(getAssets())))
                 .build();
 
         webView = new WebView(this);
@@ -234,7 +263,7 @@ public final class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
-        tcpBridge = new TcpBridge(webView);
+        tcpBridge = new TcpBridge(webView, token -> startAssetUpdate(token));
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroidTcp");
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroid");
         setContentView(webView);
@@ -243,6 +272,90 @@ public final class MainActivity extends Activity {
         // request and keep the method null-safe for later focus changes.
         getWindow().getDecorView().post(this::enterImmersiveMode);
         webView.loadUrl(START_URL);
+        startAssetUpdate();
+    }
+
+    /**
+     * Open the layered runtime asset store. A normal offline APK has its stamped art as the immutable
+     * floor; a thin R2 APK has no floor and starts with an empty store until its baseline arrives.
+     * A bad stamp is ignored so the updater can repair the store from a published baseline.
+     */
+    private AssetStore openAssetStore() {
+        AssetApkSource floor = null;
+        AssetInventory floorInventory = null;
+        String floorVersion = null;
+        String text = readPackagedText(AssetPaths.STATE_FILE);
+        if (text != null) {
+            try {
+                Map<String, Object> state = AssetJson.object(AssetJson.parse(text));
+                floorInventory = AssetInventory.fromState(state);
+                floorVersion = AssetJson.string(AssetJson.get(state, "version"), null);
+                floor = new AssetApkSource(getAssets());
+            } catch (IllegalArgumentException error) {
+                Log.w(TAG, "ignoring the packaged asset state; a baseline can repair it", error);
+            }
+        } else {
+            Log.i(TAG, "thin R2 APK: no packaged runtime art");
+        }
+        try {
+            return AssetStore.open(new File(getFilesDir(), ASSET_STORE_DIR),
+                    floor, floorInventory, floorVersion);
+        } catch (IOException error) {
+            Log.w(TAG, "runtime asset store unavailable", error);
+            return null;
+        }
+    }
+
+    /**
+     * Check the release index once per launch, on a background thread. Failures are logged and the
+     * installed assets stay exactly as they were; a package that lands takes effect from the next
+     * launch, so a running match is never disturbed.
+     */
+    private void startAssetUpdate() {
+        startAssetUpdate(null);
+    }
+
+    /** A protected gateway waits for the established game session before downloading anything. */
+    private synchronized void startAssetUpdate(String sessionToken) {
+        if (assetStore == null || assetUpdateStarted) return;
+        if (assetConfig == null) assetConfig = loadAssetConfig();
+        final AssetConfig config = assetConfig;
+        Log.i(TAG, "asset runtime: " + assetStore.describe() + "; " + config.describe());
+        if (!config.enabled) return;
+        if (config.tokenUrl != null && !config.tokenUrl.isEmpty() && (sessionToken == null || !sessionToken.matches("[0-9a-f]{32}"))) {
+            Log.i(TAG, "asset runtime: waiting for game session before protected update");
+            return;
+        }
+        assetUpdateStarted = true;
+        final String initialInventory = assetStore.inventoryDigest();
+        AssetUpdater.start(assetStore, config, getCacheDir(), sessionToken, message -> Log.i(TAG, message), outcome -> {
+            boolean changed = !initialInventory.equals(assetStore.inventoryDigest());
+            if (changed && ("repair".equals(outcome.status) || "update".equals(outcome.status)) && webView != null) webView.post(() -> webView.reload());
+        });
+    }
+    /** Public configuration only: the packaged file wins, then the build-time defaults. */
+    private AssetConfig loadAssetConfig() {
+        try {
+            String text = readPackagedText(AssetPaths.CONFIG_FILE);
+            if (text != null) return AssetConfig.from(AssetJson.object(AssetJson.parse(text)));
+        } catch (IllegalArgumentException error) {
+            Log.w(TAG, "ignoring the packaged asset configuration: " + error.getMessage());
+        }
+        return AssetConfig.fromBuild(BuildConfig.ASSET_INDEX_URL, BuildConfig.ASSET_TOKEN_URL, BuildConfig.ASSET_MAX_CHAIN,
+                BuildConfig.ASSET_MAX_DOWNLOAD_BYTES, BuildConfig.ASSET_MAX_EXTRACT_BYTES,
+                BuildConfig.ASSET_ALLOW_HTTP);
+    }
+
+    private String readPackagedText(String name) {
+        try (InputStream input = getAssets().open(name, android.content.res.AssetManager.ACCESS_STREAMING)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(1 << 16);
+            byte[] buffer = new byte[1 << 16];
+            int read;
+            while ((read = input.read(buffer)) > 0) out.write(buffer, 0, read);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        } catch (IOException error) {
+            return null;
+        }
     }
 
     private void enterImmersiveMode() {

@@ -503,6 +503,206 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
   committed. The views are rebuilt in memory when a manifest or the hashes change; neither file is ever written by the
   server, and the `hash` field is the committed one. The index lives in `.cache/` only and is never packaged.
 
+## Runtime asset packages (R2, enhanced clients)
+
+The art itself is downloaded at install time, never committed. An Android build with a public R2 index is a thin
+APK: it contains program files and public configuration, then downloads a verified baseline on first launch.
+Offline builds retain the art floor; later art changes still reach installed R2 clients without a new APK. Since the enhanced 2.6.x line the enhanced clients read a small **release index** from Cloudflare R2 and pull
+**asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
+
+Windows uses the same index and package format. A Windows build passed both `-AssetIndexUrl` and
+`-AssetTokenUrl` is a thin portable client: it contains the Electron shell, program files and public
+`asset-config.json`, but no runtime art. After the first successful game session it installs the verified route
+under Electron `userData/asset-runtime/` and reloads the local page. A Windows build without this configuration
+remains a complete offline package with its embedded art.
+
+### What a package may contain
+
+The updatable set is the art and the two art manifests, and nothing else:
+
+- `assets/**` — every downloaded image, Spine model, audio file and local-client overlay.
+- `fonts/**` — the fonts `fonts.css` names.
+- `data/assets.json` and `data/local-assets.json` — the manifests the client fetches at runtime.
+
+Everything else in a client (`index.html`, `js/`, `css/`, `vendor/`, `i18n/`, `icons/`, `sim/`, `shared/`,
+`data/*.json` other than the two manifests, `data.js`) is program content and only changes with a new APK or a new
+Windows package. The Windows updater is program-only by design: it must never touch `assets/` or `fonts/`. The
+three roots match `isSetupArt()` in `server/update.js`, which is what keeps the Windows update package and the
+Android asset set from disagreeing about what counts as setup art.
+
+Junk (`*.tmp`, `.DS_Store`, `Thumbs.db`, `._*`, editor backups) is skipped when a tree is scanned and refused when
+a package is read. A path has to be printable ASCII, relative, with no empty, `.` or `..` segment, no backslash and
+no trailing space — the same rule in JavaScript and Java (`assetPathProblem` / `AssetPaths.problem`), so a package
+written by the release scripts can never name a file outside the asset tree.
+
+### State and the inventory digest
+
+`asset-state.json` describes the art of one tree:
+
+```json
+{ "format": "sp-assets-state-v1", "version": "2.6.2", "floor": "apk", "count": 12688, "bytes": 750000000,
+  "inventory": "<sha256>", "files": { "assets/char/avatar/char_002_amiya.png": { "size": 12345, "sha256": "<hex>" } } }
+```
+
+`inventory` is the SHA-256 of one line per file, sorted by path: `` `${path}\t${size}\t${sha256}\n` ``. The digest
+is defined on text rather than on JSON because the Android client recomputes it in Java while the release scripts
+compute it in Node: both walk the same lines in the same order, so `AssetInventory.digest()` and
+`inventoryDigest()` must produce the same 64 hex digits. `test/asset-package.test.js` pins the digest for a known
+input and `tools/android-asset-tests.mjs` compares the two implementations against a real fixture.
+
+### Packages and the index
+
+Two kinds of package exist and both are ordinary ZIPs:
+
+| File | Kind | Contains |
+| --- | --- | --- |
+| `assets-base-<version>.zip` | `base` | every file of the target state plus `STATE.json` |
+| `assets-delta-<from>-<to>.zip` | `delta` | only added/changed files, plus `removed[]` tombstones |
+
+Inside, `ASSETS.json` is the package manifest (`sp-assets-package-v1`): kind, target version, the target
+inventory digest, `files` (path → size + SHA-256), and for a delta `from`, `fromInventory` and `removed[]`. A base
+additionally ships `STATE.json`, the complete target state, so a client that has no usable local state can install
+it without any other package. A delta derives its result from the state the device already has and checks it
+against the digest the chain promises.
+
+The published index is `assets-index.json` (`sp-assets-index-v1`): `latest`, `maxChain`, one `versions` entry per
+published version with its inventory digest, and the list of bases and deltas with size and SHA-256. A delta also
+publishes the inventory digest of the version it starts from, so a client older than the oldest published baseline
+still gets a verified route instead of being pushed to a full download.
+
+A release publishes a delta whenever the previous asset tree is known (it is the shortest path for up-to-date
+clients) and publishes a baseline when a new upstream baseline starts, when no baseline exists yet, when the
+previous tree no longer matches what was published for it (its delta would reach nobody), when another delta would
+push the chain past `maxChain`, or on `--mainline`. The decision lives in `planRelease()` so the release scripts,
+the CLI and the tests share one answer.
+
+### Route selection
+
+`planRoute(index, local)` picks the shortest safe path for a client:
+
+- Same version and a matching inventory → `current`, nothing is downloaded.
+- A matching inventory with a delta chain of at most `maxChain` steps → `update` through the deltas only.
+- Otherwise the newest baseline that still reaches the target within `maxChain` (fewest steps first, then fewest
+  bytes) → `update` when the local state is published, `repair` when the local inventory does not match what was
+  published for that version or no state exists at all.
+- No route at all → `blocked`, with the client left untouched. `maxChain` bounds only the delta part of a route,
+  never the baseline.
+
+### How the Android client applies a package
+
+The APK carries `asset-state.json` — the stamp of the art the build embedded — as an immutable floor. Packages
+land in layers on top of it under `filesDir/asset-runtime/`:
+
+```
+asset-runtime/
+  asset-store.json                  active pointer: version, floor apk|base, layers[]
+  asset-store.json.bak              the previous pointer, held only while a swap is in flight
+  asset-layers/0001-delta-2.6.1-2.6.2/   the files one applied package wrote
+  asset-staging/                    a package is unpacked here and verified before it is moved
+  asset-retired/                    files an update removed, kept one cycle for streams that are still open
+```
+
+That is the offline floor mode. A build with an `asset-config.json` index URL removes the floor's
+`assets/`, `fonts/`, two runtime manifests and `asset-state.json` before Gradle packages the APK. It opens an
+empty store, fetches a baseline on first launch, then reloads the WebView only after the complete verified route
+has been applied; a failed network update leaves any already installed layers untouched.
+
+The client: SHA-256s the whole ZIP against the index entry, extracts it into `asset-staging/`, checks every
+entry's size and SHA-256 against `ASSETS.json`, and checks the resulting inventory digest. Commits are
+serialized, and publication is one step: the pointer (`asset-store.json`) is replaced atomically — the fast path
+is a single rename, and when the platform refuses to rename over an existing file the old pointer is moved to
+`asset-store.json.bak` first and the new one is renamed (or copied) into place — and only after the pointer
+landed is the served snapshot (version, layers and merged inventory in one immutable object) swapped and the
+older layer directories removed. A request on the WebView thread therefore reads the old state or the complete
+new one, never a half-merged inventory, and a failed commit restores the old pointer from the backup and fails;
+if the process died between moving the old pointer aside and the new one landing, the next launch recovers the
+previous state from `asset-store.json.bak`. A failure deletes the staging directory and leaves the pointer, the
+layers and the old `asset-state.json` untouched — a lost connection, a truncated download or a hash mismatch can
+never damage the art the client already had. The served set is the merged inventory of the published snapshot:
+`AssetStore.resolve` checks that inventory before it looks at any directory, so a file a later package removed
+is not served from an older layer or from the APK floor, and it moves to `asset-retired/` only so a response
+stream opened before the swap keeps its inode. A base compacts: it becomes the new floor and the older layers
+are dropped. An update takes effect on the next launch.
+
+The runtime `PathHandler` serves `assets/`, `fonts/` and the two manifests from that store and falls back to the
+APK for everything else, so a client that never updates behaves exactly like the current one.
+On Windows the Electron main process owns the same layered store under
+`app.getPath('userData')/asset-runtime/`; the renderer can only forward the existing WebSocket session token to a
+preload IPC entry. The main process exchanges it for the Worker JWT, downloads and verifies packages, and serves
+the resulting asset paths from its loopback server. Neither token is persisted or exposed back to the browser. A
+thin client can show missing art before its first authenticated game session, but it never falls back to an
+unverified download.
+
+The Windows incremental updater remains program-only. It can update the Electron shell, program files and public
+asset configuration, but never the user-data asset store; art changes arrive from R2 independently.
+
+### Configuration
+
+The updater is configured with **public** data only — never a key, account id or signed URL:
+
+- Build time: Gradle properties `spAssetIndexUrl`, `spAssetMaxChain`, `spAssetMaxDownloadBytes`,
+  `spAssetMaxExtractBytes`, `spAssetAllowHttp`, or the matching `SP_ASSET_*` environment variables. They become
+  `BuildConfig.ASSET_*`, and `scripts/build-android-client.ps1` forwards `-AssetIndexUrl`, `-AssetIndexBaseUrl`,
+  `-AssetMaxChain` and `-AssetAllowHttp`.
+- Runtime: an optional `asset-config.json` (`sp-assets-config-v1`) inside the APK with `indexUrl` and the limits,
+  written by `node tools/assets-r2.mjs config --index-url <url> --out <file>`. Assets override `BuildConfig`.
+- The index URL must be `https` (unless `allowHttp` is set for a private test), must not carry credentials, and
+  must not carry signing or token query parameters; `checkConfig` / `AssetConfig.from()` refuse those.
+- A configured build is thin and requires a reachable published baseline on its first launch. Its public index is
+  verified before any art is served, and the WebView reloads after a successful initial route.
+- Unconfigured means disabled: the client logs one line, never contacts the network and serves the APK's art. No
+  failure can turn into a broken client.
+- Windows forwarding is enabled by `scripts/build-windows-client.ps1 -AssetIndexUrl <worker index> -AssetTokenUrl
+  <game token endpoint>`. The two URLs are public, must be credential-free HTTPS URLs and are shared with Android.
+  Configuring only the index is rejected because a private Worker package cannot be fetched without the token endpoint.
+
+
+### Tools and tests
+
+| Command | What it does |
+| --- | --- |
+| `node tools/assets-r2.mjs state --root <assets> --version <M.N.R>` | scan a tree and write `asset-state.json` |
+| `node tools/assets-r2.mjs pack --kind base\|delta …` | write one package (refuses to overwrite an existing one) |
+| `node tools/assets-r2.mjs index --dir <channel>` | write `assets-index.json` for the packages in a directory |
+| `node tools/assets-r2.mjs release --dir <channel> --version <v> --after <tree> [--from <v> --before <tree>]` | what a release runs: publish this release's packages and refresh the index |
+| `node tools/assets-r2.mjs route --index <file> --root <tree>` | show the route a client in that state would take |
+| `node tools/assets-r2.mjs verify --package <zip> [--sha256 <hex>]` | verify a package the way the client does |
+| `node tools/assets-r2.mjs apply --root <tree> --package <zip>` | apply a package to a local tree (the reference applier) |
+| `node tools/assets-r2.mjs config --index-url <url> --out <file>` | write the public runtime configuration |
+| `node tools/assets-r2.mjs upload-plan --dir <channel> [--public-base <url>]` | print the operator's `aws s3 cp` commands |
+
+`tools/assetPackages.mjs` holds the library (inventories, the deterministic ZIP writer and reader, package
+building and verification, the index, route selection, the reference applier, path safety, configuration).
+Packages are written by our own ZIP writer instead of `zip`/`7z`: those are missing on a Windows build host, and
+they are not deterministic, while the client only has to read stored and deflated entries. Entries get a fixed
+1980-01-01 timestamp, `-r -X`-style metadata stays out, and writing twice produces the same bytes.
+
+Tests: `node --test --test-isolation=none test/asset-package.test.js` (9 tests over inventory, delta generation,
+ZIP and entry hashes, traversal refusal, a failed update keeping the old cache, chain application, release
+planning and route selection) and `node tools/android-asset-tests.mjs` (the Java client classes compiled and run on
+a JDK 17 against a fixture the Node tools build: 109 checks, including the cross-language digest and the interop
+application of Node-written packages). `node --test test/asset-package.test.js` needs the test runner to spawn
+children; under the sandboxed Windows host that fails with `spawn EPERM`, so the `--test-isolation=none` form is the
+one to use there. The runner tool finds the JDK the way `scripts/install-android-toolchain.ps1` installs it and
+skips cleanly (exit 0, `SKIP no JDK 17 found`) when none is present.
+
+### Publishing the packages by hand (maintainer)
+
+The release scripts write the packages and the index into
+`../enhanced-client-servers/08-客户端增量包/<channel>/`, next to the Windows package of the same release; the R2
+bucket is filled by the maintainer, because no credential may live in this repository:
+
+1. `node tools/assets-r2.mjs upload-plan --dir "<channel>" --public-base "https://<bucket-host>/stronghold"` and
+   run the printed `aws s3 cp` commands (or the equivalent `wrangler r2 object put`) with the account's own
+   environment, so the key never reaches a script in the repo. Packages are uploaded once and never replaced, and
+   the index is uploaded last, with `--cache-control public, max-age=60, must-revalidate`. The plan prints packages
+   with `public, max-age=31536000, immutable` because their names carry their version, and the index short.
+2. Make the bucket public-read for exactly those objects (or serve them through a Worker/CDN in front of R2) and
+   set the public host in the build: `scripts/build-android-client.ps1 -AssetIndexUrl https://<host>/stronghold/assets-index.json`.
+3. Keep the previous baselines and their deltas until no supported version needs them; a new baseline is published
+   every few major versions, and `route` on the new index is the check that no supported version became
+   `blocked`.
+
 ## Verification
 
 `node --test test/assets.test.js` covers the pure helpers: the resolver, the atlas normalizer, the format sniffers, WOFF2, audio banks, the plan id sets, the downloader against a fake network, and the self-heal of corrupt skeletons.
@@ -552,3 +752,15 @@ operator's runtime ability graph. Mixed-letter banks are skipped. Preserve `mixO
 an older PR's full JSON, preserving JP voices and current operators. See DESIGN §28.17.
 
 The 40th local token model is the original champagne bomb (`token_10031_swire2_gdtrap`, §29.5), extracted from the official `btl_pfb_tokens_0.ab` through `TOKEN_SPINES`. Its web fallback is retained. Failed board-pack/image requests can retry after connectivity/visibility recovers; a failed three.js module gets at most two fresh-URL retries per page because browser module failures are cached. Successful resources remain cached.
+
+## Private R2 runtime packages
+
+Runtime assets are split from the application binary. Each published channel keeps a full baseline ZIP and file-level delta ZIPs under `runtime-assets/`; clients select a bounded chain from `assets-index.json`. Upload immutable ZIPs first, verify their SHA-256, then upload the index last. A later mainline release may publish a fresh baseline so clients can compact their local layers.
+
+The `stronghold-protocol` R2 bucket is private. Build machines/CI use the R2 read-write credential only through environment variables or the credential store. The APK, public configuration and game service never receive either R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
+
+Configure a thin Android build with an HTTPS Worker `indexUrl` and its HTTPS `/api/assets/token` `tokenUrl`; both are public URLs and must have no credentials or query token. The updater holds both the game-session token and asset JWT in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with `wrangler secret put ASSET_TOKEN_SECRET`.
+Android and Windows thin clients both send their existing WebSocket welcome token to `/api/assets/token`, receive a
+short-lived JWT, and use it only for the Worker index/package requests. The game-session token and the JWT are held
+in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with
+`wrangler secret put ASSET_TOKEN_SECRET`.
