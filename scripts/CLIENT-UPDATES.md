@@ -8,9 +8,9 @@ A release now produces three kinds of artifact, and they serve different halves 
 | --- | --- | --- |
 | Windows client ZIP / update ZIP | the Windows updater | program files only |
 | Android APK | the Play/sideload install | program files plus credential-free asset-gateway configuration; configured releases fetch runtime art through that gateway |
-| Runtime asset packages + `assets-index.json` | Cloudflare R2, fetched by the service or authenticated asset gateway and served to authorized clients | `assets/`, `fonts/`, `data/assets.json`, `data/local-assets.json` only |
+| Runtime asset packages + `assets-index.json` | Private Cloudflare R2, fetched by the existing authenticated Worker gateway and served to authorized clients | `assets/`, `fonts/`, `data/assets.json`, `data/local-assets.json` only |
 
-The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. From enhanced `2.6.2`, the service or its authenticated gateway pulls runtime art from R2; clients receive only authorized package responses and never receive R2 API credentials. Art changes reach configured clients in the background without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
+The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. From enhanced `2.6.2`, the game service signs a short-lived JWT and the existing Cloudflare Worker reads runtime art from R2; clients receive only authorized package responses and never receive R2 API credentials. Art changes reach configured clients in the background without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
 
 When `publish-client-release.ps1` is passed both `-AssetIndexUrl` and `-AssetTokenUrl`, its Windows ZIP is a thin
 client as well as the Android APK: the ZIP carries only program files, Electron runtime support and public

@@ -66,17 +66,13 @@ truth and implementation still comes from Git. Extract its `assets/` and `fonts/
 workspace-level archive, with the path resolved from the repository root:
 
 ```text
-../asset-sources/<source-id>/assets/
-../asset-sources/<source-id>/fonts/
+enhanced-client-servers/09-local-workspace-artifacts/source-assets/<source-id>/assets/
+enhanced-client-servers/09-local-workspace-artifacts/source-assets/<source-id>/fonts/
 ```
 
-`<source-id>` must identify the upstream/enhanced version or an explicit source date; do not reuse a mutable
-directory name. Keep the original package unchanged. Store `asset-manifest.json` beside each snapshot with every
-relative path, byte size, SHA-256 and source identifier. For a later package, compare paths, sizes and SHA-256 before
-extracting: an identical tree reuses the existing snapshot, while any addition, removal or changed digest creates
-a new snapshot and preserves the old one for rollback and older releases. An inconclusive comparison is not proof
-of equality. These snapshots are local source material, are never committed to Git, and are copied into
-`public/assets/`, `public/fonts/` or R2 packages only after the normal manifest, license and hash checks.
+The complete code package is the authoritative material source; a packaged Windows client may contain stale art and is only an auxiliary cross-check. Compare extracted assets and fonts by relative path and SHA-256 (size is only a fast filter). An identical tree reuses the existing snapshot; additions, removals, path changes or digest changes create a new snapshot. Keep old snapshots, keep the original package unchanged, and write asset-manifest.json with package name, package SHA-256, source identifier and each file path, size and SHA-256. If the package lacks material or runtime directories cannot be confirmed, stop and ask for confirmation instead of substituting the Windows package.
+
+`<source-id>` uses an ASCII Windows-safe name: `v<version>` when the version is reliable; append the first 12 hex characters of the asset-list hash when the same version has different material; use `package-<first 12 hex characters of package SHA-256>` when the version is unknown. Keep the original package unchanged. Store `asset-manifest.json` beside each snapshot with package name, package SHA-256, source identifier, every relative path, size and SHA-256, and a `sources` list for other packages that provide the same material. Compare extracted `assets/` and `fonts/` by relative path and SHA-256; size is only a fast filter. Additions, removals, path changes or digest changes create a new snapshot; identical trees reuse the existing snapshot. Snapshots are local source material, never committed to Git or formal release packages, and copied only after manifest, license and hash checks.
 
 ## Running
 
@@ -641,16 +637,12 @@ On `http://` to a LAN IP, `isSecureContext` is false. The import controls explai
 
 ## Runtime asset packages (R2, enhanced clients)
 
-Starting with enhanced `2.6.2`, the authoritative delivery path is server-side: the maintainer uploads immutable
-asset packages and the index to the R2 bucket, then the game service or its authenticated asset gateway pulls from
-R2 and serves the authorized client. A Worker in front of R2 is a server gateway for this rule. Clients and APKs
-must not receive R2 API credentials; public URLs or short-lived gateway tokens are not bucket credentials.
+Starting with enhanced `2.6.2`, the delivery path is: the maintainer uploads immutable packages and the index to private R2; the client requests a short-lived JWT from the game service at `/api/assets/token`; the client sends that JWT to the existing Cloudflare Worker; and the Worker reads the requested objects from R2 and returns them. The game service only authenticates the session and signs the JWT; it does not download or proxy R2 objects. Clients and APKs never receive R2 API credentials.
 
 The art itself is downloaded at install time, never committed. An Android build with an asset-gateway index is a
 thin APK: it contains program files and credential-free gateway configuration, then downloads a verified baseline
 on first launch. Offline builds retain the art floor; later art changes still reach installed clients without a new
-APK. Since enhanced `2.6.2`, clients read the **release index** and pull packages through the game service or
-authenticated asset gateway; that server-side boundary fetches the corresponding objects from Cloudflare R2:
+APK. Since enhanced `2.6.2`, clients read the **release index** and pull packages through the authenticated Cloudflare Worker, which fetches the corresponding objects from Cloudflare R2:
 **asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
 
 Windows uses the same index and package format. A Windows build passed both `-AssetIndexUrl` and
@@ -840,7 +832,7 @@ bucket is filled by the maintainer, because no credential may live in this repos
    environment, so the key never reaches a script in the repo. Packages are uploaded once and never replaced, and
    the index is uploaded last, with `--cache-control public, max-age=60, must-revalidate`. The plan prints packages
    with `public, max-age=31536000, immutable` because their names carry their version, and the index short.
-2. Keep the bucket private, expose only the required objects through the authenticated game service or Worker
+2. Keep the bucket private, expose only the required objects through the authenticated Cloudflare Worker
    gateway, and set that credential-free gateway URL in the build:
    `scripts/build-android-client.ps1 -AssetIndexUrl https://<gateway>/stronghold/assets-index.json`.
 3. Keep the previous baselines and their deltas until no supported version needs them; a new baseline is published
@@ -901,7 +893,7 @@ The 40th local token model is the original champagne bomb (`token_10031_swire2_g
 
 Runtime assets are split from the application binary. Each published channel keeps a full baseline ZIP and file-level delta ZIPs under `runtime-assets/`; clients select a bounded chain from `assets-index.json`. Upload immutable ZIPs first, verify their SHA-256, then upload the index last. A later mainline release may publish a fresh baseline so clients can compact their local layers.
 
-The `stronghold-protocol` R2 bucket is private. Build machines/CI use the upload credential only through environment variables or the credential store. The game service or asset gateway uses only the minimum read permission or an R2 binding needed to fetch published objects. The APK, client and public configuration never receive an R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
+The `stronghold-protocol` R2 bucket is private. Build machines/CI use the upload credential only through environment variables or the credential store. The Cloudflare Worker uses only its R2 binding to fetch published objects; the game service only signs short-lived asset JWTs. The APK, client and public configuration never receive an R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
 
 Configure a thin Android build with an HTTPS Worker `indexUrl` and its HTTPS `/api/assets/token` `tokenUrl`; both are public URLs and must have no credentials or query token. The updater holds both the game-session token and asset JWT in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with `wrangler secret put ASSET_TOKEN_SECRET`.
 Android and Windows thin clients both send their existing WebSocket welcome token to `/api/assets/token`, receive a

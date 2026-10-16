@@ -45,8 +45,8 @@
 - 2026-10-08：Android 素材改为经 R2 发布索引做文件级增量更新（基线包 + 增量包 + 小索引，ZIP 承载，先校验整体与逐文件 SHA-256 再原子切换，失败绝不破坏旧缓存，不以 APK 版本号判断素材更新）；Windows 更新器只更新程序本体；素材包与 Windows 产物同目录保管，R2 只承载运行时素材与索引，上传由维护者用本人凭据手工完成，仓库与配置中不得出现密钥或账户信息。
 - 2026-10-15：公开 R2 上传、公开下载、ZIP SHA-256 校验及 Android 更新器首装基线加增量链均已验证；配置公开索引 URL 的 Android 发布包为薄 APK，不再内嵌运行时素材，首次下载成功后自动刷新 WebView；未配置索引的离线构建继续内嵌素材。
 - 2026-10-15: Windows may be released as a private-R2 thin client when both public index and token URLs are configured; its updater remains program-only, while verified runtime art is stored under Electron user data and updated from R2 after an authenticated game session. Offline Windows releases retain embedded art.
-- 2026-10-16：完整代码包仅用于提取可复用的 `assets/` 与 `fonts/`；统一存放在仓库外 `../asset-sources/<source-id>/`，以路径、大小和 SHA-256 比对决定复用或建立新快照，快照不提交 Git。增强版 `2.6.2` 起由服务端或服务端网关从 Cloudflare R2 拉取素材并向授权客户端提供，客户端不持有 R2 API 凭据。
+- 2026-10-16：完整代码包仅用于提取可复用的 `assets/` 与 `fonts/`；统一存放在 `enhanced-client-servers/09-local-workspace-artifacts/source-assets/<source-id>/`，完整代码包是素材事实源，Windows 包仅辅助核对；以相对路径和 SHA-256 比对决定复用或建立新快照，快照不提交 Git。增强版 `2.6.2` 起由游戏服务端签发短期 JWT，Cloudflare Worker 从私有 R2 拉取素材并向授权客户端提供，客户端不持有 R2 API 凭据。
 
 ## 私有 R2 素材网关
 
-增强版运行时素材使用私有 R2 bucket `stronghold-protocol`。发布端/CI 只持有上传所需的读写凭据；服务端或服务端网关只持有拉取所需的最小读取权限或 R2 绑定；客户端绝不接收 R2 API token。素材 ZIP 先上传并校验，最后发布 `assets-index.json`。Android 建立游戏 WebSocket 会话后，以 `welcome.token` 调用服务端 `/api/assets/token` 换取短期 JWT，再通过作为服务端边界的 Cloudflare Worker 获取 `runtime-assets/` 下的索引和 ZIP。Worker 的 HMAC 密钥和服务端 `SP_ASSET_TOKEN_SECRET` 必须一致，并在轮换时同步更新。
+增强版运行时素材使用私有 R2 bucket `stronghold-protocol`。发布端/CI 只持有上传所需的读写凭据；Cloudflare Worker 只持有拉取所需的 R2 绑定，游戏服务端只负责签发短期 JWT；客户端绝不接收 R2 API token。素材 ZIP 先上传并校验，最后发布 `assets-index.json`。Android 建立游戏 WebSocket 会话后，以 `welcome.token` 调用服务端 `/api/assets/token` 换取短期 JWT，再通过作为服务端边界的 Cloudflare Worker 获取 `runtime-assets/` 下的索引和 ZIP。Worker 的 HMAC 密钥和服务端 `SP_ASSET_TOKEN_SECRET` 必须一致，并在轮换时同步更新。
