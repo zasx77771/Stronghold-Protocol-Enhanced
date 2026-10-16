@@ -10,6 +10,7 @@
 这个发行包只提供游戏 WebSocket/TCP 服务，包括房间、匹配、对局状态和可选的服务端战斗校验：
   /ws       WebSocket 联机入口
   /healthz  服务状态检查
+  /api/assets/token  已配置 SP_ASSET_TOKEN_SECRET 时，为已连接客户端换取短期 R2 素材令牌
 
 服务端不提供账号、回放存储或服务器对局记录 API。本地统计页和可复用玩家资料均保存在客户端。
 data 目录中的少量 JSON 是服务端进行房间和对局计算所必需的内部规则数据，不会通过 HTTP 暴露。
