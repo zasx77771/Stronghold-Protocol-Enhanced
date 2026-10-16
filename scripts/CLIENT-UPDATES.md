@@ -7,18 +7,18 @@ A release now produces three kinds of artifact, and they serve different halves 
 | Artifact | Reaches the client as | Updates |
 | --- | --- | --- |
 | Windows client ZIP / update ZIP | the Windows updater | program files only |
-| Android APK | the Play/sideload install | program files plus public R2 configuration; configured releases fetch runtime art from R2 |
-| Runtime asset packages + `assets-index.json` | Cloudflare R2, fetched by the Android client itself | `assets/`, `fonts/`, `data/assets.json`, `data/local-assets.json` only |
+| Android APK | the Play/sideload install | program files plus credential-free asset-gateway configuration; configured releases fetch runtime art through that gateway |
+| Runtime asset packages + `assets-index.json` | Cloudflare R2, fetched by the service or authenticated asset gateway and served to authorized clients | `assets/`, `fonts/`, `data/assets.json`, `data/local-assets.json` only |
 
-The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. Art changes reach Android in the background, through R2, without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
+The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. From enhanced `2.6.2`, the service or its authenticated gateway pulls runtime art from R2; clients receive only authorized package responses and never receive R2 API credentials. Art changes reach configured clients in the background without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
 
 When `publish-client-release.ps1` is passed both `-AssetIndexUrl` and `-AssetTokenUrl`, its Windows ZIP is a thin
 client as well as the Android APK: the ZIP carries only program files, Electron runtime support and public
 `asset-config.json`; `assets/`, `fonts/` and the two art manifests are deliberately absent. The first successful
-game session authorizes a verified R2 download into Electron user data. Without those options, the Windows ZIP is
+game session authorizes a verified gateway-mediated R2 download into Electron user data. Without those options, the Windows ZIP is
 the complete offline package. The Windows updater is still program-only in both modes; it never overwrites art.
 For an offline legacy/full Windows package, art remains local setup material. For a configured thin package, art
-changes reach Windows and Android in the background through R2 without a program update.
+changes reach Windows and Android in the background through the asset gateway without a program update.
 
 Thin package release commands must provide the two public HTTPS URLs together:
 `-AssetIndexUrl "https://WORKER/assets-index.json" -AssetTokenUrl "https://GAME/api/assets/token"`.

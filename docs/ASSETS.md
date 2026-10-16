@@ -59,6 +59,25 @@ packaging inclusion. The local handoff `claude-review-023/icon-v2/` holds the or
 256 px and 16/32/48/96 px comparisons, and phone-layout / mask previews with their render script.
 These are offline review renders, not evidence of browser or native OS installation.
 
+## Complete source-package asset snapshots
+
+When a complete code package is supplied, use it only to locate reusable material; its code is not a source of
+truth and implementation still comes from Git. Extract its `assets/` and `fonts/` trees into the fixed
+workspace-level archive, with the path resolved from the repository root:
+
+```text
+../asset-sources/<source-id>/assets/
+../asset-sources/<source-id>/fonts/
+```
+
+`<source-id>` must identify the upstream/enhanced version or an explicit source date; do not reuse a mutable
+directory name. Keep the original package unchanged. Store `asset-manifest.json` beside each snapshot with every
+relative path, byte size, SHA-256 and source identifier. For a later package, compare paths, sizes and SHA-256 before
+extracting: an identical tree reuses the existing snapshot, while any addition, removal or changed digest creates
+a new snapshot and preserves the old one for rollback and older releases. An inconclusive comparison is not proof
+of equality. These snapshots are local source material, are never committed to Git, and are copied into
+`public/assets/`, `public/fonts/` or R2 packages only after the normal manifest, license and hash checks.
+
 ## Running
 
 ```bash
@@ -622,9 +641,16 @@ On `http://` to a LAN IP, `isSecureContext` is false. The import controls explai
 
 ## Runtime asset packages (R2, enhanced clients)
 
-The art itself is downloaded at install time, never committed. An Android build with a public R2 index is a thin
-APK: it contains program files and public configuration, then downloads a verified baseline on first launch.
-Offline builds retain the art floor; later art changes still reach installed R2 clients without a new APK. Since the enhanced 2.6.x line the enhanced clients read a small **release index** from Cloudflare R2 and pull
+Starting with enhanced `2.6.2`, the authoritative delivery path is server-side: the maintainer uploads immutable
+asset packages and the index to the R2 bucket, then the game service or its authenticated asset gateway pulls from
+R2 and serves the authorized client. A Worker in front of R2 is a server gateway for this rule. Clients and APKs
+must not receive R2 API credentials; public URLs or short-lived gateway tokens are not bucket credentials.
+
+The art itself is downloaded at install time, never committed. An Android build with an asset-gateway index is a
+thin APK: it contains program files and credential-free gateway configuration, then downloads a verified baseline
+on first launch. Offline builds retain the art floor; later art changes still reach installed clients without a new
+APK. Since enhanced `2.6.2`, clients read the **release index** and pull packages through the game service or
+authenticated asset gateway; that server-side boundary fetches the corresponding objects from Cloudflare R2:
 **asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
 
 Windows uses the same index and package format. A Windows build passed both `-AssetIndexUrl` and
@@ -765,7 +791,7 @@ The updater is configured with **public** data only — never a key, account id 
   written by `node tools/assets-r2.mjs config --index-url <url> --out <file>`. Assets override `BuildConfig`.
 - The index URL must be `https` (unless `allowHttp` is set for a private test), must not carry credentials, and
   must not carry signing or token query parameters; `checkConfig` / `AssetConfig.from()` refuse those.
-- A configured build is thin and requires a reachable published baseline on its first launch. Its public index is
+- A configured build is thin and requires a reachable published baseline on its first launch. Its gateway index is
   verified before any art is served, and the WebView reloads after a successful initial route.
 - Unconfigured means disabled: the client logs one line, never contacts the network and serves the APK's art. No
   failure can turn into a broken client.
@@ -814,8 +840,9 @@ bucket is filled by the maintainer, because no credential may live in this repos
    environment, so the key never reaches a script in the repo. Packages are uploaded once and never replaced, and
    the index is uploaded last, with `--cache-control public, max-age=60, must-revalidate`. The plan prints packages
    with `public, max-age=31536000, immutable` because their names carry their version, and the index short.
-2. Make the bucket public-read for exactly those objects (or serve them through a Worker/CDN in front of R2) and
-   set the public host in the build: `scripts/build-android-client.ps1 -AssetIndexUrl https://<host>/stronghold/assets-index.json`.
+2. Keep the bucket private, expose only the required objects through the authenticated game service or Worker
+   gateway, and set that credential-free gateway URL in the build:
+   `scripts/build-android-client.ps1 -AssetIndexUrl https://<gateway>/stronghold/assets-index.json`.
 3. Keep the previous baselines and their deltas until no supported version needs them; a new baseline is published
    every few major versions, and `route` on the new index is the check that no supported version became
    `blocked`.
@@ -874,7 +901,7 @@ The 40th local token model is the original champagne bomb (`token_10031_swire2_g
 
 Runtime assets are split from the application binary. Each published channel keeps a full baseline ZIP and file-level delta ZIPs under `runtime-assets/`; clients select a bounded chain from `assets-index.json`. Upload immutable ZIPs first, verify their SHA-256, then upload the index last. A later mainline release may publish a fresh baseline so clients can compact their local layers.
 
-The `stronghold-protocol` R2 bucket is private. Build machines/CI use the R2 read-write credential only through environment variables or the credential store. The APK, public configuration and game service never receive either R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
+The `stronghold-protocol` R2 bucket is private. Build machines/CI use the upload credential only through environment variables or the credential store. The game service or asset gateway uses only the minimum read permission or an R2 binding needed to fetch published objects. The APK, client and public configuration never receive an R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
 
 Configure a thin Android build with an HTTPS Worker `indexUrl` and its HTTPS `/api/assets/token` `tokenUrl`; both are public URLs and must have no credentials or query token. The updater holds both the game-session token and asset JWT in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with `wrangler secret put ASSET_TOKEN_SECRET`.
 Android and Windows thin clients both send their existing WebSocket welcome token to `/api/assets/token`, receive a
