@@ -15,8 +15,8 @@ android {
         applicationId 'com.strongholdprotocol.covenant'
         minSdk 26
         targetSdk 35
-        versionCode 25
-        versionName '2.6.1'
+        versionCode 26
+        versionName '2.6.2'
 
         // Public runtime configuration for the runtime asset updater. The index URL and the limits are
         // not secrets — the URL is baked into the APK — so they may come from a Gradle property or an
