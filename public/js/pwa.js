@@ -1,5 +1,4 @@
-// Install prompts are browser-issued, one-use capabilities. This module does not register a service worker
-// and does not offline the server. Imported art is served by public/sw.js (see assetCache.js).
+// Install prompts are browser-issued, one-use capabilities. No service worker or application cache is installed.
 export function createPwaInstall(win) {
   let prompt = null, installed = false;
   const listeners = new Set();

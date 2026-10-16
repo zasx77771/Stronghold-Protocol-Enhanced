@@ -107,8 +107,7 @@ export class MatchMessaging {
     const json = JSON.stringify(rest);
     if (!force && json === this._lastPubJson) return;
     this._lastPubJson = json;
-    // Snapshot building / serialization can take time; throttle from the actual broadcast, not its start.
-    this._lastPubAt = this.sched.now();
+    this._lastPubAt = now;
     this.broadcast(view);
   }
 }

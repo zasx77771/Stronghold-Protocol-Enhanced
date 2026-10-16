@@ -1,5 +1,4 @@
 // server/sim/content/traitMods.js — trait (特性) modifiers the ENGINE consumes for every operator (DESIGN §5, §16).
-import { textCount } from '../../../shared/plugins/textNumber.js';
 //
 // WHY THIS FILE EXISTS. Several modules add a line to the operator's TRAIT, and the official tables split that line in
 // two: `battle_equip_table` `overrideTraitDataBundle.candidates[].blackboard` carries the NUMBER
@@ -79,7 +78,8 @@ const CONDITIONS = [
   function crowdInRange(clause) {
     if (!/攻击范围内(?:存在|有)/.test(clause)) return null;
     if (!/敌人/.test(clause)) return null;   // excludes 「…存在受到元素损伤的友方单位时」
-    const need = Math.max(1, Math.floor(textCount(clause, /存在\s*(\d+)\s*名/, 2, 'exist-n'))); // loop-cap: textCount exist-n
+    const m = clause.match(/存在\s*(\d+)\s*名/);
+    const need = m ? Math.max(1, +m[1]) : 2;
     return (battle, unit) => battle.enemiesInKeys(unit.rangeKeys, unit, unit.profile).length >= need;
   },
 ];
