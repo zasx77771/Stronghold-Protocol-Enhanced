@@ -733,3 +733,11 @@ operator's runtime ability graph. Mixed-letter banks are skipped. Preserve `mixO
 an older PR's full JSON, preserving JP voices and current operators. See DESIGN §28.17.
 
 The 40th local token model is the original champagne bomb (`token_10031_swire2_gdtrap`, §29.5), extracted from the official `btl_pfb_tokens_0.ab` through `TOKEN_SPINES`. Its web fallback is retained. Failed board-pack/image requests can retry after connectivity/visibility recovers; a failed three.js module gets at most two fresh-URL retries per page because browser module failures are cached. Successful resources remain cached.
+
+## Private R2 runtime packages
+
+Runtime assets are split from the application binary. Each published channel keeps a full baseline ZIP and file-level delta ZIPs under `runtime-assets/`; clients select a bounded chain from `assets-index.json`. Upload immutable ZIPs first, verify their SHA-256, then upload the index last. A later mainline release may publish a fresh baseline so clients can compact their local layers.
+
+The `stronghold-protocol` R2 bucket is private. Build machines/CI use the R2 read-write credential only through environment variables or the credential store. The APK, public configuration and game service never receive either R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
+
+Configure a thin Android build with an HTTPS Worker `indexUrl` and its HTTPS `/api/assets/token` `tokenUrl`; both are public URLs and must have no credentials or query token. The updater holds both the game-session token and asset JWT in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with `wrangler secret put ASSET_TOKEN_SECRET`.

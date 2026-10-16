@@ -44,3 +44,7 @@
 - 2026-10-08：新增强标签不再包含 Android `versionCode`；公开 Android 版本统一使用 `M.N.R`。
 - 2026-10-08：Android 素材改为经 R2 发布索引做文件级增量更新（基线包 + 增量包 + 小索引，ZIP 承载，先校验整体与逐文件 SHA-256 再原子切换，失败绝不破坏旧缓存，不以 APK 版本号判断素材更新）；Windows 更新器只更新程序本体；素材包与 Windows 产物同目录保管，R2 只承载运行时素材与索引，上传由维护者用本人凭据手工完成，仓库与配置中不得出现密钥或账户信息。
 - 2026-10-15：公开 R2 上传、公开下载、ZIP SHA-256 校验及 Android 更新器首装基线加增量链均已验证；配置公开索引 URL 的 Android 发布包为薄 APK，不再内嵌运行时素材，首次下载成功后自动刷新 WebView；未配置索引的离线构建继续内嵌素材。
+
+## 私有 R2 素材网关
+
+增强版运行时素材使用私有 R2 bucket `stronghold-protocol`。发布端/CI 持有读写 API 凭据；客户端绝不接收 R2 API token。素材 ZIP 先上传并校验，最后发布 `assets-index.json`。Android 建立游戏 WebSocket 会话后，以 `welcome.token` 调用服务端 `/api/assets/token` 换取短期 JWT，再通过 Cloudflare Worker 下载 `runtime-assets/` 下的索引和 ZIP。Worker 的 HMAC 密钥和服务端 `SP_ASSET_TOKEN_SECRET` 必须一致，并在轮换时同步更新。

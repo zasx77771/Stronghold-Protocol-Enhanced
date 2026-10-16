@@ -54,10 +54,15 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private TcpBridge tcpBridge;
     private AssetStore assetStore;
+    private AssetConfig assetConfig;
+    private boolean assetUpdateStarted;
+
+    private interface AssetSessionListener { void onToken(String token); }
 
     private static final class TcpBridge {
         private static final int MAX_FRAME = 64 * 1024;
         private final WebView webView;
+        private final AssetSessionListener assetSessionListener;
         private final ExecutorService executor = Executors.newCachedThreadPool();
         private final ConcurrentHashMap<String, Client> clients = new ConcurrentHashMap<>();
 
@@ -84,10 +89,15 @@ public final class MainActivity extends Activity {
             }
         }
 
-        TcpBridge(WebView webView) { this.webView = webView; }
+        TcpBridge(WebView webView, AssetSessionListener assetSessionListener) { this.webView = webView; this.assetSessionListener = assetSessionListener; }
 
         @JavascriptInterface
         public boolean available() { return true; }
+
+        @JavascriptInterface
+        public void setAssetSessionToken(String token) {
+            if (token != null && token.matches("[0-9a-f]{32}")) assetSessionListener.onToken(token);
+        }
 
         @JavascriptInterface
         public String readClipboardText() {
@@ -253,7 +263,7 @@ public final class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
-        tcpBridge = new TcpBridge(webView);
+        tcpBridge = new TcpBridge(webView, token -> startAssetUpdate(token));
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroidTcp");
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroid");
         setContentView(webView);
@@ -302,19 +312,27 @@ public final class MainActivity extends Activity {
      * launch, so a running match is never disturbed.
      */
     private void startAssetUpdate() {
-        if (assetStore == null) return;
-        final AssetConfig config = loadAssetConfig();
-        Log.i(TAG, "asset runtime: " + assetStore.describe() + "; " + config.describe());
-        if (!config.enabled) return;
-        final String initialInventory = assetStore.inventoryDigest();
-        AssetUpdater.start(assetStore, config, getCacheDir(), message -> Log.i(TAG, message), outcome -> {
-            boolean changed = !initialInventory.equals(assetStore.inventoryDigest());
-            if (changed && ("repair".equals(outcome.status) || "update".equals(outcome.status)) && webView != null) {
-                webView.post(() -> webView.reload());
-            }
-        });
+        startAssetUpdate(null);
     }
 
+    /** A protected gateway waits for the established game session before downloading anything. */
+    private synchronized void startAssetUpdate(String sessionToken) {
+        if (assetStore == null || assetUpdateStarted) return;
+        if (assetConfig == null) assetConfig = loadAssetConfig();
+        final AssetConfig config = assetConfig;
+        Log.i(TAG, "asset runtime: " + assetStore.describe() + "; " + config.describe());
+        if (!config.enabled) return;
+        if (config.tokenUrl != null && !config.tokenUrl.isEmpty() && (sessionToken == null || !sessionToken.matches("[0-9a-f]{32}"))) {
+            Log.i(TAG, "asset runtime: waiting for game session before protected update");
+            return;
+        }
+        assetUpdateStarted = true;
+        final String initialInventory = assetStore.inventoryDigest();
+        AssetUpdater.start(assetStore, config, getCacheDir(), sessionToken, message -> Log.i(TAG, message), outcome -> {
+            boolean changed = !initialInventory.equals(assetStore.inventoryDigest());
+            if (changed && ("repair".equals(outcome.status) || "update".equals(outcome.status)) && webView != null) webView.post(() -> webView.reload());
+        });
+    }
     /** Public configuration only: the packaged file wins, then the build-time defaults. */
     private AssetConfig loadAssetConfig() {
         try {
@@ -323,7 +341,7 @@ public final class MainActivity extends Activity {
         } catch (IllegalArgumentException error) {
             Log.w(TAG, "ignoring the packaged asset configuration: " + error.getMessage());
         }
-        return AssetConfig.fromBuild(BuildConfig.ASSET_INDEX_URL, BuildConfig.ASSET_MAX_CHAIN,
+        return AssetConfig.fromBuild(BuildConfig.ASSET_INDEX_URL, BuildConfig.ASSET_TOKEN_URL, BuildConfig.ASSET_MAX_CHAIN,
                 BuildConfig.ASSET_MAX_DOWNLOAD_BYTES, BuildConfig.ASSET_MAX_EXTRACT_BYTES,
                 BuildConfig.ASSET_ALLOW_HTTP);
     }

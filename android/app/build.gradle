@@ -23,10 +23,12 @@ android {
         // environment variable. Provide nothing and the updater stays off, which is the safe default.
         // Build with -PspAssetIndexUrl=https://… or SP_ASSET_INDEX_URL=https://… .
         def assetIndexUrl = (findProperty('spAssetIndexUrl') ?: System.getenv('SP_ASSET_INDEX_URL') ?: '').toString()
+        def assetTokenUrl = (findProperty('spAssetTokenUrl') ?: System.getenv('SP_ASSET_TOKEN_URL') ?: '').toString()
         def assetMaxChain = (findProperty('spAssetMaxChain') ?: System.getenv('SP_ASSET_MAX_CHAIN') ?: '3').toString()
         def assetMaxDownload = (findProperty('spAssetMaxDownloadBytes') ?: System.getenv('SP_ASSET_MAX_DOWNLOAD_BYTES') ?: '1610612736').toString()
         def assetMaxExtract = (findProperty('spAssetMaxExtractBytes') ?: System.getenv('SP_ASSET_MAX_EXTRACT_BYTES') ?: '4294967296').toString()
         def assetAllowHttp = (findProperty('spAssetAllowHttp') ?: System.getenv('SP_ASSET_ALLOW_HTTP') ?: 'false').toString()
+        buildConfigField 'String', 'ASSET_TOKEN_URL', '"' + assetTokenUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
         buildConfigField 'String', 'ASSET_INDEX_URL', '"' + assetIndexUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
         buildConfigField 'int', 'ASSET_MAX_CHAIN', assetMaxChain
         buildConfigField 'long', 'ASSET_MAX_DOWNLOAD_BYTES', assetMaxDownload + 'L'

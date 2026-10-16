@@ -32,6 +32,7 @@ import { createPackRegistry } from './packs.js';
 import { startTcpServer } from './tcp.js';import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { createAssetTokenIssuer } from './http/assetToken.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
 import { createManifestViews } from './http/assetViews.js';
@@ -74,6 +75,10 @@ export async function startServer(opts = {}) {
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
   const { registry, lobby, network } = createSessionStack(opts, { data, log });  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
+  const assetTokenIssuer = opts.assetTokenIssuer || createAssetTokenIssuer({ registry,
+    secret: opts.assetTokenSecret ?? process.env.SP_ASSET_TOKEN_SECRET,
+    ttlSec: opts.assetTokenTtlSec ?? 600,
+  });
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
@@ -86,7 +91,7 @@ export async function startServer(opts = {}) {
   resetBuildTag();
   buildTag();
 
-  const server = http.createServer(createRequestHandler({ serveStatic, health, log, trustProxy: network.opts.trustProxy }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health, log, trustProxy: network.opts.trustProxy, assetTokenIssuer }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
   let tcpListener = null;

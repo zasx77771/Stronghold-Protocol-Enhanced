@@ -42,7 +42,7 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *           health: Parameters<typeof healthReport>[0], log: object }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto' }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', assetTokenIssuer = null }) {
   async function handleRequest(req, res) {    const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
@@ -55,6 +55,12 @@ export function createRequestHandler({ serveStatic, health, log, trustProxy = 'a
     if (parts.rawPath === '/healthz') {
       const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
       sendJson(req, res, 200, healthReport(health, withTraffic));
+      return;
+    }
+    if (parts.rawPath === '/api/assets/token') {
+      const result = assetTokenIssuer?.issueAuthorization(req.headers.authorization);
+      if (!result) { sendJson(req, res, 503, { ok: false, error: 'asset_token_unavailable' }); return; }
+      sendJson(req, res, result.status, result.body);
       return;
     }
     if (!serveStatic) {

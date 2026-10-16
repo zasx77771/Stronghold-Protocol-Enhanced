@@ -470,6 +470,12 @@ function commandConfig(args) {
     allowHttp: Boolean(args.allowHttp)
   });
   for (const key of Object.keys(config)) if (config[key] === undefined) delete config[key];
+  if (args.tokenUrl) {
+    let tokenUrl;
+    try { tokenUrl = new URL(String(args.tokenUrl)); } catch { fail("--token-url must be a valid https URL"); }
+    if (tokenUrl.protocol !== "https:" || tokenUrl.username || tokenUrl.password || tokenUrl.search) fail("--token-url must be https without credentials or query");
+    config.tokenUrl = tokenUrl.toString();
+  }
   const problems = checkConfig(config);
   if (problems.length) fail(problems.join('; '));
   const out = args.out ? String(args.out) : null;

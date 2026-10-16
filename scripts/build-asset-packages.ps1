@@ -9,6 +9,10 @@ param(
   [switch]$MainlineUpdate,
   [string]$IndexBaseUrl = '',
   [switch]$SkipUploadPlan,
+  [switch]$UploadAssets,
+  [string]$R2Endpoint = '',
+  [string]$R2Bucket = 'stronghold-protocol',
+  [string]$R2Prefix = 'runtime-assets',
   [switch]$PassThru
 )
 
@@ -141,4 +145,26 @@ if (-not $SkipUploadPlan) {
   $Summary.uploads = @($Plan.files)
 }
 
+if ($UploadAssets) {
+  if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { throw 'AWS CLI is required for -UploadAssets.' }
+  if (-not $R2Endpoint) { $R2Endpoint = [string]$env:AWS_ENDPOINT_URL }
+  if (-not $R2Endpoint) { throw '-UploadAssets requires -R2Endpoint or AWS_ENDPOINT_URL.' }
+  if (-not $env:AWS_ACCESS_KEY_ID -or -not $env:AWS_SECRET_ACCESS_KEY) { throw '-UploadAssets requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the operator or CI secret store.' }
+  $R2Prefix = $R2Prefix.Trim('/')
+  $PackageNames = @($Summary.base, $Summary.delta | Where-Object { $_ })
+  foreach ($Name in $PackageNames) {
+    $Local = Join-Path $OutputRoot $Name
+    $Key = "$R2Prefix/$Name"
+    $Head = & aws s3api head-object --bucket $R2Bucket --key $Key --endpoint-url $R2Endpoint 2>&1
+    if ($LASTEXITCODE -eq 0) { throw "Refusing to replace published R2 package: $Key" }
+    if (($Head | Out-String) -notmatch '(404|Not Found|NoSuchKey)') { throw "Unable to inspect R2 package ${Key}: $Head" }
+    & aws s3 cp $Local "s3://$R2Bucket/$Key" --endpoint-url $R2Endpoint --content-type application/zip --cache-control 'private, max-age=31536000, immutable'
+    if ($LASTEXITCODE -ne 0) { throw "R2 upload failed: $Key" }
+  }
+  $IndexKey = "$R2Prefix/assets-index.json"
+  & aws s3 cp $IndexPath "s3://$R2Bucket/$IndexKey" --endpoint-url $R2Endpoint --content-type 'application/json' --cache-control 'private, max-age=60, must-revalidate'
+  if ($LASTEXITCODE -ne 0) { throw "R2 index upload failed: $IndexKey" }
+  $Summary.r2 = [ordered]@{ bucket = $R2Bucket; prefix = $R2Prefix; endpoint = $R2Endpoint; uploaded = $PackageNames + 'assets-index.json' }
+  Write-Host "R2 upload complete: $R2Bucket/$R2Prefix (index published last)" -ForegroundColor Green
+}
 if ($PassThru) { return $Summary }
