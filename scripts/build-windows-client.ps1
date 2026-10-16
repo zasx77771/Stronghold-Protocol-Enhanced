@@ -3,6 +3,11 @@ param(
   [string]$ElectronZip = '',
   [string]$OutputRoot = '',
   [string]$CacheDir = '',
+  [string]$AssetIndexUrl = '',
+  [string]$AssetTokenUrl = '',
+  [int]$AssetMaxChain = 3,
+  [switch]$AssetAllowHttp,
+  [string]$ArtifactSuffix = '',
   [switch]$NoArchive
 )
 
@@ -14,6 +19,10 @@ $Version = [string]$PackageInfo.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Invalid package version: $Version" }
 $ArtifactName = "Stronghold-Protocol-Client-v$Version-win-x64"
 if (-not $OutputRoot) { $OutputRoot = Join-Path $WorkspaceRoot 'enhanced-client-servers\02-Windows客户端' }
+if ($ArtifactSuffix -and $ArtifactSuffix -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$') {
+  throw 'ArtifactSuffix must contain only letters, digits, dot, underscore or hyphen.'
+}
+if ($ArtifactSuffix) { $ArtifactName = "$ArtifactName-$ArtifactSuffix" }
 $DistRoot = [IO.Path]::GetFullPath($OutputRoot)
 $OutputDir = [IO.Path]::GetFullPath((Join-Path $DistRoot $ArtifactName))
 if (-not $CacheDir) { $CacheDir = Join-Path $WorkspaceRoot 'enhanced-client-servers\06-构建环境与缓存\electron-download-cache' }
@@ -66,15 +75,32 @@ New-Item -ItemType Directory -Force -Path $AppDir, $ClientDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\main.cjs') -Destination $AppDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\preload.cjs') -Destination $AppDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\package.json') -Destination $AppDir
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'desktop\runtime\assets.cjs') -Destination $AppDir
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'tools\assetPackages.mjs') -Destination $AppDir
 
 Write-Host 'Copying local client code and resources...'
+$ThinClient = [bool]$AssetIndexUrl
+if ($ThinClient -and -not $AssetTokenUrl) { throw 'A thin Windows client requires -AssetTokenUrl.' }
 Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'public') -Force |
-  Where-Object { $_.Name -ne 'dev' } |
+  Where-Object { $_.Name -notin $(if ($ThinClient) { @('dev', 'assets', 'fonts') } else { @('dev') }) } |
   Copy-Item -Destination $ClientDir -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'data') -Destination (Join-Path $ClientDir 'data') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'shared') -Destination (Join-Path $ClientDir 'shared') -Recurse -Force
 
 $SimTarget = Join-Path $ClientDir 'sim'
+
+if ($ThinClient) {
+  foreach ($RelativePath in @('data\assets.json', 'data\local-assets.json')) {
+    $Target = Join-Path $ClientDir $RelativePath
+    if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Force }
+  }
+  $ConfigArguments = @((Join-Path $ProjectRoot 'tools\assets-r2.mjs'), 'config', '--index-url', $AssetIndexUrl, '--token-url', $AssetTokenUrl, '--out', (Join-Path $ClientDir 'asset-config.json'))
+  if ($AssetAllowHttp) { $ConfigArguments += '--allow-http' }
+  if ($AssetMaxChain -gt 0) { $ConfigArguments += @('--max-chain', [string]$AssetMaxChain) }
+  & node @ConfigArguments | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to write the Windows runtime asset configuration (asset-config.json).' }
+  Write-Host 'Windows thin client: runtime art will be downloaded from R2 after the first successful game session.'
+}
 New-Item -ItemType Directory -Force -Path $SimTarget | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'server\sim') -Force |
   Where-Object { $_.Name -ne 'nodeData.js' } |

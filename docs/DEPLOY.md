@@ -340,3 +340,7 @@ npm run package -- --update --from <旧版本的完整包>[,<…>] --out <目录
 ### 私有 R2 素材发布
 
 `cloudflare/asset-gateway/` 是私有 R2 下载 Worker。部署前在 Worker 设置 `ASSET_TOKEN_SECRET`，在游戏服务设置同值的 `SP_ASSET_TOKEN_SECRET`（至少 32 字节）。Android 打包时把 Worker URL 指向 `-AssetIndexUrl`，并通过 `-AssetTokenUrl https://<game-service>/api/assets/token` 写入公共 `asset-config.json`；URL 不能携带凭据或签名 query。R2 API 凭据仅放在发布机/CI 的凭据存储。
+
+Windows can use the same private R2 flow as Android. Build it with both `-AssetIndexUrl` (the Worker index) and
+`-AssetTokenUrl https://<game-service>/api/assets/token`; the portable ZIP then omits runtime art and stores
+verified packages in the current Windows user's Electron data directory after the first authenticated game session.

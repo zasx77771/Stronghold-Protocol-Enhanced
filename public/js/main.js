@@ -146,7 +146,10 @@ function backToLobby() {
 }
 
 function onWelcome(msg) {
-  try { globalThis.StrongholdAndroid?.setAssetSessionToken?.(msg.token); } catch { /* native bridge unavailable */ }
+  try {
+    globalThis.StrongholdAndroid?.setAssetSessionToken?.(msg.token);
+    globalThis.strongholdClient?.setAssetSessionToken?.(msg.token);
+  } catch { /* native bridge unavailable */ }
   identity.saveToken(msg.token);
   identity.rememberMatch(null);
   const prev = store.get();

@@ -12,6 +12,18 @@ A release now produces three kinds of artifact, and they serve different halves 
 
 The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. Art changes reach Android in the background, through R2, without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
 
+When `publish-client-release.ps1` is passed both `-AssetIndexUrl` and `-AssetTokenUrl`, its Windows ZIP is a thin
+client as well as the Android APK: the ZIP carries only program files, Electron runtime support and public
+`asset-config.json`; `assets/`, `fonts/` and the two art manifests are deliberately absent. The first successful
+game session authorizes a verified R2 download into Electron user data. Without those options, the Windows ZIP is
+the complete offline package. The Windows updater is still program-only in both modes; it never overwrites art.
+For an offline legacy/full Windows package, art remains local setup material. For a configured thin package, art
+changes reach Windows and Android in the background through R2 without a program update.
+
+Thin package release commands must provide the two public HTTPS URLs together:
+`-AssetIndexUrl "https://WORKER/assets-index.json" -AssetTokenUrl "https://GAME/api/assets/token"`.
+
+
 ## Version policy
 
 Upstream `0.M.N` maps to enhanced `M.N.*`; a new upstream baseline starts at `M.N.0`, and enhanced releases on that baseline increment only the final component. Published `0.2.*` and `0.3.*` releases remain unchanged. The general mapping has been active since upstream `0.1.4`; the current version is read from `release-policy.json` and the version files rather than hard-coded in this guide.
@@ -77,6 +89,11 @@ Rules that are easy to get wrong:
 
 - A delta is only published when the previous tree's inventory digest matches what the index published for that version. Otherwise a client whose files are gone could never verify it, so the release publishes a baseline instead (the script says so in its notes).
 - The index is uploaded **last**. Clients always read it first, so it must never point at a package that is not there yet.
+- Windows thin builds follow the same rule as Android: `scripts/build-windows-client.ps1` requires both
+  `-AssetIndexUrl` and `-AssetTokenUrl`, removes `assets/`, `fonts/`, `data/assets.json` and
+  `data/local-assets.json`, and writes `asset-config.json`. Runtime art is stored under Electron user data rather
+  than the install directory, so a Windows program update cannot replace it.
+
 - The Android APK's asset updater is only enabled when the build was given an index URL (`-AssetIndexUrl`, `-AssetIndexBaseUrl`, or `SP_ASSET_INDEX_URL` / `SP_ASSET_BASE_URL`). A configured release is thin: it removes `assets/`, `fonts/`, both runtime manifests and `asset-state.json` from the APK, downloads a base on first launch, then reloads the WebView after verified art lands. Without an index URL the APK retains its offline art floor and never contacts the network. See `scripts/build-android-client.ps1`.
 - The URL is public configuration. No key, token, signed URL or account id may appear in it, in the APK, in the index, or in any file of this repository; the upload is done by the maintainer with their own credentials.
 - Downloaded art and the packages themselves are never committed.
@@ -85,6 +102,7 @@ Rules that are easy to get wrong:
 ## Package contents
 
 - The Windows ZIP contains only changed files, a deletion list, and a native Windows update client. The update client verifies every base and resulting file with SHA-256 and does not depend on PowerShell. It is program-only and never writes the art.
+- A configured Windows ZIP embeds its program plus `asset-config.json`, but not runtime art; an offline Windows ZIP embeds its art floor.
 - Android releases always use the complete, consistently signed APK. It can be installed directly over the previous release when the signing key is unchanged. A configured R2 APK embeds its program plus `asset-config.json`, but not runtime art; an offline build embeds its art plus the `asset-state.json` floor.
 - Runtime asset packages are ZIPs of art files only, verified end to end with SHA-256: the whole archive against the index, then every entry and the resulting inventory against the package manifest.
 

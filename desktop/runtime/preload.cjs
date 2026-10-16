@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('strongholdClient', {
     ipcRenderer.on('sp-tcp-event', (_event, payload) => listener(payload));
   },
   readClipboardText: () => ipcRenderer.invoke('sp-read-clipboard'),
+  setAssetSessionToken: (token) => ipcRenderer.send('sp-asset-session-token', String(token || '')),
 });

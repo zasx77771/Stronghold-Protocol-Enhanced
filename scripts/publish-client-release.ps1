@@ -13,6 +13,7 @@ param(
   [string]$IncrementalOutputRoot = '',
   # Public runtime asset configuration for the Android client (baked into the APK and its asset-config.json).
   [string]$AssetIndexUrl = '',
+  [string]$AssetTokenUrl = '',
   [string]$AssetIndexBaseUrl = '',
   [int]$AssetMaxChain = 3,
   [switch]$AssetAllowHttp,
@@ -36,6 +37,11 @@ if (-not $UpstreamMainlineVersion) {
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $PackageInfo = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $ProjectRoot 'package.json') | ConvertFrom-Json
 $LocalVersion = [string]$PackageInfo.version
+if ($AssetIndexUrl -and -not $AssetTokenUrl) {
+  throw 'A private R2 release requires -AssetTokenUrl with -AssetIndexUrl.'
+}
+if ($AssetIndexUrl -and -not $CurrentAssetDir) { $CurrentAssetDir = $ProjectRoot }
+
 $PolicyArguments = @((Join-Path $ProjectRoot 'tools\release-policy.mjs'), '--upstream', $UpstreamMainlineVersion)
 if ($MainlineUpdate) { $PolicyArguments += '--mainline' }
 & node @PolicyArguments
@@ -44,6 +50,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Release policy validation failed.' }
 $WindowsArguments = @{
   ElectronVersion = $ElectronVersion
 }
+if ($AssetIndexUrl) { $WindowsArguments.AssetIndexUrl = $AssetIndexUrl }
+if ($AssetTokenUrl) { $WindowsArguments.AssetTokenUrl = $AssetTokenUrl }
+if ($AssetMaxChain -gt 0) { $WindowsArguments.AssetMaxChain = $AssetMaxChain }
+if ($AssetAllowHttp) { $WindowsArguments.AssetAllowHttp = $true }
 if ($ElectronZip) { $WindowsArguments.ElectronZip = $ElectronZip }
 if ($WindowsCacheDir) { $WindowsArguments.CacheDir = $WindowsCacheDir }
 
@@ -55,6 +65,7 @@ $AndroidArguments = @{}
 if ($AndroidToolchainDir) { $AndroidArguments.ToolchainDir = $AndroidToolchainDir }
 if ($AndroidCacheRoot) { $AndroidArguments.CacheRoot = $AndroidCacheRoot }
 if ($AndroidResourceSourceDir) { $AndroidArguments.ResourceSourceDir = $AndroidResourceSourceDir }
+if ($AssetTokenUrl) { $AndroidArguments.AssetTokenUrl = $AssetTokenUrl }
 if ($AndroidClean) { $AndroidArguments.Clean = $true }
 if ($AssetIndexUrl) { $AndroidArguments.AssetIndexUrl = $AssetIndexUrl }
 if ($AssetIndexBaseUrl) { $AndroidArguments.AssetIndexBaseUrl = $AssetIndexBaseUrl }

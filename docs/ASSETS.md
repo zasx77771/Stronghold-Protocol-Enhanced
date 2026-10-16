@@ -510,6 +510,12 @@ APK: it contains program files and public configuration, then downloads a verifi
 Offline builds retain the art floor; later art changes still reach installed R2 clients without a new APK. Since the enhanced 2.6.x line the enhanced clients read a small **release index** from Cloudflare R2 and pull
 **asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
 
+Windows uses the same index and package format. A Windows build passed both `-AssetIndexUrl` and
+`-AssetTokenUrl` is a thin portable client: it contains the Electron shell, program files and public
+`asset-config.json`, but no runtime art. After the first successful game session it installs the verified route
+under Electron `userData/asset-runtime/` and reloads the local page. A Windows build without this configuration
+remains a complete offline package with its embedded art.
+
 ### What a package may contain
 
 The updatable set is the art and the two art manifests, and nothing else:
@@ -620,6 +626,15 @@ are dropped. An update takes effect on the next launch.
 
 The runtime `PathHandler` serves `assets/`, `fonts/` and the two manifests from that store and falls back to the
 APK for everything else, so a client that never updates behaves exactly like the current one.
+On Windows the Electron main process owns the same layered store under
+`app.getPath('userData')/asset-runtime/`; the renderer can only forward the existing WebSocket session token to a
+preload IPC entry. The main process exchanges it for the Worker JWT, downloads and verifies packages, and serves
+the resulting asset paths from its loopback server. Neither token is persisted or exposed back to the browser. A
+thin client can show missing art before its first authenticated game session, but it never falls back to an
+unverified download.
+
+The Windows incremental updater remains program-only. It can update the Electron shell, program files and public
+asset configuration, but never the user-data asset store; art changes arrive from R2 independently.
 
 ### Configuration
 
@@ -637,6 +652,10 @@ The updater is configured with **public** data only — never a key, account id 
   verified before any art is served, and the WebView reloads after a successful initial route.
 - Unconfigured means disabled: the client logs one line, never contacts the network and serves the APK's art. No
   failure can turn into a broken client.
+- Windows forwarding is enabled by `scripts/build-windows-client.ps1 -AssetIndexUrl <worker index> -AssetTokenUrl
+  <game token endpoint>`. The two URLs are public, must be credential-free HTTPS URLs and are shared with Android.
+  Configuring only the index is rejected because a private Worker package cannot be fetched without the token endpoint.
+
 
 ### Tools and tests
 
@@ -741,3 +760,7 @@ Runtime assets are split from the application binary. Each published channel kee
 The `stronghold-protocol` R2 bucket is private. Build machines/CI use the R2 read-write credential only through environment variables or the credential store. The APK, public configuration and game service never receive either R2 API credential. Android sends its existing WebSocket welcome token to `/api/assets/token`, receives a short-lived (`SP_ASSET_TOKEN_SECRET`, minimum 32 bytes) JWT, then sends that JWT to the Worker gateway. The Worker only permits `assets:read` for `runtime-assets/` index and package names. `r2.dev` must not be used as the protected client URL.
 
 Configure a thin Android build with an HTTPS Worker `indexUrl` and its HTTPS `/api/assets/token` `tokenUrl`; both are public URLs and must have no credentials or query token. The updater holds both the game-session token and asset JWT in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with `wrangler secret put ASSET_TOKEN_SECRET`.
+Android and Windows thin clients both send their existing WebSocket welcome token to `/api/assets/token`, receive a
+short-lived JWT, and use it only for the Worker index/package requests. The game-session token and the JWT are held
+in memory only. Rotate the service and Worker HMAC secret together, and deploy the Worker secret with
+`wrangler secret put ASSET_TOKEN_SECRET`.
