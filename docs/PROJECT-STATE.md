@@ -2,14 +2,14 @@
 
 > 本文件是易变状态快照，不是长期规则。执行任务前以实际 Git、远端、版本文件和发布页面为准。
 
-更新时间：2026-10-14
+更新时间：2026-10-15
 
 ## 版本基线
 
 - 上游代码基线：`0.2.6`
-- 当前增强代码版本：`2.6.1`
-- Android `versionName`：`2.6.1`
-- Android 内部 `versionCode`：`25`
+- 当前增强代码版本：`2.6.2`
+- Android `versionName`：`2.6.2`
+- Android 内部 `versionCode`：`26`
 - `release-policy.json` 已使用通用 `0.M.N -> M.N.R` 映射。
 
 以上只描述代码与元数据，不等同于已经打包、打标签或发布。必须分别核验 Git 标签、产物和 GitHub Release。

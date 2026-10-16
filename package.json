@@ -1,6 +1,6 @@
 {
   "name": "stronghold-protocol-alliance",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "private": true,
   "description": "Stronghold Protocol Enhanced client and server",
   "license": "GPL-3.0-or-later",
