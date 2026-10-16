@@ -28,7 +28,7 @@
     "check:release-policy": "node tools/release-policy.mjs",
     "preversion": "npm run check:release-policy",
     "postversion": "npm run check:release-policy",
-    "test": "node --test",
+    "test": "node tools/test.mjs",
     "golden": "node tools/golden.mjs",
     "golden:update": "node tools/golden.mjs --update",
     "vendor": "node tools/vendor.mjs",

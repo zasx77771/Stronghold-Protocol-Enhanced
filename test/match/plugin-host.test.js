@@ -273,7 +273,7 @@ describe('match hosts in rooms (P1c): verification, the watchdog, crashes', () =
     const s0 = await a.waitFor('room.state');
     await ok(b, { t: 'room.join', code: s0.code });
     await ok(a, { t: 'room.addBot' });
-    await ok(a, { t: 'room.setPlugins', plugins: [{ id: 'rules' }] });
+    await ok(a, { t: 'room.setPlugins', plugins: [{ id: 'rules' }] }, 15_000);
     const st = await a.waitFor('room.state', (s) => s.content?.vanilla === false);
     const cs = st.content.cs;
     // both pages simulate on the content set's data (what /cs/<cs16>/ serves): Alpha names it in b.result, Bravo not

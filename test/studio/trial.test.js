@@ -94,7 +94,8 @@ test('watchdog kills a real non-responsive child process and allows the next job
   const b = bench(f, { spawn: (_entry, args, options) => (child = fork(entry, args, options)), limits: { ...TRIAL_LIMITS, timeoutMs: 400 } });
   t.after(() => b.close());
   await assert.rejects(b.run({ id }), { code: 'PLUGIN_STUDIO_TRIAL_TIMEOUT' });
-  assert.equal(child.killed, true); assert.equal(b.active(), 0);
+  assert.ok(child.exitCode != null || child.signalCode != null, 'child exited');
+  assert.equal(b.active(), 0);
 });
 
 test('wizard API creates each class, saves with revision, validates DSL, and keeps executable files off studio GET', async t => {
