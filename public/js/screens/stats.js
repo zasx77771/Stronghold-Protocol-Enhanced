@@ -86,7 +86,6 @@ function downloadText(filename, text) {
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch { /* ignore */ }
 }
-
 /** Read a picked file as text (`File.text()`, with a FileReader fallback for older Safari). */
 function readFileText(file) {
   if (typeof file?.text === 'function') return file.text();
@@ -597,4 +596,3 @@ export function StatsHost() {
   if (!open) return null;
   return html`<${StatsScreen} tab=${tab} />`;
 }
-

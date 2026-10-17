@@ -71,4 +71,3 @@ async function installSimBounds(base, raw, bounds) {
   if (bounds === undefined) boundsMod.rememberOfficialBounds(raw);
   else boundsMod.installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
 }
-

@@ -46,6 +46,7 @@ import { DiyPanel, diyData } from './diy.js';
 import { LoadoutStats } from '../ui/loadoutStats.js';
 export { LoadoutStats, statsPreview } from '../ui/loadoutStats.js';
 import { diyCount, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES } from '../ui/diyModel.js';
+import { loadProfile, saveProfile, saveLineup, deleteLineup, markLineupUsed, LINEUP_NAME_MAX_LEN } from '../ui/profileModel.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { copyText } from '../ui/clipboard.js';
 import { toast } from '../ui/toasts.js';
@@ -504,6 +505,8 @@ function LoadoutScreen({ st }) {
   // the detail's 普通 / 精锐 skill toggle: one preview for its skills, its 特质 and the rows' skill details (display only)
   const [previewLevel, setPreviewLevel] = useState('normal');
   const [io, setIo] = useState(null);                      // 导出 / 导入 dialog: { mode, text } | null
+  // 本地配队 (ui/profileModel.js, no account): named 干员调配 presets kept in `sp.pref.profile` — { profile, name } | null
+  const [lineups, setLineups] = useState(null);
 
   const tab = st.tab === 'ownership' || st.tab === 'diy' ? st.tab : 'loadout';
   const lost = ready ? missingGameData(tab) : [];
@@ -618,6 +621,59 @@ function LoadoutScreen({ st }) {
         : t('已导入 {applied} 名干员的调配', { applied }), dropped ? 'warn' : 'success');
   };
 
+  // 本地配队: the named 干员调配 presets of ui/profileModel.js (device-local, no account). Opening re-reads localStorage
+  // so a display name written by the title screen since this screen mounted is picked up, and every write goes through
+  // saveProfile — which sanitises the whole record, so the name and the other 配队 survive.
+  const openLineups = () => setLineups({ profile: loadProfile(), name: '' });
+  const closeLineups = () => setLineups(null);
+  const writeLineups = (next) => {
+    const stored = saveProfile(next);
+    setLineups((cur) => (cur ? { ...cur, profile: stored } : cur));
+    return stored;
+  };
+  const saveLineupHere = () => {
+    const r = saveLineup(lineups.profile, { name: lineups.name, entries: loadoutStore.get().entries, ops: loadoutStore.get().ops });
+    if (!r) { // a label is required, and a payload with nothing reusable is refused instead of stored empty
+      toast(t(lineups.name.trim() ? '当前没有可保存的调配' : '请先给这个配队起个名字'), 'warn');
+      return;
+    }
+    writeLineups(r.profile);
+    setLineups((cur) => (cur ? { ...cur, name: '' } : cur));
+    toast(t('已保存配队「{name}」', { name: r.preset.name }), 'success');
+  };
+  const applyLineup = (preset) => {
+    // the ordinary apply path (same as 导入): sanitiseEntries / sanitizeOps against the data loaded now, so an operator
+    // that disappeared, a choice that became illegal or a capacity change filters the preset instead of being sent
+    const refused = importRefusal('loadout', ready);
+    if (refused) { toast(refused.text, refused.tone); return; }
+    const opsRefused = loadoutOpsImportRefusal(preset.ops, ready);
+    if (opsRefused) { toast(opsRefused.text, opsRefused.tone); return; }
+    const opIds = cultivationCharIds(data.get('chess'), data.get('backups'));
+    const r = applyLoadoutEntries(preset.entries, getChess, { ops: preset.ops, isOperator: (id) => opIds.has(id) });
+    const { applied, dropped } = r;
+    const nOps = r.ops ?? 0;
+    // nothing survived sanitising (every operator unknown): keep the current loadout
+    if (!applied && !nOps) { toast(t('读取失败：这份配队在当前版本没有可用的调配，未做任何改动'), 'error'); return; }
+    if (!applied) {
+      writeLineups(markLineupUsed(lineups.profile, preset.id));
+      toast(t('已读取配队「{name}」的潜能与练度', { name: preset.name }), 'success');
+      return;
+    }
+    writeLineups(markLineupUsed(lineups.profile, preset.id));
+    toast(dropped ? t('已读取配队「{name}」（{applied} 名干员，另有 {dropped} 项不可用已跳过）', { name: preset.name, applied, dropped })
+      : t('已读取配队「{name}」（{applied} 名干员）', { name: preset.name, applied }), dropped ? 'warn' : 'success');
+  };
+  const removeLineup = async (preset) => {
+    const ok = await confirmDialog({ title: t('删除'), text: t('删除本机保存的配队「{name}」？', { name: preset.name }), okText: t('删除'), danger: true });
+    if (ok) writeLineups(deleteLineup(lineups.profile, preset.id));
+  };
+  const clearLineups = async () => {
+    if (!lineups.profile.presets.length) return;
+    const ok = await confirmDialog({ title: t('全部清空'), text: t('清空本机保存的全部 {n} 个配队？', { n: lineups.profile.presets.length }), okText: t('全部清空'), danger: true });
+    // the display name is the title screen's own setting: clearing 配队 keeps it
+    if (ok) writeLineups({ ...lineups.profile, presets: [], lastPresetId: null });
+  };
+
   // Esc closes; ←/→ browse the filtered roster (not while typing in the search field)
   useEffect(() => {
     const onKey = (e) => {
@@ -697,6 +753,7 @@ function LoadoutScreen({ st }) {
         <${Button} variant="ghost" size="sm" data-testid="loadout-export" disabled=${!nChanged && !Object.keys(st.ops || {}).length} onClick=${openExport} title=${t('导出当前调配（可复制或下载）')}>${t('导出')}<//>
         <${Button} variant="ghost" size="sm" data-testid="loadout-import" disabled=${!ready} onClick=${openImport} title=${t('导入调配（粘贴或选择文件）')}>${t('导入')}<//>
         <${Button} variant="secondary" size="sm" icon="refresh" disabled=${!nChanged} onClick=${resetAll}>${t('全部恢复默认')}<//>
+        <${Button} variant="ghost" size="sm" icon="book" data-testid="loadout-presets" onClick=${openLineups} title=${t('本机保存的配队：读取会覆盖当前的干员调配')}>${t('本地配队')}<//>
       </div>`}
     </header>
     ${tab === 'diy'
@@ -755,6 +812,23 @@ function LoadoutScreen({ st }) {
         placeholder=${io.mode === 'export' ? '' : ioDiy ? t('在此粘贴导出的自选编队内容…') : ioOwn ? t('在此粘贴导出的干员持有内容…') : t('在此粘贴导出的调配内容…')}
         onInput=${(e) => setIo({ ...io, text: e.currentTarget.value })}></textarea>
       <input type="file" accept=".json,application/json,text/plain" class="lo-io__file" ref=${fileRef} onChange=${ioFile} />
+    <//>` : null}
+  ${lineups ? html`<${Modal} open=${true} onClose=${closeLineups}
+      title=${t('本地配队')} micro="LOCAL LOADOUTS"
+      actions=${html`<${Button} variant="ghost" data-testid="lineup-close" onClick=${closeLineups}>${t('关闭')}<//>
+        <${Button} variant="secondary" data-testid="lineup-clear" disabled=${!lineups.profile.presets.length} onClick=${clearLineups}>${t('全部清空')}<//>`}>
+      <p class="lo-io__hint">${t('本机保存的配队：读取会覆盖当前的干员调配；保存在此设备，不含账号信息，换设备时请用「导出」。')}</p>
+      <div class="lo-lineup__save">
+        <${TextField} label=${t('配队名称')} value=${lineups.name} maxLength=${LINEUP_NAME_MAX_LEN} data-testid="lineup-name"
+          onInput=${(e) => setLineups((cur) => (cur ? { ...cur, name: e.currentTarget.value } : cur))} />
+        <${Button} variant="primary" icon="check" data-testid="lineup-save" onClick=${saveLineupHere}>${t('保存当前配队')}<//>
+      </div>
+      ${lineups.profile.presets.length ? html`<ul class="lo-lineup__list">${lineups.profile.presets.map((p) => html`<li class="lo-lineup__row" key=${p.id}>
+        <span class="lo-lineup__name">${p.name}</span>
+        <span class="lo-lineup__meta num t-dim">${t('{n} 名干员', { n: Object.keys(p.entries).length })}</span>
+        <${Button} variant="secondary" size="sm" data-testid=${'lineup-apply-' + p.id} onClick=${() => applyLineup(p)}>${t('读取')}<//>
+        <${Button} variant="ghost" size="sm" data-testid=${'lineup-delete-' + p.id} onClick=${() => removeLineup(p)}>${t('删除')}<//>
+      </li>`)}</ul>` : html`<p class="lo-empty t-dim" data-testid="lineup-empty">${t('本机还没有保存的配队。')}</p>`}
     <//>` : null}
 <//>`;
 }

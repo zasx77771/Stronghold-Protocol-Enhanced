@@ -279,4 +279,3 @@
       <${UiHosts} />`;
     }
     render(html`<${Kit} />`, document.getElementById('kit'));
-  

@@ -1,0 +1,52 @@
+# 项目规则索引
+
+本文件记录长期规则、事实源和规则变更，不复制专项实现细节。当前任务中的用户明确指令优先；新确认规则覆盖旧规则；一次性例外不会自动成为长期规则。
+
+## 分类与事实源
+
+- 游戏代码类：本体、干员、技能、敌人、盟约、战斗规则及可提交上游的通用修复。
+- 增强功能类：Windows、Android、TCP、更新器、本机资料复用及不提交上游的增强行为。
+- 明确要求提交主仓库或 `upstream/master` 时按游戏代码类处理；明确要求只进入 `enhanced-mode` 时按增强功能类处理。仅说提交 `enhanced-mode` 时仍需确认分类。
+- 未声明“有意差异”时，依次核对上游 Git、官方数据、可核验资料、研究记录、代码与测试。无法确认的行为标记为“推断”或 `ASSUMED`。
+- 用户提供的 ZIP 只用于素材复用，代码和规则以 Git 为准。
+
+## 文档路由
+
+| 领域 | 事实源 |
+|---|---|
+| 开发、分支、PR、同步、发布 | `docs/DEVELOPMENT-WORKFLOW.md` |
+| 当前易变状态 | `docs/PROJECT-STATE.md` |
+| 上游历史与同步说明 | `docs/UPSTREAM-UPDATE.md`、`docs/UPSTREAM-SYNC-FLOW.md` |
+| 版本映射与发布元数据 | `docs/RELEASE-POLICY.md`、`release-policy.json` |
+| 完整包和增量包 | `scripts/CLIENT-UPDATES.md` |
+| 运行时素材包、完整代码包素材快照与 R2 素材增量 | `docs/ASSETS.md`、`scripts/CLIENT-UPDATES.md` |
+| 产品功能 | `docs/FEATURES.md`、`docs/DESIGN.md` |
+| 游戏逻辑 | `docs/DESIGN.md`、`docs/SIM.md`、`docs/META.md`、`docs/DATA.md`、`docs/BALANCE.md` |
+| 部署 | `docs/DEPLOY.md` |
+| 素材与许可 | `docs/ASSETS.md`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md` |
+| 成果目录 | `../enhanced-client-servers/README.md` |
+
+## 规则维护
+
+- 长期规则只有写入对应事实源、提交并合并到个人 `enhanced-mode` 后，才算完成持久化。
+- 根工作区 `AGENTS.md` 是本机入口；聊天、未提交文件、临时分支和未合并 PR 不是持久化事实源。
+- 当前版本、分支、开放 PR、工作树和构建状态只写入 `PROJECT-STATE.md`，执行任务时仍以 Git 和实际文件为准。
+- 修改长期规则需要用户确认。新规则覆盖旧规则时修正原条目，不保留互相矛盾的有效流程。
+- 未确认内容不得写成生效规则。
+- 功能、上游同步和正式发布完成时，检查规则、专项文档、脚本、版本文件和 README 是否一致。
+
+## 变更记录
+
+- 2026-10-06：建立分层规则与专项文档结构；ZIP 改为只复用素材；确定 `0.M.N -> M.N.R` 映射。
+- 2026-10-08：游戏代码改为先建上游 Issue、再从个人 `master` 分支直接提交上游 PR；上游未合并前不进入个人长期分支。
+- 2026-10-08：个人 `master` 只做 Sync Fork；`enhanced-mode` 通过同步分支合并上游，再以独立分支完成必要增强适配。
+- 2026-10-08：一轮经用户确认的 PR 全部合并后自动完成版本升级、打包、标签和个人仓库 GitHub Release。
+- 2026-10-08：新增强标签不再包含 Android `versionCode`；公开 Android 版本统一使用 `M.N.R`。
+- 2026-10-08：Android 素材改为经 R2 发布索引做文件级增量更新（基线包 + 增量包 + 小索引，ZIP 承载，先校验整体与逐文件 SHA-256 再原子切换，失败绝不破坏旧缓存，不以 APK 版本号判断素材更新）；Windows 更新器只更新程序本体；素材包与 Windows 产物同目录保管，R2 只承载运行时素材与索引，上传由维护者用本人凭据手工完成，仓库与配置中不得出现密钥或账户信息。
+- 2026-10-15：公开 R2 上传、公开下载、ZIP SHA-256 校验及 Android 更新器首装基线加增量链均已验证；配置公开索引 URL 的 Android 发布包为薄 APK，不再内嵌运行时素材，首次下载成功后自动刷新 WebView；未配置索引的离线构建继续内嵌素材。
+- 2026-10-15: Windows may be released as a private-R2 thin client when both public index and token URLs are configured; its updater remains program-only, while verified runtime art is stored under the client's own application-data directory (Tauri `app_data_dir()`, `asset-runtime/`) and updated from R2 after an authenticated game session. Offline Windows releases retain embedded art.
+- 2026-10-16：完整代码包仅用于提取可复用的 `assets/` 与 `fonts/`；统一存放在 `enhanced-client-servers/09-local-workspace-artifacts/source-assets/<source-id>/`，完整代码包是素材事实源，Windows 包仅辅助核对；以相对路径和 SHA-256 比对决定复用或建立新快照，快照不提交 Git。增强版 `2.6.2` 起由游戏服务端签发短期 JWT，Cloudflare Worker 从私有 R2 拉取素材并向授权客户端提供，客户端不持有 R2 API 凭据。
+
+## 私有 R2 素材网关
+
+增强版运行时素材使用私有 R2 bucket `stronghold-protocol`。发布端/CI 只持有上传所需的读写凭据；Cloudflare Worker 只持有拉取所需的 R2 绑定，游戏服务端只负责签发短期 JWT；客户端绝不接收 R2 API token。素材 ZIP 先上传并校验，最后发布 `assets-index.json`。Android 建立游戏 WebSocket 会话后，以 `welcome.token` 调用服务端 `/api/assets/token` 换取短期 JWT，再通过作为服务端边界的 Cloudflare Worker 获取 `runtime-assets/` 下的索引和 ZIP。Worker 的 HMAC 密钥和服务端 `SP_ASSET_TOKEN_SECRET` 必须一致，并在轮换时同步更新。

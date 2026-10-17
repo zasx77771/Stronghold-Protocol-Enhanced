@@ -43,7 +43,7 @@ import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
-import { TitleScreen, sanitizeName } from './screens/title.js';
+import { TitleScreen, sanitizeName, skipStartupClipboardProbe } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
 import { RoomScreen, TrustedNotice } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
@@ -60,6 +60,7 @@ import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/l
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
+import { loadServerAddress, normalizeServerAddress } from './serverAddress.js';
 import { recordError, installTrafficMeter } from './diag.js';
 import { installContent, installContentSet } from './content.js';
 import { cosmetics } from './cosmetics.js';
@@ -157,6 +158,10 @@ function backToLobby() {
 const pluginCount = (content) => (content && Number.isInteger(content.plugins) && content.plugins > 0 ? content.plugins : 0);
 
 function onWelcome(msg) {
+  try {
+    globalThis.StrongholdAndroid?.setAssetSessionToken?.(msg.token);
+    globalThis.strongholdClient?.setAssetSessionToken?.(msg.token);
+  } catch { /* native bridge unavailable */ }
   identity.saveToken(msg.token);
   identity.rememberMatch(null);
   const prev = store.get();
@@ -371,8 +376,6 @@ function installGlobalErrorHandlers() {
 
 async function boot() {
   installGlobalErrorHandlers();
-  // what this page downloads, by category, for the 问题反馈 report's traffic line (diag.js; nothing is sent anywhere)
-  installTrafficMeter();
   // touch / hover / fullscreen classes, zoom-gesture blocking, rotation re-layout (ui/device.js, css/devices.css)
   installDeviceSupport();
   // Hashed art a player imported. HTTPS or localhost only; a failure here must not stop boot.
@@ -384,7 +387,12 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
-  const entered = identity.wasEntered() && !!savedName;
+  const savedAddress = loadServerAddress();
+  const savedServer = savedAddress ? normalizeServerAddress(savedAddress) : null;
+  // A clean standalone install contains no server address. Keep it on the title screen until the user supplies one.
+  const entered = identity.wasEntered() && !!savedName && !!savedServer;
+  // If boot resumes straight into the lobby, a later return to the title is not the startup entry.
+  if (entered) skipStartupClipboardProbe();
   store.set((s) => ({
     me: { ...s.me, name: savedName },
     session: { entered },
@@ -392,6 +400,7 @@ async function boot() {
   }));
 
   wireNet();
+  if (savedServer) net.setUrl(savedServer.wsUrl);
   installStatsRecorder(store); // follows the match on screen, so a 放弃模拟 can be recorded (ui/stats.js)
   installLoadoutSync({ net });
   installOwnershipSync({ net });
@@ -419,8 +428,7 @@ async function boot() {
   data.load('local').catch(() => {});
 
   const connectWhenReady = identityReady.then(() => {
-    if (entered) net.setName(savedName);
-    else net.connect();
+    if (entered) net.setIdentity(savedName);
   });
   // the language (and its UI translations) before the first render: no Chinese flash for an English player
   const langReady = initLang().catch((err) => console.warn('[app] language setup failed', err));

@@ -57,6 +57,8 @@ export const ICONS = {
   signal: { d: 'M2 17h3v4H2zm6-4h3v8H8zm6-4h3v12h-3zm6-4h3v16h-3z' },
   // 统计 (the stats page's entry): three columns on a baseline — apart from `signal`, the ping bars
   chart: { d: 'M4 12h4v7H4zm6-6h4v13h-4zm6 3h4v10h-4zM3 20h18v2H3z' },
+  // 下载运行素材 (the thin Android client's explicit asset download, ui/assetUpdate.js): an arrow into a baseline
+  download: { d: 'M11 3h2v6.6l2.8-2.8 1.4 1.4L12 13.4 6.8 8.2l1.4-1.4L11 9.6zM4 18h16v2H4z' },
   refresh: { d: 'M12 4a8 8 0 0 1 7.4 5H17v2h6V5h-2v2.3A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8zm0 16a8 8 0 0 1-7.4-5H7v-2H1v6h2v-2.3A10 10 0 0 0 22 12h-2a8 8 0 0 1-8 8z' },
   snow: { d: 'M11 2h2v4.2l2.3-2.3 1.4 1.4-3.7 3.7v2h2l3.7-3.7 1.4 1.4-2.3 2.3H22v2h-4.2l2.3 2.3-1.4 1.4-3.7-3.7h-2v2l3.7 3.7-1.4 1.4-2.3-2.3V22h-2v-4.2l-2.3 2.3-1.4-1.4 3.7-3.7v-2H9l-3.7 3.7-1.4-1.4L6.2 13H2v-2h4.2L3.9 8.7l1.4-1.4L9 11h2V9L7.3 5.3l1.4-1.4L11 6.2z' },
   chevronRight: { d: 'M8.6 5 7.2 6.4 12.8 12l-5.6 5.6L8.6 19l7-7z' },
@@ -876,11 +878,11 @@ export function DifficultyTag({ difficulty, size = 'md', class: cls, code }) {
 
 /**
  * Bracketed text input.
- * @param {{ label?: any, micro?: string, value: string, onInput: (v: string) => void, onEnter?: Function,
+ * @param {{ label?: any, micro?: string, labelEnd?: any, value: string, onInput: (v: string) => void, onEnter?: Function,
  *   placeholder?: string, maxLength?: number, transform?: (v: string) => string, autoFocus?: boolean,
  *   disabled?: boolean, size?: 'md'|'lg'|'code', icon?: string, class?: string, inputRef?: any, name?: string }} props
  */
-export function TextField({ label, micro, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid }) {
+export function TextField({ label, micro, labelEnd, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid }) {
   const localRef = useRef(null);
   const ref = inputRef || localRef;
   const composing = useRef(false);
@@ -897,7 +899,7 @@ export function TextField({ label, micro, value, onInput, onEnter, placeholder, 
   };
   const id = useMemo(() => `tf-${Math.random().toString(36).slice(2, 8)}`, []);
   return html`<label class=${cx('field', `field--${size}`, disabled && 'is-disabled', invalid && 'is-invalid', cls)} for=${id}>
-    ${label || micro ? html`<span class="field__label">${label}${micro ? html`<span class="micro">${micro}</span>` : null}</span>` : null}
+    ${label || micro || labelEnd ? html`<span class="field__label">${label}${micro ? html`<span class="micro">${micro}</span>` : null}${labelEnd ? html`<span class="field__label-end">${labelEnd}</span>` : null}</span>` : null}
     <span class="field__box brackets">
       ${icon ? html`<${Icon} name=${icon} class="field__icon" />` : null}
       <input id=${id} ref=${ref} class="field__input" name=${name} value=${value} placeholder=${placeholder}

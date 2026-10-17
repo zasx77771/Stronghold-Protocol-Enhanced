@@ -1,0 +1,7 @@
+name = "stronghold-asset-gateway"
+main = "src.js"
+compatibility_date = "2026-10-15"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "stronghold-protocol"

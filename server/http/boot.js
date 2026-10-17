@@ -71,9 +71,14 @@ export function isProcessEntry(metaUrl) {
 export function printBanner(srv) {
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Alliance v${APP_VERSION}`);
   if (DEV_BUILD) console.log('  ! 开发版（dev 分支）：不稳定，请勿用于公开服务器 · development build — unstable, not for public servers');
-  console.log(`  Local:   ${srv.url}`);
-  if (srv.host === '0.0.0.0' || srv.host === '::') {
-    for (const u of lanUrls(srv.port)) console.log(`  LAN:     ${u}`);
+  if (srv.tcpPort != null) console.log(`  TCP:     tcp://${srv.host === '0.0.0.0' || srv.host === '::' ? 'localhost' : srv.host}:${srv.tcpPort}`);
+  if (srv.serveClient !== false) console.log(`  Local:   ${srv.url}`);
+  else {
+    console.log('  Mode:    network-only (client assets disabled)');
+    console.log(`  Health:  ${srv.url}/healthz`);
+    console.log(`  WebSocket: ${srv.url.replace(/^http/, 'ws')}/ws`);
+  }
+  if (srv.host === '0.0.0.0' || srv.host === '::') {    for (const u of lanUrls(srv.port)) console.log(srv.serveClient !== false ? `  LAN:     ${u}` : `  LAN WebSocket: ${u.replace(/^http/, 'ws')}/ws`);
   }
   // the plugin studio with its key: what a change in it needs (a raw TCP tunnel looks like this machine; the key does not)
   const studio = srv.studio?.pageUrl?.(srv.url);
@@ -94,14 +99,15 @@ export async function runMain(start) {
   if (applyPendingUpdate(ROOT).state === 'failed') { process.exitCode = 1; return; }
   let srv;
   try {
-    srv = await start();
-  } catch (e) {
-    if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
+    const httpPort = process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000;
+    const tcpPort = process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT)
+      : (Number.isInteger(httpPort) && httpPort >= 0 && httpPort < 65535 ? httpPort + 1 : 3001);
+    srv = await start({ tcpPort });
+  } catch (e) {    if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
     else console.error('[boot] failed to start', e);
     process.exit(1);
   }
   printBanner(srv);
-
   let stopping = false;
   const stop = (signal) => {
     if (stopping) { console.log('forced exit'); process.exit(1); }

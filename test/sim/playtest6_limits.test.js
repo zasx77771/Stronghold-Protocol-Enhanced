@@ -108,9 +108,9 @@ test('layer gains stay disabled in boss / 联防 fields (unchanged)', () => {
 
 const guardRec = () => chessRec({ id: 't_guard', profession: 'WARRIOR', stats: { atk: 10, maxHp: 1e9 }, skill: null });
 /** A field of `kind` with a leader (tag 'boss'), a minion and a part, all standing still; the shared pool when given. */
-function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0 } = {}) {
+function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0, modeId = 'mode_multi_funny' } = {}) {
   const h = makeBattle({
-    kind, sharedBoss: pool,
+    kind, modeId, sharedBoss: pool,
     defs: {
       chess: { t_guard: guardRec() },
       enemies: {
@@ -132,6 +132,25 @@ function hitField({ kind = 'boss', pool = null, leaderDef = 0, leaderRes = 0 } =
   return { h, b: h.b, leader, mini: h.enemy('enemy_mini'), part: h.enemy('enemy_part'), op };
 }
 const capEvents = (h) => h.eventsOf('fx').filter((e) => e[1] === 'hitCap');
+
+test('Boss不再有增强版最终减伤；各难度的直接伤害和传递生命流失均为100%', () => {
+  for (const modeId of ['mode_multi_funny', 'mode_single_normal', 'mode_multi_hard', 'mode_multi_abyss']) {
+    const { b, leader, mini, op } = hitField({ modeId });
+    assert.equal(b.dealDamage(op, leader, { amount: 100000, type: 'true' }), 100000, `${modeId}: leader damage`);
+    assert.equal(b.dealDamage(op, mini, { amount: 100000, type: 'true' }), 100000, `${modeId}: minion unaffected`);
+    assert.equal(b.loseHp(leader, 50000, { source: op }), 50000, `${modeId}: transferred HP loss`);
+  }
+});
+
+test('Boss无额外承伤倍率，最终值直接判定30万限伤；普通/联防战场不受首领限伤影响', () => {
+  const { b, leader, op } = hitField({ modeId: 'mode_multi_normal' });
+  assert.equal(b.dealDamage(op, leader, { amount: 299999, type: 'true' }), 299999, '299,999 lands below the cap');
+  assert.equal(b.dealDamage(op, leader, { amount: 300000, type: 'true' }), 0, '300,000 reaches the cap and is cancelled');
+  for (const kind of ['normal', 'unite']) {
+    const f = hitField({ kind, modeId: 'mode_multi_abyss' });
+    assert.equal(f.b.dealDamage(f.op, f.leader, { amount: 100000, type: 'true' }), 100000, kind);
+  }
+});
 
 test('限伤: a leader\'s hit of 299999 lands, 300000 deals 0 — nothing credited to the shared pool, no number, a hitCap event', () => {
   const pool = new SharedBossPool(5e6);
@@ -293,7 +312,8 @@ const PAIR = [
 function realBossField(bossId, hidden, pool, players = PAIR) {
   const wave = buildBossWave(gd, createRng(1), setup.factions, hidden ? 15 : 14, { bossId, solo: false });
   const spec = buildBattleSpec({
-    battleId: `lim.${bossId}`, fieldId: 'b1', kind: hidden ? 'hidden' : 'boss', seed: 5, modeId: 'mode_multi_hard', round: hidden ? 15 : 14,
+    // These tests isolate the 300000 hit limit from the separate difficulty final-damage reduction.
+    battleId: `lim.${bossId}`, fieldId: 'b1', kind: hidden ? 'hidden' : 'boss', seed: 5, modeId: 'mode_multi_funny', round: hidden ? 15 : 14,
     stageId: 'act2autochess_m01', rect: { ...GEO.BOSS_RECT }, timeLimit: null, players,
     spawns: wave.spawns.filter((s) => s && gd.enemy(s.enemyKey)), routes: wave.routes, flags: { layerGainsEnabled: false, ...gd.dp },
     enemyOverrides: wave.overrides, waveId: wave.templateId, bossId, boss: { poolHp: pool.maxHp, poolMax: pool.maxHp },

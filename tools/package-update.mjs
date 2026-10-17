@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { UPDATE_FILE, UPDATE_FORMAT, digestFile } from '../server/update.js';
+import { ELECTRON_RUNTIME_PATHS } from './validate-client-runtime.mjs';
 
 /** Read `len` bytes at `pos` of an open file. */
 function readAt(fd, pos, len) {
@@ -207,6 +208,13 @@ export function readBase(source, { folder = 'Stronghold-Protocol', skip = () => 
   }
   const version = pkg?.version;
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+/.test(version)) throw new Error(`base ${source}: package.json names no version`);
+  // v2.6.4: the Windows client payload is the Tauri binary built from src-tauri/. A base that carries an
+  // Electron runtime is not a payload this update line can write (tools/validate-client-runtime.mjs).
+  for (const rel of files.keys()) {
+    if (ELECTRON_RUNTIME_PATHS.includes(rel)) {
+      throw new Error(`base ${source}: ${rel} is an Electron runtime; the Windows client is the Tauri binary built from src-tauri/`);
+    }
+  }
   let art = 0;
   for (const rel of files.keys()) if (rel.startsWith('public/assets/')) art++;
   return { source: abs, version, files, art, update };

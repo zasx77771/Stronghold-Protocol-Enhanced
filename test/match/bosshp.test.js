@@ -164,7 +164,8 @@ test('终极 Final Assault vs 假想敌：胄 (seeded bot match): both players\'
   }
   assert.ok(withArcane > 100, `the leader carried 奥术 (${withArcane} samples)`);
   assert.ok(links.length >= 1, 'drones were shot down');
-  for (const x of links) assert.equal(x, m.bossPool.maxHp * 0.02, 'drone link = 2 % × the pool');
+  const linkDamage = m.bossPool.maxHp * 0.02;
+  for (const x of links) assert.ok(Math.abs(x - linkDamage) <= 1e-9 * linkDamage, `drone link is 2% of the pool without an extra damage multiplier (${x} vs ${linkDamage})`);
   assert.equal(m.bossPool.maxHp, DATA.bosses.boss_1.bloodPoint.ABYSS * 4, 'the 14 400 000 pool of 4 alive players');
   m.dispose();
 });
@@ -212,7 +213,7 @@ test('绝境 Hidden Core vs 假想敌：铳 (隐秘核心): a 碎铳之簧 passe
   const pool0 = pool.hp;
   const dealt = b.dealDamage(op, sp, { amount: 50000, type: 'true', canDodge: false });
   assert.ok(dealt > 0, 'the spring took damage');
-  assert.ok(Math.abs((pool0 - pool.hp) - dealt) < 1e-6, `the pool lost exactly what the spring took (${pool0 - pool.hp} vs ${dealt})`);
+  assert.ok(Math.abs((pool0 - pool.hp) - dealt) < 1e-6, `the pool lost the spring damage 1:1 (${pool0 - pool.hp} vs ${dealt})`);
   assert.ok(seen.length === 1 && seen[0].source === null && seen[0].credit === op, '无来源, credited to the operator');
   m.dispose();
 });

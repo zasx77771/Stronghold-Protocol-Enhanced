@@ -33,6 +33,7 @@ import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
+import { buildInviteLink, loadEndpointAddress, loadTransportMode } from '../serverAddress.js';
 
 /**
  * Seats padded to the room's capacity (co-op 4, solo 1), each null or a seat record.
@@ -97,11 +98,10 @@ export function aiLastOption(room, myId) {
   return { on: room.aiPicksLast === true, editable: room.hostId != null && room.hostId === myId };
 }
 
-/** Invite link for a room code (current page URL with ?room=CODE). */
-export function inviteLink(code) {
-  const loc = globalThis.location;
-  const base = loc ? `${loc.origin}${loc.pathname}` : '';
-  return `${base}?room=${encodeURIComponent(code)}`;
+/** Invite link for a room code, rooted at the selected game server rather than the local client. */
+export function inviteLink(code, serverAddress, transportMode) {
+  const transport = transportMode || loadTransportMode();
+  return buildInviteLink(serverAddress ?? loadEndpointAddress(transport), code, transport);
 }
 
 /**

@@ -67,7 +67,7 @@ test('a leader sharing the pool takes the summed ATK: one normal hit of a stacke
   };
   const pool = new SharedBossPool(3600000);
   const h = makeBattle({
-    defs, kind: 'boss', stage: flatStage(), sharedBoss: pool, autoFinish: false,
+    defs, kind: 'boss', modeId: 'mode_multi_funny', stage: flatStage(), sharedBoss: pool, autoFinish: false,
     units: [{ chessId: 's_op', row: 10, col: 6, items: [HAMMER, BLADE] }],
     bonds: { preciShip: bond(1, 600), soloShip: bond(1, 0, 1) },
     enemies: [{ key: 'enemy_stack_leader', pos: [3, 10], route: { motion: 'WALK', start: [3, 10], end: [3, 10], checkpoints: [] }, tag: 'boss' }],

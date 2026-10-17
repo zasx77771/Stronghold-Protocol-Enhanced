@@ -415,4 +415,3 @@ if (isMain) {
   if (o.json) console.log(JSON.stringify(rep, null, 1));
   else printReport(rep, o);
 }
-

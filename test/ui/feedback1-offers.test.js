@@ -230,4 +230,3 @@ test('#617: a reward offer replaces the whole shop row — the equipment slot hi
   assert.match(src, /\$\{showReward \? null : html`<div class="shopbar__item">/, 'the equipment column is not drawn under a reward offer');
   assert.match(src, /if \(showReward\) reward\.slots\.forEach\([^\n]*\n\s*else slots\.forEach/, 'the shop slots are not armable meanwhile');
 });
-

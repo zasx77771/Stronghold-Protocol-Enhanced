@@ -11,7 +11,7 @@
 // number from 0 through PLUGIN_LIMITS.pluginBytes; install refuses a download whose length differs.
 
 import { APP_VERSION } from '../constants.js';
-import { PLUGIN_CLASSES, PLUGIN_LIMITS, appVersionMatches, isPluginId, isSemver, isVersionRange } from './manifest.js';
+import { PLUGIN_CLASSES, PLUGIN_LIMITS, isPluginId, isSemver, isVersionRange, pluginAppVersionMatches } from './manifest.js';
 import { isContentHash } from './identity.js';
 
 /** [ASSUMED] see the header. */
@@ -167,7 +167,7 @@ export function readCatalog(raw) {
  */
 export function entryStatus(entry, installed, appVersion = APP_VERSION) {
   const app = entry.app;
-  const incompatible = Object.hasOwn(entry, 'app') && (typeof app !== 'string' || app.trim() === '' || !isVersionRange(app) || !appVersionMatches(app, appVersion));
+  const incompatible = Object.hasOwn(entry, 'app') && (typeof app !== 'string' || app.trim() === '' || !isVersionRange(app) || !pluginAppVersionMatches(app, appVersion));
   const installedVersion = installed === undefined ? null : installed;
   if (incompatible) return { status: 'incompatible', installedVersion };
   if (installed === undefined) return { status: 'available', installedVersion: null };

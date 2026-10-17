@@ -38,10 +38,12 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, assetIndexOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, envEnabled, assetIndexOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
+import { startTcpServer } from './tcp.js';
+import { createAssetTokenIssuer } from './http/assetToken.js';
 import { createPluginRegistry } from './plugins/registry.js';
 import { computeVanillaContent } from './plugins/identity.js';
 import { createVisualSets } from './plugins/visualSet.js';
@@ -98,6 +100,11 @@ export async function startServer(opts = {}) {
   const log = opts.log || makeLogger(!!opts.quiet);
   const { publicDir, dataDir, sharedDir, packsDir, pluginsDir } = serveDirs(opts);
   const simDir = path.join(ROOT, 'server', 'sim');
+  const serveClient = opts.serveClient ?? !envEnabled(process.env.SP_SERVER_ONLY);
+  const tcpPortValue = opts.tcpPort ?? (process.env.TCP_PORT != null && process.env.TCP_PORT !== '' ? Number(process.env.TCP_PORT) : null);
+  if (tcpPortValue != null && (!Number.isInteger(tcpPortValue) || tcpPortValue < 0 || tcpPortValue > 65535)) {
+    throw new RangeError(`invalid TCP_PORT ${tcpPortValue}`);
+  }
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
@@ -126,7 +133,10 @@ export async function startServer(opts = {}) {
   const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
   const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents });
+  const assetTokenIssuer = opts.assetTokenIssuer || createAssetTokenIssuer({
+    registry, secret: opts.assetTokenSecret ?? process.env.SP_ASSET_TOKEN_SECRET, ttlSec: opts.assetTokenTtlSec ?? 600,
+  });
+  const serveStatic = serveClient ? createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents }) : null;
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });
@@ -138,9 +148,11 @@ export async function startServer(opts = {}) {
   buildTag();
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime }));
+  const health = { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted: trustedRuntime?.health, serveClient, tcpPort: null };
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, assetTokenIssuer }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
+  let tcpListener = null;
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost;
@@ -192,6 +204,17 @@ export async function startServer(opts = {}) {
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
   const url = `http://${displayHost(boundHost)}:${actualPort}`;
+  if (tcpPortValue != null) {
+    try {
+      tcpListener = await startTcpServer({ network, host, port: tcpPortValue, log });
+      health.tcpPort = tcpListener.port;
+    } catch (e) {
+      network.close();
+      try { wss.close(); } catch { /* ignore */ }
+      await new Promise((resolve) => server.close(() => resolve()));
+      throw e;
+    }
+  }
 
   let closing = null;
   async function close() {
@@ -201,6 +224,7 @@ export async function startServer(opts = {}) {
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       network.close();
       assetIndex?.close();
+      await tcpListener?.close();
       studio?.close();
       await trustedRuntime?.close();
       await new Promise((resolve) => {
@@ -213,7 +237,8 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, traffic, assetIndex, views, studio, close };
+  return { port: actualPort, tcpPort: tcpListener?.port ?? null, host: boundHost, url, serveClient, server,
+    tcpServer: tcpListener?.server ?? null, wss, lobby, network, registry, packs, content, visual, contents, hosts, traffic, assetIndex, views, studio, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

@@ -1047,6 +1047,16 @@
 .sp-coarse .topbar__tools .btn--square.btn--sm { --sq: max(.56rem, 40px); }
 .topbar__right { justify-self: end; display: flex; align-items: center; gap: .16rem; min-width: 0; }
 
+/* 运行素材 (ui/assetUpdate.js): the thin Android client's explicit asset download. The dialog lists the
+   packages of the prepared plan before anything is transferred, then reports bytes per package. */
+.asset-update { text-align: left; }
+.asset-update p { margin: .12rem 0; line-height: 1.6; }
+.asset-update__plan ul { max-height: 2.4rem; overflow: auto; margin: .08rem 0; padding-left: .24rem; color: var(--text-lo); }
+.asset-update__plan code,
+.asset-update__bytes code { overflow-wrap: anywhere; font-size: calc(.13 * var(--t)); }
+.asset-update__bytes { color: var(--text-lo); font-size: calc(.13 * var(--t)); }
+.asset-update__error { color: var(--amber); }
+
 /* Optional resume/install controls and translated XL titles must share actual space instead of overlapping the
    centered 1fr/auto/1fr title. On narrow displays the title has its own row; the controls stay in their two groups. */
 .lobby-screen .topbar { grid-template-columns: auto minmax(0, 1fr) auto; height: auto; min-height: 1.1rem; padding-block: .12rem; }

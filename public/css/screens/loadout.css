@@ -635,6 +635,18 @@
 .lo-io__text::placeholder { color: var(--text-lo); }
 .lo-io__file { display: none; }
 
+/* 本地配队 (ui/profileModel.js): the named device-local presets — the label field, its 保存 button and the list. */
+.lo-lineup__save { display: flex; flex-wrap: wrap; align-items: flex-end; gap: max(.12rem, 10px); margin: 0 0 max(.14rem, 12px); }
+.lo-lineup__save > :first-child { flex: 1 1 max(8rem, 240px); }
+.lo-lineup__list { list-style: none; margin: 0; padding: 0; max-height: max(3rem, 240px); overflow-y: auto; }
+.lo-lineup__row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: max(.08rem, 6px);
+  padding: max(.08rem, 6px) 0; border-bottom: 1px solid var(--line-2);
+}
+.lo-lineup__row:last-child { border-bottom: 0; }
+.lo-lineup__name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--text-hi); font-size: max(calc(.2 * var(--t)), 13px); }
+.lo-lineup__meta { flex: 0 0 auto; font-size: max(calc(.16 * var(--t)), 11px); }
+
 /* Per-operator voice, a browser-local preference in roster and DIY details. */
 .lo-voice { display: flex; flex-wrap: wrap; align-items: center; gap: .12rem; padding: .14rem 0; font-size: calc(.18 * var(--t)); }
 .lo-voice > small { flex-basis: 100%; color: var(--text-dim); font-size: calc(.15 * var(--t)); }

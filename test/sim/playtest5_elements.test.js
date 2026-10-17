@@ -258,7 +258,7 @@ test('a 无来源 burst still passes on through content that shares damage: 圣�
   approx(o0 - o.hp, Math.min(o0, burst * (1 - share)), 1e-9);
   approx(w.stats.dmg, (c0 - c.hp) + (o0 - o.hp), 1e-9, 'both parts credited to the filler');
   // 盲信之誓: a spring passes PART_TRANSFER of what it takes to 假想敌：铳 — a burst too
-  const hb = arena({ kind: 'boss', sharedBoss: { hp: 1e6, maxHp: 1e6, damage(pid, a) { this.hp = Math.max(0, this.hp - a); } }, units: [{ chessId: 't_wall', row: 12, col: 3 }] });
+  const hb = arena({ kind: 'boss', modeId: 'mode_multi_funny', sharedBoss: { hp: 1e6, maxHp: 1e6, damage(pid, a) { this.hp = Math.max(0, this.hp - a); } }, units: [{ chessId: 't_wall', row: 12, col: 3 }] });
   hb.step();
   const g = hb.spawn('enemy_9017_achunt_2', { pos: [3, 18], routeIndex: 0, mods: { speedMul: 0 }, tag: 'boss' });
   g.profile.noAttack = true;

@@ -1,0 +1,145 @@
+plugins {
+    id 'com.android.application'
+}
+
+def externalBuildDirectory = System.getenv('SP_ANDROID_BUILD_DIR')
+if (externalBuildDirectory) {
+    layout.buildDirectory.set(file(externalBuildDirectory))
+}
+
+// `scripts/build-android-client.ps1` stages the client program here. Without it Gradle has no assets
+// source set at all — `android/app/src/main/assets` is not in the repository — which is what
+// `verifyPackagedClient` below refuses to turn into an APK.
+def externalAssetsDirectory = System.getenv('SP_ANDROID_ASSETS_DIR')
+// Keep the normal debug identity, but let device verification install an isolated debug package
+// alongside a differently signed developer build. Release builds never read this property.
+def debugApplicationIdSuffix = (findProperty('spDebugApplicationIdSuffix') ?: '.debug').toString()
+if (!(debugApplicationIdSuffix ==~ /\.[A-Za-z][A-Za-z0-9_]*/)) {
+    throw new GradleException("spDebugApplicationIdSuffix must be one dot-prefixed package segment")
+}
+
+// Release automation supplies this only through process environment variables. The keystore
+// itself and its passwords are deliberately never copied into the repository or package tree.
+def controlledSigningStore = System.getenv('SP_ANDROID_SIGNING_STORE_FILE') ?: ''
+def controlledSigningStorePassword = System.getenv('SP_ANDROID_SIGNING_STORE_PASSWORD') ?: ''
+def controlledSigningKeyAlias = System.getenv('SP_ANDROID_SIGNING_KEY_ALIAS') ?: ''
+def controlledSigningKeyPassword = System.getenv('SP_ANDROID_SIGNING_KEY_PASSWORD') ?: ''
+def controlledSigningFields = [controlledSigningStore, controlledSigningStorePassword, controlledSigningKeyAlias, controlledSigningKeyPassword]
+def controlledSigning = controlledSigningFields.every { !it.isEmpty() }
+if (!controlledSigning && controlledSigningFields.any { !it.isEmpty() }) {
+    throw new GradleException('Android signing configuration must provide store file, store password, key alias and key password together')
+}
+android {
+    namespace 'com.strongholdprotocol.covenant'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.strongholdprotocol.covenant'
+        minSdk 26
+        targetSdk 35
+        versionCode 29
+        versionName '2.6.5'
+
+        // Public runtime configuration for the runtime asset updater. The index URL and the limits are
+        // not secrets — the URL is baked into the APK — so they may come from a Gradle property or an
+        // environment variable. Provide nothing and the updater stays off, which is the safe default.
+        // Build with -PspAssetIndexUrl=https://… or SP_ASSET_INDEX_URL=https://… .
+        def assetIndexUrl = (findProperty('spAssetIndexUrl') ?: System.getenv('SP_ASSET_INDEX_URL') ?: '').toString()
+        def assetTokenUrl = (findProperty('spAssetTokenUrl') ?: System.getenv('SP_ASSET_TOKEN_URL') ?: '').toString()
+        def assetMaxChain = (findProperty('spAssetMaxChain') ?: System.getenv('SP_ASSET_MAX_CHAIN') ?: '3').toString()
+        def assetMaxDownload = (findProperty('spAssetMaxDownloadBytes') ?: System.getenv('SP_ASSET_MAX_DOWNLOAD_BYTES') ?: '1610612736').toString()
+        def assetMaxExtract = (findProperty('spAssetMaxExtractBytes') ?: System.getenv('SP_ASSET_MAX_EXTRACT_BYTES') ?: '4294967296').toString()
+        def assetAllowHttp = (findProperty('spAssetAllowHttp') ?: System.getenv('SP_ASSET_ALLOW_HTTP') ?: 'false').toString()
+        buildConfigField 'String', 'ASSET_TOKEN_URL', '"' + assetTokenUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        buildConfigField 'String', 'ASSET_INDEX_URL', '"' + assetIndexUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        buildConfigField 'int', 'ASSET_MAX_CHAIN', assetMaxChain
+        buildConfigField 'long', 'ASSET_MAX_DOWNLOAD_BYTES', assetMaxDownload + 'L'
+        buildConfigField 'long', 'ASSET_MAX_EXTRACT_BYTES', assetMaxExtract + 'L'
+        buildConfigField 'boolean', 'ASSET_ALLOW_HTTP', assetAllowHttp
+    }
+
+    if (controlledSigning) {
+        signingConfigs {
+            controlled {
+                storeFile file(controlledSigningStore)
+                storePassword controlledSigningStorePassword
+                keyAlias controlledSigningKeyAlias
+                keyPassword controlledSigningKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix debugApplicationIdSuffix
+            if (controlledSigning) {
+                signingConfig signingConfigs.controlled
+            }
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    androidResources {
+        noCompress += ['skel', 'atlas', 'mp3', 'ogg', 'oga', 'opus', 'wav', 'm4a', 'aac', 'webm', 'mp4']
+    }
+
+    packaging {
+        resources.excludes += ['/META-INF/{AL2.0,LGPL2.1}']
+    }
+
+    if (externalAssetsDirectory) {
+        sourceSets.main.assets.srcDirs = [file(externalAssetsDirectory)]
+    }
+}
+
+// The client program lives only inside the APK: START_URL loads
+// https://appassets.androidplatform.net/index.html and RuntimeAssetHandler answers every other request
+// from the APK whenever the layered asset store cannot. An APK built without a staged client therefore
+// has exactly one possible answer — a 404 whose body reads "not found" — so refuse to package it.
+//
+// The list is the bootable subset of REQUIRED_CLIENT_RUNTIME_FILES (tools/validate-client-runtime.mjs),
+// which the build script runs over the whole staged graph; test/android-package.test.js keeps the two
+// from drifting apart. Both Android profiles keep these files: a thin R2 APK drops the runtime art,
+// never the program.
+def requiredPackagedClientFiles = ['index.html', 'js/main.js', 'data.js']
+def packagedClientAssets = externalAssetsDirectory ? file(externalAssetsDirectory) : file("${projectDir}/src/main/assets")
+
+tasks.register('verifyPackagedClient') {
+    description = 'Refuses to package an APK that would carry no client runtime.'
+    doLast {
+        def missing = requiredPackagedClientFiles.findAll { relative ->
+            def target = new File(packagedClientAssets, relative)
+            !target.isFile() || target.length() == 0
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                    "No client runtime in ${packagedClientAssets}: missing ${missing.join(', ')}.\n" +
+                    "That APK would answer every WebView request with 404 \"not found\".\n" +
+                    "Build it with scripts/build-android-client.ps1, or set SP_ANDROID_ASSETS_DIR to a staged client.")
+        }
+    }
+}
+
+// Guard every path that leads to an APK, so neither a bare `assembleDebug` nor a packaging task a script
+// calls directly can produce the client-less APK.
+def packagedClientGuard = tasks.named('verifyPackagedClient')
+['preBuild', 'mergeDebugAssets', 'mergeReleaseAssets', 'packageDebug', 'packageRelease'].each { guarded ->
+    tasks.matching { it.name == guarded }.configureEach {
+        dependsOn packagedClientGuard
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.14.0'
+}

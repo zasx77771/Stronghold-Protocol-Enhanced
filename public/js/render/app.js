@@ -208,7 +208,17 @@ export async function createFieldView(host, options = {}) {
   try { if (document.fonts?.load) await withTimeout(Promise.all([document.fonts.load('700 40px Bender'), document.fonts.load('700 40px Oxanium')]), 1500, signal); } catch { /* optional fonts */ }
   signal?.throwIfAborted();
 
-  const size = () => ({ width: Math.max(1, host.clientWidth || 1), height: Math.max(1, host.clientHeight || 1) });
+  // Android density conversion often gives the WebView a fractional CSS width (for example 1067.333 px at DPR
+  // 1.5). clientWidth truncates that to 1067, making Pixi allocate a 1600 px buffer while the 3D layer allocates
+  // 1601 px; CSS then stretches one layer and both the art and hit projection drift. Keep the exact layout size.
+  const size = () => {
+    let r = null;
+    try { r = host.getBoundingClientRect?.(); } catch { r = null; }
+    return {
+      width: Math.max(1, Number(r?.width) || host.clientWidth || 1),
+      height: Math.max(1, Number(r?.height) || host.clientHeight || 1),
+    };
+  };
   const dpr = () => Math.min(globalThis.devicePixelRatio || 1, QUALITY_RES[settings.quality] || 2);
   const boardDpr = () => Math.min(globalThis.devicePixelRatio || 1, BOARD_RES[settings.quality] || 2);
   const s0 = size();
@@ -423,10 +433,17 @@ export async function createFieldView(host, options = {}) {
   tiles.setView(bandFor('prep'), camRect(), fieldRows('prep'));
   // the real board art of the local client (optional): wait briefly so the first frame already uses it; a late
   // arrival swaps the atlas in place
-  const artPromise = loadBoardArt(assets).then((art) => {
-    if (art && !destroyed) { tiles.setArt(art); tiles.project(cam, true); }
-    return art;
-  }, () => null);
+  let artRetry = null;
+  function retryArt() {
+    if (destroyed || artRetry) return artRetry || Promise.resolve(null);
+    const pending = loadBoardArt(assets).then((art) => {
+      if (art && !destroyed) { tiles.setArt(art); tiles.project(cam, true); }
+      return art;
+    }, () => null).finally(() => { if (artRetry === pending) artRetry = null; });
+    artRetry = pending;
+    return pending;
+  }
+  const artPromise = retryArt();
 
   // ---- 3D board layer (render/board3d, DESIGN §15) -----------------------------------------------------------
   let board3d = null;          // BoardScene while the 3D board is on
@@ -1994,6 +2011,7 @@ export async function createFieldView(host, options = {}) {
   // views without a model load it again at once (their bounded retries never run while hidden: no frames).
   function onAssets() {
     if (destroyed) return;
+    retryArt();
     retryBoard();
     loadShadow();
     loadMountains();
@@ -2006,6 +2024,7 @@ export async function createFieldView(host, options = {}) {
   setupCleanup.push(() => offAssets?.());
   const onVisible = () => {
     if (destroyed || globalThis.document?.visibilityState !== 'visible') return;
+    retryArt();
     retryBoard();
     if (assets.loaded === false && typeof assets.ready === 'function') assets.ready();
     for (const v of views.values()) v.retryAssets?.();

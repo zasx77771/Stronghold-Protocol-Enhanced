@@ -25,6 +25,22 @@ them (with `node_modules/`, which keeps each package's own licence file).
 | [puppeteer-core](https://github.com/puppeteer/puppeteer) | 25.12.0 | Apache-2.0 | optional browser tests (dev dependency) | no (npm) | no |
 | [Ark-Unpacker](https://github.com/isHarryh/Ark-Unpacker) LZ4AK decoder | — | BSD-3-Clause | `tools/local-extract/aklz4.py` (optional local extraction) | **yes** — keeps its notice; full text also in `tools/local-extract/LICENSE-Ark-Unpacker.txt` | yes |
 | [UnityPy](https://github.com/K0lb3/UnityPy) (via MooncellWiki/UnityPy), [lz4](https://github.com/python-lz4/python-lz4), [Pillow](https://github.com/python-pillow/Pillow) | see `tools/local-extract/requirements.txt` | MIT / BSD-3-Clause / MIT-CMU | optional local extraction; installed by pip into `.venv-extract` only when the host opts in | no | no |
+| [Tauri](https://github.com/tauri-apps/tauri) | 2.x (pinned by `src-tauri/Cargo.toml`) | MIT or Apache-2.0 | Windows desktop client shell (enhanced 2.6.4+): window, IPC, the private `sp://` asset protocol, single instance, clipboard — `src-tauri/` | **yes** (`src-tauri/`, built by `cargo tauri build`) | yes (statically linked into `Stronghold Protocol Client.exe`) |
+| [tauri-build](https://github.com/tauri-apps/tauri) | 2.x | MIT or Apache-2.0 | `src-tauri/build.rs` code generation at compile time | yes (Cargo build dependency) | no (build-time only) |
+| [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/single-instance) | 2.x | MIT or Apache-2.0 | focuses the running window instead of starting a second client | yes (Cargo dependency) | yes |
+| [tauri-plugin-clipboard-manager](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/clipboard-manager) | 2.x | MIT or Apache-2.0 | `readClipboardText()` for the server-address field | yes (Cargo dependency) | yes |
+| [serde](https://github.com/serde-rs/serde), [serde_json](https://github.com/serde-rs/json) | 1.x | MIT or Apache-2.0 | TCP control frames, `asset-config.json`, the R2 index and the local asset store | yes | yes |
+| [reqwest](https://github.com/seanmonstar/reqwest) | 0.12.x | MIT or Apache-2.0 | HTTPS to the private asset gateway (the JWT never leaves Rust) | yes | yes |
+| [tokio](https://github.com/tokio-rs/tokio) | 1.x | MIT | async runtime behind the TCP bridge and the asset downloader | yes | yes |
+| [futures-util](https://github.com/rust-lang/futures-rs) | 0.3.x | MIT or Apache-2.0 | streams the runtime asset package to disk under a byte limit | yes | yes |
+| [zip](https://github.com/zip-rs/zip2) | 2.x | MIT | reads the runtime asset package (stored and deflate entries) | yes | yes |
+| [sha2](https://github.com/RustCrypto/hashes), [hex](https://github.com/KokaKiwi/rust-hex) | 0.10.x / 0.4.x | MIT or Apache-2.0 | sha256 of the index, the package inventory and every downloaded package | yes | yes |
+| [url](https://github.com/servo/rust-url) | 2.x | MIT or Apache-2.0 | asset URL validation (`https`, no credentials, no query, no fragment) | yes | yes |
+
+On Windows the client renders through the platform WebView: Tauri links [wry](https://github.com/tauri-apps/wry) and
+[tao](https://github.com/tauri-apps/tao) (MIT or Apache-2.0), and the **Microsoft Edge WebView2** runtime is an
+Evergreen Windows component — the NSIS installer uses Tauri's default `downloadBootstrapper` mode, so WebView2 is
+neither redistributed in this repository nor shipped inside the client ZIP.
 
 The Spine Runtimes License requires, among other things, that redistributions include its licence and copyright notice
 (reproduced below) and that "each user of the Products must obtain their own Spine Editor license" unless the
@@ -70,6 +86,14 @@ terms and names in those files remain © Hypergryph / Yostar.
 ---
 
 ## Licence texts
+
+### Tauri and the Rust client dependencies — MIT / Apache-2.0
+
+The crates listed above are distributed as "MIT OR Apache-2.0" (`tokio` and `zip` as MIT alone). None of them ships a
+`NOTICE` file, so no additional attribution text is required beyond this table; the `MIT` text under **Preact — MIT**
+and the `Apache License 2.0` text under **htm (and puppeteer-core)** below are the exact texts they refer to, and each
+crate's own `LICENSE`/`COPYING` file inside the Cargo registry is the authoritative copy. `Stronghold Protocol Client.exe`
+links them statically; the `src-tauri/` sources are part of this GPL-3.0-or-later repository.
 
 ### PixiJS — MIT
 

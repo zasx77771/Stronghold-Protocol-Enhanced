@@ -57,10 +57,6 @@
 // reward card armed for a purchase that completes a merge lights, in gold, the board tile its elite will take (the
 // deployed copy that deploys first, gameLogic.mergeTarget — none when no copy is deployed: the elite goes to the hand);
 // the elite then appears there with the promotion cue (render/app.js setPrep → fx.promote).
-// Round start (PR #416 by @Cromemadnd; the maintainer's confirmation from official play, 2026-10-13): in 回合开始 the own
-// board's pieces replay their Start clip and landing sound one after another in deployment order, once per round and on
-// the own board only (gameLogic roundStartReplay → render/app.js replayDeploys); a purchase and a move onto or across the
-// board play it too ([ASSUMED], the PR author's account: render/app.js setPrep).
 // The bond strip, its popup and a unit card's bond chips follow the player on screen (DESIGN §20.15, ui/watchBonds.js):
 // a scouted / watched / auto-observed teammate's field → that teammate's bonds (m.public players[].bonds, tagged
 // "👁 name"); 联防 / 最终攻势 → the player on the ‹ › half (全景: yours when you fight there, else the teammate picked
@@ -76,8 +72,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
-import { useGameData, GIcon } from '../ui/gameComponents.js';
-import { useFieldView } from '../ui/fieldHost.js';
+import { useGameData, GIcon, isPackagedAndroid } from '../ui/gameComponents.js';
+import { prepCameraShopOptions, useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
 import { TeamPanel } from '../ui/teamPanel.js';
@@ -110,7 +106,7 @@ import {
   terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits, deviceUnitsForEntry,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFoldsShop, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
-  mergeTarget, modeOffBonds, readyFundsPrompt, readyShopFold, ownerBandId, ownDiyRecord, ownStandIn, roundStartReplay,
+  mergeTarget, modeOffBonds, readyFundsPrompt, readyShopFold, ownerBandId, ownDiyRecord, ownStandIn, detailPressIsInternal, roundStartReplay,
 } from '../ui/gameLogic.js';
 import { toast } from '../ui/toasts.js';
 import { BriefingScreen } from './briefing.js';
@@ -124,7 +120,7 @@ import { isClientCombat, observeTarget, teammateProgress, cameraLayers, layerCam
 import { screenStrip, playerBonds, playerLayer, detailBondOwner, toggleBond, popupView } from '../ui/watchBonds.js';
 import { data, getMode } from '../data.js';
 import { audio, resultSpeaker, resultVoiceSlot } from '../audio.js';
-import { useDocClass, FullscreenButton } from '../ui/device.js';
+import { useDocClass, fullscreen, FullscreenButton } from '../ui/device.js';
 // MatchEnded, PausedOverlay, the highlight styles and keepEarly live in ./game/*.js.
 import { HUD_HZ_MS, MERGE_HL, SEL_RANGE, cx } from './game/marks.js';
 import { keepEarly, audioEarly } from './game/early.js';
@@ -240,6 +236,7 @@ function MatchScreen() {
   const [pauseBusy, setPauseBusy] = useState(false);
   const [armedCard, setArmedCard] = useState(null);     // the shop bar's armed card { kind, id } (merge tile cue)
   const cc = isClientCombat(pub);
+  const androidClient = useMemo(() => isPackagedAndroid(), []);
   const battleState = useStore((s) => s.match.battle, shallowEqual); // local battle runner (client-side combat)
 
   const phase = pub?.phase;
@@ -330,11 +327,8 @@ function MatchScreen() {
   // own board's layout there (every coordinate the UI handles is a board coordinate either way) and draws the tiles of
   // that half (ui/fallbackField.js: the legal fence tiles are floor, not the normal field's walls; user playtest #5 item 7).
   const prepCam = prepCamera(pub, myId);
-  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}`;
-  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
   const camRef = useRef({ kind: 'prep', opts: { rect: { ...GEO.NORMAL_RECT }, side: 'L' } });
   const penRef = useRef({ on: false, collapsed: false });
-  // shopFolded (the own prep board's folded-shop camera state) is derived with the prep-view flags below (showPrep).
   // 准备就绪 folds the shop bar, cancelling it unfolds the bar again (GitHub #138; gameLogic readyShopFold): the board is set,
   // the fight is what to look at — the board camera follows the fold like a hand-made one (the effect below). Inside the pen
   // the bar is folded for itself: the state it returns to is the one that changes.
@@ -430,6 +424,9 @@ function MatchScreen() {
   const shopFolded = showShop && (pen ? penRef.current.collapsed : (collapsed || deployFold));
   // the shop bar / board layout's displayed fold: the player's 收起 state, temporarily folded while deploying.
   const barCollapsed = collapsed || deployFold;
+  const cameraFolded = prepCameraShopOptions(prepCam.opts, { collapsed: shopFolded, shopVisible: showShop }).shop === false;
+  const prepCamKey = `${prepCam.kind}:${prepCam.opts.side}:${cameraFolded ? 'folded' : 'fixed'}`;
+  const prepCamSeen = useRef(prepCamKey);                // the prep camera last requested
 
   // own board (prep, or a battle field the player fights on) → the stage with the player's overrides; a teammate's
   // board → the plain stage (their overrides are not known here)
@@ -565,11 +562,6 @@ function MatchScreen() {
     }
   }, [view, showPrep, priv, editable, field, combat, mode, watchingOther, watching, holdSeq]);
 
-  // the round start (PR #416 by @Cromemadnd; the maintainer's confirmation from official play, 2026-10-13): the own board's
-  // pieces replay their Start clip and landing sound one after another in deployment order — once per round, in 回合开始, on
-  // the own board only (gameLogic roundStartReplay). After the wiring effect above, so the view already holds this state's
-  // pieces; the round counts as replayed only once the view took the sequence (a view still loading or a board not built
-  // yet is asked again on the next render of the phase), and a reconnect or a re-render of the round plays nothing more.
   const replayedRef = useRef(null);
   useEffect(() => {
     const plan = roundStartReplay({ phase, round: pub?.round, replayed: replayedRef.current, ownBoard: showPrep && alive && !spectator, board: priv?.board });
@@ -1275,6 +1267,27 @@ function MatchScreen() {
   }, [detail, field]);
   const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces, { priv, backups: gd.backups }), [detailTarget, placeCtx, gd.ready, data.locale()]);
   useEffect(() => { if (detail && !resolved && detail.kind === 'piece') setDetail(null); }, [resolved]);
+  // Attach only after a panel exists so the pointer event that opened it cannot immediately close it.
+  // The selected piece's underframe remains part of the active interaction.
+  useEffect(() => {
+    if (!resolved) return undefined;
+    const onOutside = (e) => {
+      if (detailPressIsInternal(e.target)) return;
+      setDetail(null);
+      setSel(null);
+    };
+    document.addEventListener('pointerdown', onOutside, true);
+    return () => document.removeEventListener('pointerdown', onOutside, true);
+  }, [!!resolved]);
+  useEffect(() => {
+    if (!bondOpen) return undefined;
+    const onBondOutside = (e) => {
+      if (e.target?.closest?.('.bpop')) return;
+      setBondOpen(null);
+    };
+    document.addEventListener('pointerdown', onBondOutside, true);
+    return () => document.removeEventListener('pointerdown', onBondOutside, true);
+  }, [!!bondOpen]);
   const snapHp = (() => {
     const id = resolved?.unitId;
     const t = id != null ? snapUnitsRef.current.get(id) : null;
@@ -1329,6 +1342,7 @@ function MatchScreen() {
 
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
+    if (androidClient) return undefined;
     // Remember only pointer coordinates. Hit-test again on keydown so moved/removed pieces, overlays,
     // camera changes and an old click selection cannot redirect a destructive action.
     let pointer = null;
@@ -1341,6 +1355,16 @@ function MatchScreen() {
       const act = shortcutFor(e, settingsStore.get().keys); // the player's key map (Settings > Shortcuts)
       const L = live.current;
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat
+        && (e.code === 'Enter' || e.key === 'Enter')) {
+        const target = e.target;
+        const tag = target && typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !target?.isContentEditable) {
+          e.preventDefault();
+          await fullscreen.toggle();
+        }
+        return;
+      }
       if (shortcutBlocked(act, { modal: !!document.querySelector('.modal, .guide'), drawer: !!L.drawer })) return;
       // Spectating, eliminated, watching another board, or AI 托管: prep shortcuts do nothing. Esc still closes,
       // except a pending 教鞭 choice, whose overlay keeps Escape. Solo pause is below and does not run for these seats.
@@ -1431,7 +1455,7 @@ function MatchScreen() {
       window.removeEventListener('blur', clearPointer);
       window.removeEventListener('keydown', onKey);
     };
-  }, []);
+  }, [androidClient]);
 
   // ---- render ---------------------------------------------------------------------------------------------------
   const readyCount = players.filter((p) => p.ready || p.status === 'ready').length;
@@ -1639,7 +1663,7 @@ function MatchScreen() {
           }}><${Icon} name="signal" /></button>` : null}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
-        <${FullscreenButton} class="gm__gear gm__fs" />
+        ${!androidClient ? html`<${FullscreenButton} class="gm__gear gm__fs" />` : null}
       </div>
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}

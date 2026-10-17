@@ -156,4 +156,3 @@ test('a hashed prep spec that skipped the builder fails host boot', { timeout: 3
     child.kill('SIGKILL');
   }
 });
-

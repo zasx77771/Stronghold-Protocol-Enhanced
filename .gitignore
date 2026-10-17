@@ -27,6 +27,20 @@ data/local-fx.json
 /public/fonts
 /.cache
 
+# --- packaged-client build products ---------------------------------------------------------------
+# Current build scripts put these outside BaseCode under ../enhanced-client-servers, but keep the source tree clean
+# if a custom output/cache path points back into the project.
+.android-toolchain/
+dist/
+desktop/cache/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/
+# Tauri 2 (the packaged Windows client, 2.6.4): Rust build products and any generated schema, never committed
+src-tauri/target/
+src-tauri/gen/
+
 # --- Python (optional local-client extraction) ----------------------------------------------------
 .venv*/
 venv/
@@ -49,6 +63,7 @@ plugins/*
 test/e2e/out/
 logs/
 *.log
+var/
 
 # --- per-machine config (scripts/install-service-windows.ps1) ------------------------------------
 scripts/service.env.cmd

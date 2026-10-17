@@ -52,7 +52,7 @@
 // PLUGIN_LIMITS: 8 MB per JSON file, nesting ≤ 64, numbers finite within ±1e9, 200 MB and 5000 files per plugin
 // [ASSUMED — every limit].
 
-import { APP_VERSION, PLUGIN_API } from '../constants.js';
+import { APP_VERSION, PLUGIN_API, UPSTREAM_PLUGIN_APP_VERSION } from '../constants.js';
 import { SOURCE_LANG, canonicalLang, isLangCode, languageName, langFields } from '../i18nPacks.js';
 import { issueList } from './errors.js';
 
@@ -257,9 +257,10 @@ export function isVersionRange(range) {
  * "||"; a pre-release such as 0.2.0-dev counts as its release). An empty range, an unreadable range or version counts as
  * a match: the range is advice, the loader decides what an incompatible pack or plugin means.
  * @param {unknown} range
- * @param {unknown} [version] default: this build's APP_VERSION
+ * @param {unknown | unknown[]} [version] default: this build's APP_VERSION
  */
 export function appVersionMatches(range, version = APP_VERSION) {
+  if (Array.isArray(version)) return version.some((one) => appVersionMatches(range, one));
   const v = versionCore(version);
   const r = String(range ?? '').trim();
   if (!v || !r || !isVersionRange(r)) return true;
@@ -267,6 +268,16 @@ export function appVersionMatches(range, version = APP_VERSION) {
     const d = cmp(v, b);
     return op === '>=' ? d >= 0 : op === '>' ? d > 0 : op === '<=' ? d <= 0 : op === '<' ? d < 0 : d === 0;
   })));
+}
+
+/**
+ * Enhanced builds accept their own release version and the synchronized upstream plugin
+ * baseline. An explicitly supplied app version remains an exact compatibility check for tools.
+ * @param {unknown} range
+ * @param {unknown} [app]
+ */
+export function pluginAppVersionMatches(range, app = APP_VERSION) {
+  return appVersionMatches(range, app === APP_VERSION ? [app, UPSTREAM_PLUGIN_APP_VERSION] : app);
 }
 
 // ---- the normalised manifest ------------------------------------------------------------------------------------------
@@ -377,7 +388,7 @@ export function readPackManifest(raw, ctx) {
   const range = str(m.app, 60);
   const app = ctx.app ?? APP_VERSION;
   if (range && !isVersionRange(range)) list.warning('PLUGIN_APP', `"app": "${range}" is not a version range (">=0.2.0", "0.2.x" …)`, { at: ['app'], app });
-  const compatible = appVersionMatches(range, app);
+  const compatible = pluginAppVersionMatches(range, app);
   if (!compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const cls = kind ? kind.class : 'lang';
   /** @type {PluginManifest} */
@@ -612,7 +623,7 @@ export function readPluginManifest(raw, ctx) {
   const app = ctx.app ?? APP_VERSION;
   if (m.app !== undefined && (typeof m.app !== 'string' || range.length > 60 || !isVersionRange(range))) list.problem('PLUGIN_APP', `"app": ${short(m.app)} is not a version range (">=0.3.0 <0.4.0", "0.3.x" …)`, { at: ['app'], app });
   else if (!range && !isLang) list.problem('PLUGIN_APP', 'no "app" (the game versions it is made for, e.g. ">=0.3.0 <0.4.0")', { at: ['app'], app });
-  const compatible = appVersionMatches(range, app);
+  const compatible = pluginAppVersionMatches(range, app);
   if (range && !compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const supported = ctx.api ?? PLUGIN_API;
   const apiAt = { at: ['api'], min: supported.min, current: supported.current };

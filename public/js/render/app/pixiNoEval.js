@@ -80,7 +80,7 @@ export function syncUniforms(group, uniformData, ud, uv, renderer) {
                 gl.uniform1i(udi.location, Number(uvi));
             }
         }
-        else if ((data.type === 'sampler2D' || data.type === 'samplerCube' || data.type === 'sampler2DArray') && data.size === 1 && !data.isArray) 
+        else if ((data.type === 'sampler2D' || data.type === 'samplerCube' || data.type === 'sampler2DArray') && data.size === 1 && !data.isArray)
         {
             renderer.texture.bind(uvi, textureCount);
             if (udi.value !== textureCount) {
