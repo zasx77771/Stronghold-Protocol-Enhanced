@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Stronghold Protocol",
+  "version": "0.3.0",
+  "identifier": "org.strongholdprotocol.native",
+  "build": {
+    "frontendDist": "../public"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Stronghold Protocol",
+        "url": "sp://localhost/",
+        "width": 1440,
+        "height": 810,
+        "minWidth": 960,
+        "minHeight": 540
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' sp: ipc: http://ipc.localhost; script-src 'self' sp: 'unsafe-inline'; style-src 'self' sp: 'unsafe-inline'; img-src 'self' sp: data: blob:; media-src 'self' sp: data: blob:; font-src 'self' sp: data:; connect-src *"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "../public": "client",
+      "../data": "client/data",
+      "../shared": "client/shared",
+      "../server/sim": "client/sim",
+      "../native/web/data.js": "client/data.js"
+    }
+  }
+}

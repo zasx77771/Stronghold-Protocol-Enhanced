@@ -50,6 +50,14 @@ test/e2e/out/
 logs/
 *.log
 
+# --- native asset packages (tools/assetPackages.mjs): generated locally, never committed -----------
+.native-assets/
+
+# --- native build outputs (Android Gradle / Tauri Cargo): generated locally, never committed -------
+android/.gradle/
+android/app/build/
+src-tauri/target/
+
 # --- per-machine config (scripts/install-service-windows.ps1) ------------------------------------
 scripts/service.env.cmd
 .env

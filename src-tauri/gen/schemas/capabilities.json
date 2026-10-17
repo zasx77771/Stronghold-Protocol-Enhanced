@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Base permissions for the Stronghold Protocol native shell.","local":true,"windows":["main"],"permissions":["core:default","clipboard-manager:allow-read-text","dialog:allow-open"]}}

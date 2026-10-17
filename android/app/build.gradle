@@ -1,0 +1,57 @@
+plugins { id 'com.android.application' }
+
+dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+
+android {
+    namespace 'org.strongholdprotocol.nativeclient'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'org.strongholdprotocol.nativeclient'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.3.0'
+    }
+
+    sourceSets { main.assets.srcDir(layout.buildDirectory.dir('generated/nativeWeb')) }
+
+    def generatedWeb = layout.buildDirectory.dir('generated/nativeWeb')
+    tasks.register('syncNativeWeb', Copy) {
+        from('../../public')
+        into(generatedWeb)
+        from('../../data') { into('data') }
+        from('../../shared') { into('shared') }
+        from('../../server/sim') { into('sim'); exclude('nodeData.js') }
+        from('../../native/web/data.js') { rename { 'data.js' } }
+        from('../../native/bridge/stronghold-native-bridge.js') { into('native'); rename { 'bridge.js' } }
+    }
+
+    // The R2 endpoint never ships in the page source: the build writes the runtime asset
+    // configuration next to the packaged web root, exactly like the Windows client does.
+    tasks.register('writeAssetConfig') {
+        mustRunAfter(tasks.named('syncNativeWeb'))
+        def indexUrl = project.findProperty('SP_ASSET_INDEX_URL')
+        def tokenUrl = project.findProperty('SP_ASSET_TOKEN_URL')
+        inputs.property('indexUrl', indexUrl ?: '')
+        inputs.property('tokenUrl', tokenUrl ?: '')
+        outputs.file(layout.buildDirectory.file('generated/nativeWeb/asset-config.json'))
+        doLast {
+            def target = new File(generatedWeb.get().asFile, 'asset-config.json')
+            if (!indexUrl) {
+                target.delete()
+                return
+            }
+            def config = [
+                format  : 'sp-assets-config-v1',
+                enabled : true,
+                indexUrl: indexUrl,
+                tokenUrl: tokenUrl ?: '',
+                maxChain: 3,
+                allowHttp: false,
+            ]
+            target.text = groovy.json.JsonOutput.toJson(config)
+        }
+    }
+    preBuild.dependsOn(tasks.named('syncNativeWeb'), tasks.named('writeAssetConfig'))
+}
