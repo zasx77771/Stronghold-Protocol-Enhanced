@@ -8,6 +8,10 @@ param(
   [string]$AssetIndexBaseUrl = '',
   [int]$AssetMaxChain = 3,
   [switch]$AssetAllowHttp,
+  [string]$SigningKeystore = '',
+  [string]$SigningStorePassword = '',
+  [string]$SigningKeyAlias = '',
+  [string]$SigningKeyPassword = '',
   [switch]$Clean
 )
 
@@ -43,6 +47,15 @@ $SdkRoot = Join-Path $ToolchainDir 'android-sdk'
 $Gradle = Join-Path $ToolchainDir 'gradle-8.10.2\bin\gradle.bat'
 if (-not $ResourceSourceDir) { $ResourceSourceDir = Join-Path $ProjectRoot 'public' }
 $ResourceSourceDir = [IO.Path]::GetFullPath($ResourceSourceDir)
+$SigningInputs = @($SigningKeystore, $SigningStorePassword, $SigningKeyAlias, $SigningKeyPassword)
+$MissingSigningInputCount = $SigningInputs.Where({ [string]::IsNullOrWhiteSpace([string]$_) }).Count
+if ($MissingSigningInputCount -ne $SigningInputs.Count) {
+  if ($MissingSigningInputCount -ne 0) {
+    throw 'Android signing requires SigningKeystore, SigningStorePassword, SigningKeyAlias and SigningKeyPassword together.'
+  }
+  $SigningKeystore = [IO.Path]::GetFullPath($SigningKeystore)
+  if (-not (Test-Path -LiteralPath $SigningKeystore -PathType Leaf)) { throw "Android signing keystore was not found: $SigningKeystore" }
+}
 
 foreach ($Required in @((Join-Path $JdkRoot 'bin\java.exe'), $Gradle, (Join-Path $SdkRoot 'platforms\android-35\android.jar'))) {
   if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
@@ -142,6 +155,14 @@ $env:GRADLE_USER_HOME = $GradleUserHome
 $env:ANDROID_USER_HOME = $AndroidUserHome
 $env:SP_ANDROID_ASSETS_DIR = $AssetsDir
 $env:SP_ANDROID_BUILD_DIR = $BuildOutputDir
+if ($SigningKeystore) {
+  $env:SP_ANDROID_SIGNING_STORE_FILE = $SigningKeystore
+  $env:SP_ANDROID_SIGNING_STORE_PASSWORD = $SigningStorePassword
+  $env:SP_ANDROID_SIGNING_KEY_ALIAS = $SigningKeyAlias
+  $env:SP_ANDROID_SIGNING_KEY_PASSWORD = $SigningKeyPassword
+} else {
+  Remove-Item Env:SP_ANDROID_SIGNING_STORE_FILE, Env:SP_ANDROID_SIGNING_STORE_PASSWORD, Env:SP_ANDROID_SIGNING_KEY_ALIAS, Env:SP_ANDROID_SIGNING_KEY_PASSWORD -ErrorAction SilentlyContinue
+}
 $env:Path = (Join-Path $JdkRoot 'bin') + [IO.Path]::PathSeparator + $env:Path
 
 Push-Location $AndroidRoot

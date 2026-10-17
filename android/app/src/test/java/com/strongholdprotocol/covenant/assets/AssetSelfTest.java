@@ -550,7 +550,15 @@ public final class AssetSelfTest {
         AssetIndex.Plan unknown = index.plan("9.9.9", "f".repeat(64), 3);
         check("an unpublished local version is treated as unknown", unknown.status, "update");
         check("an unknown version falls back to a base", String.valueOf(unknown.routeKind), "base");
-
+        String reusedIndexJson = "{\"format\":\"sp-assets-index-v1\",\"latest\":\"2.0.2\",\"maxChain\":3,"
+            + "\"versions\":{\"2.0.1\":{\"inventory\":\"" + "e".repeat(64) + "\"},"
+            + "\"2.0.2\":{\"inventory\":\"" + "e".repeat(64) + "\",\"reused\":\"2.0.1\"}},"
+            + "\"bases\":[{\"version\":\"2.0.1\",\"name\":\"assets-base-2.0.1.zip\",\"size\":100,\"sha256\":\"" + "1".repeat(64) + "\"}],\"deltas\":[]}";
+        AssetIndex reused = AssetIndex.parse(reusedIndexJson);
+        check("a reused latest pointer is parsed", reused.versions.get("2.0.2").reused, "2.0.1");
+        AssetIndex.Plan reusedPlan = reused.plan("2.0.1", "e".repeat(64), 3);
+        check("a reused latest payload is already current", reusedPlan.status, "current");
+        check("a reused latest payload needs no package", String.valueOf(reusedPlan.steps.size()), "0");
         // ---- configuration: public data only, safe degradation
         AssetConfig disabled = AssetConfig.fromBuild("", 3, 1, 1, false);
         check("no index URL disables the updater", disabled.enabled, false);

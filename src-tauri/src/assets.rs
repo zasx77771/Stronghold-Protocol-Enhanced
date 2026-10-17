@@ -263,12 +263,20 @@ pub struct PackageStep {
     pub sha256: String,
 }
 
+/// Published metadata for a version's runtime asset set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionInfo {
+    pub inventory: String,
+    /// A metadata-only release may delegate to the version whose packages carry identical bytes.
+    pub reused: Option<String>,
+}
+
 /// The published index (`assets-index.json`).
 #[derive(Debug, Clone, Default)]
 pub struct AssetIndex {
     pub latest: String,
-    /// version -> inventory digest
-    pub versions: BTreeMap<String, String>,
+    /// version -> published inventory and optional payload provider
+    pub versions: BTreeMap<String, VersionInfo>,
     /// base packages by version
     pub bases: BTreeMap<String, PackageStep>,
     /// `(from, to)` -> delta package
@@ -293,7 +301,10 @@ pub fn check_index(value: &serde_json::Value) -> Result<AssetIndex, Vec<String>>
         for (version, entry) in map {
             match string_field(entry, "inventory") {
                 Some(inventory) => {
-                    versions.insert(version.clone(), inventory.to_ascii_lowercase());
+                    versions.insert(version.clone(), VersionInfo {
+                        inventory: inventory.to_ascii_lowercase(),
+                        reused: string_field(entry, "reused"),
+                    });
                 }
                 None => problems.push(format!("index: version {version} is missing an inventory digest")),
             }
@@ -383,103 +394,98 @@ pub struct Route {
     pub verification: String,
 }
 
+/// True when an index still publishes a payload under this version (directly or as a delta target).
+fn version_provides(index: &AssetIndex, version: &str) -> bool {
+    index.bases.contains_key(version) || index.deltas.keys().any(|(_, to)| to == version)
+}
+
+/// Resolve a metadata-only release to the version that actually publishes its identical bytes.
+/// Cycles and missing providers deliberately resolve to the original version, matching the Node planner.
+fn resolve_provider_version(index: &AssetIndex, version: &str) -> String {
+    let original = version.to_string();
+    let mut current = original.clone();
+    let mut seen = vec![current.clone()];
+    for _ in 0..8 {
+        let Some(next) = index.versions.get(&current).and_then(|info| info.reused.clone()) else { break; };
+        if seen.contains(&next) || !version_provides(index, &next) { return original; }
+        seen.push(next.clone());
+        current = next;
+    }
+    current
+}
+
 /// `planRoute()`: decide between "nothing to do", a delta chain and a fresh base.
 pub fn plan_route(index: &AssetIndex, local: &LocalInventory, max_chain: usize) -> Route {
     let latest = index.latest.clone();
-    let verification = match (&local.version, &local.inventory) {
+    let mut verification = match (&local.version, &local.inventory) {
         (Some(version), Some(inventory)) => match index.versions.get(version) {
-            Some(published) if published == inventory => "ok",
+            Some(published) if published.inventory == *inventory => "ok",
             Some(_) => "mismatch",
             None => "unpublished",
         },
-        (Some(version), None) => {
-            if index.versions.contains_key(version) {
-                "mismatch"
-            } else {
-                "unpublished"
-            }
-        }
+        (Some(version), None) => if index.versions.contains_key(version) { "mismatch" } else { "unpublished" },
         _ => "unknown",
     };
-
-    if let Some(version) = &local.version {
-        if compare_versions(version, &latest) == std::cmp::Ordering::Equal && verification != "mismatch" {
-            return Route {
-                status: "current".to_string(),
-                reason: format!("already on {latest}"),
-                steps: Vec::new(),
-                bytes: 0,
-                verification: verification.to_string(),
-            };
+    let provider = local.version.as_deref().map(|version| resolve_provider_version(index, version));
+    if provider.as_ref() != local.version.as_ref() {
+        if let (Some(_provider), Some(inventory), Some(published)) = (&provider, &local.inventory, provider.as_ref().and_then(|version| index.versions.get(version))) {
+            verification = if published.inventory == *inventory { "ok" } else { "mismatch" };
         }
     }
+    let target = resolve_provider_version(index, &latest);
 
-    if let Some(version) = &local.version {
+    if provider.as_deref() == Some(target.as_str()) && verification != "mismatch" {
+        let reason = if provider == local.version {
+            if target == latest { format!("already on {latest}") } else { format!("already on the asset set published for {latest}") }
+        } else {
+            format!("{} reuses the payload published for {}", local.version.as_deref().unwrap_or_default(), provider.as_deref().unwrap_or_default())
+        };
+        return Route { status: "current".to_string(), reason, steps: Vec::new(), bytes: 0, verification: verification.to_string() };
+    }
+
+    if let Some(provider) = &provider {
         if verification == "ok" {
-            if let Some(chain) = shortest_delta_chain(index, version, &latest, max_chain) {
-                let bytes = chain.iter().map(|step| step.size).sum();
-                return Route {
-                    status: "update".to_string(),
-                    reason: format!("{} delta package(s) from {version}", chain.len()),
-                    steps: chain,
-                    bytes,
-                    verification: verification.to_string(),
-                };
+            if let Some(chain) = shortest_delta_chain(index, provider, &target, max_chain) {
+                if !chain.is_empty() {
+                    let bytes = chain.iter().map(|step| step.size).sum();
+                    return Route { status: "update".to_string(), reason: format!("{} delta package(s) from {provider}", chain.len()), steps: chain, bytes, verification: verification.to_string() };
+                }
             }
         }
     }
 
-    if let Some(base) = best_base_route(index, &latest) {
+    if let Some(base) = best_base_route(index, &target, max_chain) {
         let bytes = base.iter().map(|step| step.size).sum();
         let base_version = base[0].to.clone();
         let (status, reason) = match (&local.version, verification) {
-            (Some(version), "mismatch") => (
-                "repair",
-                format!("local state does not match published {version}; using a fresh base"),
-            ),
+            (Some(version), "mismatch") => ("repair", format!("local state does not match published {version}; using a fresh base")),
             (None, _) => ("update", "no local state; using a base package".to_string()),
             _ => ("update", format!("no usable delta chain; base {base_version}")),
         };
-        return Route {
-            status: status.to_string(),
-            reason,
-            steps: base,
-            bytes,
-            verification: verification.to_string(),
-        };
+        return Route { status: status.to_string(), reason, steps: base, bytes, verification: verification.to_string() };
     }
 
-    Route {
-        status: "blocked".to_string(),
-        reason: "the index has no route to the latest version".to_string(),
-        steps: Vec::new(),
-        bytes: 0,
-        verification: verification.to_string(),
+    if provider.as_deref() == Some(target.as_str()) {
+        return Route { status: "current".to_string(), reason: format!("already on {latest}"), steps: Vec::new(), bytes: 0, verification: verification.to_string() };
     }
+    Route { status: "blocked".to_string(), reason: "the index has no route to the latest version".to_string(), steps: Vec::new(), bytes: 0, verification: verification.to_string() }
 }
 
 /// Breadth-first search over delta packages, at most `max_chain` steps.
 fn shortest_delta_chain(index: &AssetIndex, from: &str, to: &str, max_chain: usize) -> Option<Vec<PackageStep>> {
-    if max_chain == 0 {
-        return None;
-    }
+    if from == to { return Some(Vec::new()); }
+    if max_chain == 0 { return None; }
     let mut frontier: Vec<(String, Vec<PackageStep>)> = vec![(from.to_string(), Vec::new())];
     let mut visited: Vec<String> = vec![from.to_string()];
     while !frontier.is_empty() {
         let mut next = Vec::new();
         for (version, path) in frontier {
-            if path.len() >= max_chain {
-                continue;
-            }
+            if path.len() >= max_chain { continue; }
             for ((delta_from, delta_to), step) in &index.deltas {
-                if delta_from != &version || visited.contains(delta_to) {
-                    continue;
-                }
+                if delta_from != &version || visited.contains(delta_to) { continue; }
                 let mut extended = path.clone();
                 extended.push(step.clone());
-                if delta_to == to {
-                    return Some(extended);
-                }
+                if delta_to == to { return Some(extended); }
                 visited.push(delta_to.clone());
                 next.push((delta_to.clone(), extended));
             }
@@ -490,27 +496,20 @@ fn shortest_delta_chain(index: &AssetIndex, from: &str, to: &str, max_chain: usi
 }
 
 /// A base package plus the shortest delta chain from it to `to`.
-fn best_base_route(index: &AssetIndex, to: &str) -> Option<Vec<PackageStep>> {
+fn best_base_route(index: &AssetIndex, to: &str, max_chain: usize) -> Option<Vec<PackageStep>> {
     let mut best: Option<Vec<PackageStep>> = None;
     for (version, base) in &index.bases {
         let mut route = vec![base.clone()];
         if version != to {
-            match shortest_delta_chain(index, version, to, DEFAULT_MAX_CHAIN) {
+            match shortest_delta_chain(index, version, to, max_chain) {
                 Some(chain) => route.extend(chain),
                 None => continue,
             }
         }
-        let better = match &best {
-            None => true,
-            Some(current) => route.len() < current.len(),
-        };
-        if better {
-            best = Some(route);
-        }
+        if best.as_ref().map(|current| route.len() < current.len()).unwrap_or(true) { best = Some(route); }
     }
     best
 }
-
 // ---------------------------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------------------------
@@ -1574,7 +1573,7 @@ mod tests {
 
         // With a published inventory the chain 2.6.0 -> 2.6.2 -> 2.6.3 becomes usable.
         let mut index = index_fixture();
-        index.versions.insert("2.6.0".to_string(), "c".repeat(64));
+        index.versions.insert("2.6.0".to_string(), VersionInfo { inventory: "c".repeat(64), reused: None });
         let route = plan_route(
             &index,
             &LocalInventory { version: Some("2.6.0".to_string()), inventory: Some("c".repeat(64)) },
@@ -1590,7 +1589,7 @@ mod tests {
     #[test]
     fn plan_route_respects_max_chain() {
         let mut index = index_fixture();
-        index.versions.insert("2.6.0".to_string(), "c".repeat(64));
+        index.versions.insert("2.6.0".to_string(), VersionInfo { inventory: "c".repeat(64), reused: None });
         let route = plan_route(
             &index,
             &LocalInventory { version: Some("2.6.0".to_string()), inventory: Some("c".repeat(64)) },
@@ -1600,6 +1599,23 @@ mod tests {
         assert_eq!(route.steps[0].kind, KIND_BASE);
     }
 
+    #[test]
+    fn plan_route_resolves_a_reused_latest_payload() {
+        let value = serde_json::json!({
+            "format": INDEX_FORMAT,
+            "latest": "2.6.4",
+            "versions": {
+                "2.6.3": { "inventory": "b".repeat(64) },
+                "2.6.4": { "inventory": "b".repeat(64), "reused": "2.6.3" },
+            },
+            "bases": [{ "name": "assets-base-2.6.3.zip", "to": "2.6.3", "size": 120, "sha256": "2".repeat(64) }],
+            "deltas": [],
+        });
+        let index = check_index(&value).expect("reused fixture index is valid");
+        let route = plan_route(&index, &LocalInventory { version: Some("2.6.3".to_string()), inventory: Some("b".repeat(64)) }, DEFAULT_MAX_CHAIN);
+        assert_eq!(route.status, "current");
+        assert_eq!(route.reason, "already on the asset set published for 2.6.4");
+    }
     #[test]
     fn plan_route_blocks_when_the_index_has_no_route() {
         let empty = AssetIndex { latest: "9.9.9".to_string(), ..AssetIndex::default() };

@@ -37,6 +37,7 @@ through `legacyVersionLine`; later upstream baselines continue to follow the nor
 - `shared/constants.js`
 - `desktop/runtime/package.json`（停用占位，仅保留版本号）
 - `src-tauri/tauri.conf.json`（Windows 桌面客户端的产品版本号）
+- `src-tauri/Cargo.toml` is the Windows Tauri binary crate metadata version and must match the public release version.
 - Android `versionName` 使用相同的 `M.N.R`；内部 `versionCode` 保持严格递增（当前正式版本对应 `28`，前一版本为 `27`）
 - `release-policy.json`
 - `CHANGELOG.md` 和显示版本号的说明文件

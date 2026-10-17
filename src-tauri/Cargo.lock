@@ -3647,7 +3647,7 @@ dependencies = [
 
 [[package]]
 name = "stronghold-protocol-client"
-version = "2.6.4"
+version = "2.6.5"
 dependencies = [
  "futures-util",
  "hex",
