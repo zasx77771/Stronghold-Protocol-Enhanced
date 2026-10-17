@@ -8,7 +8,8 @@ import {
   KIND_BASE, KIND_DELTA, PACKAGE_MANIFEST, PACKAGE_STATE, STATE_FILE, INDEX_FILE,
   applyPackage, assetPathProblem, assertAssetPath, buildIndex, checkConfig, checkIndex, checkManifest,
   extractPackage, inventoryDigest, inventoryLines, inventoryStats, isAssetPath, loadInventory, loadRootState,
-  lookupAsset, makeConfig, planPackage, planRelease, planRoute, readIndex, readStore, safeJoin, scanAssetFiles,
+  lookupAsset, makeConfig, planPackage, planRelease, planRoute, readIndex, readStore, safeJoin,
+  scanAssetFiles,
   sha256File, stampRoot, stateFromInventory, strandedVersions, verifyPackage, withZip, writeIndex, writePackage,
   writeZipArchive
 } from '../tools/assetPackages.mjs';
@@ -497,10 +498,40 @@ test('a release publishes a delta when it can and a baseline when it must', () =
     const mainline = planRelease({ index, afterDigest: digests['2.6.3'], beforeDigest: digests['2.6.2'], from: '2.6.2', to: '2.6.3', mainline: true });
     assert.deepEqual([mainline.base, mainline.delta], [true, false]);
 
-    // An unchanged asset set still gets a delta so the index can register the new version.
+    // An unchanged asset set publishes no package at all: the index points the new version at the
+    // already published payload, so the same bytes are never uploaded twice under a new version name.
     const unchanged = planRelease({ index, afterDigest: digests['2.6.3'], beforeDigest: digests['2.6.3'], from: '2.6.3', to: '2.6.4' });
-    assert.deepEqual([unchanged.base, unchanged.delta], [false, true]);
-    assert.ok(unchanged.notes.some((note) => /did not change between 2\.6\.3 and 2\.6\.4/.test(note)));
+    assert.deepEqual([unchanged.base, unchanged.delta], [false, false]);
+    assert.equal(unchanged.reuse.version, '2.6.3');
+    assert.equal(unchanged.reuse.via, KIND_DELTA);
+    assert.ok(unchanged.notes.some((note) => /identical to published 2\.6\.3/.test(note)));
+    assert.ok(unchanged.notes.some((note) => /needs no delta from 2\.6\.3/.test(note)));
+
+    // Publishing that metadata-only release records the pointer in the index. No package is added, and a
+    // client that already holds the reused payload is up to date instead of being reported as stranded.
+    const reuseIndex = {
+      ...index,
+      latest: '2.6.4',
+      versions: {
+        ...index.versions,
+        '2.6.4': { inventory: digests['2.6.3'], count: 0, bytes: 0, reused: '2.6.3', reusedVia: KIND_DELTA }
+      }
+    };
+    assert.deepEqual(checkIndex(reuseIndex), []);
+    assert.equal(reuseIndex.bases.length, index.bases.length, 'a metadata-only release publishes no base');
+    assert.equal(reuseIndex.deltas.length, index.deltas.length, 'a metadata-only release publishes no delta');
+    const onPayload = planRoute(reuseIndex, { version: '2.6.3', inventory: digests['2.6.3'] });
+    assert.equal(onPayload.status, 'current', onPayload.reason);
+    assert.equal(onPayload.providerVersion, '2.6.3');
+    assert.equal(onPayload.verification, 'ok');
+    const onAlias = planRoute(reuseIndex, { version: '2.6.4', inventory: digests['2.6.3'] });
+    assert.equal(onAlias.status, 'current', onAlias.reason);
+    assert.equal(onAlias.providerVersion, '2.6.3');
+    assert.deepEqual(strandedVersions(reuseIndex), []);
+
+    // A pointer at a version the index does not publish is rejected instead of routing nowhere.
+    const brokenPointer = { ...reuseIndex, versions: { ...reuseIndex.versions, '2.6.4': { inventory: digests['2.6.3'], count: 0, bytes: 0, reused: '9.9.9' } } };
+    assert.ok(checkIndex(brokenPointer).some((line) => /reuses 9\.9\.9, which the index does not publish/.test(line)));
 
     // Without a previous tree only a baseline can be published, and a version without any route is stranded.
     const noPrevious = planRelease({ index, afterDigest: digests['2.6.3'] });

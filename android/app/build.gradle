@@ -7,6 +7,17 @@ if (externalBuildDirectory) {
     layout.buildDirectory.set(file(externalBuildDirectory))
 }
 
+// `scripts/build-android-client.ps1` stages the client program here. Without it Gradle has no assets
+// source set at all — `android/app/src/main/assets` is not in the repository — which is what
+// `verifyPackagedClient` below refuses to turn into an APK.
+def externalAssetsDirectory = System.getenv('SP_ANDROID_ASSETS_DIR')
+// Keep the normal debug identity, but let device verification install an isolated debug package
+// alongside a differently signed developer build. Release builds never read this property.
+def debugApplicationIdSuffix = (findProperty('spDebugApplicationIdSuffix') ?: '.debug').toString()
+if (!(debugApplicationIdSuffix ==~ /\.[A-Za-z][A-Za-z0-9_]*/)) {
+    throw new GradleException("spDebugApplicationIdSuffix must be one dot-prefixed package segment")
+}
+
 android {
     namespace 'com.strongholdprotocol.covenant'
     compileSdk 35
@@ -15,8 +26,8 @@ android {
         applicationId 'com.strongholdprotocol.covenant'
         minSdk 26
         targetSdk 35
-        versionCode 27
-        versionName '2.6.3'
+        versionCode 28
+        versionName '2.6.4'
 
         // Public runtime configuration for the runtime asset updater. The index URL and the limits are
         // not secrets — the URL is baked into the APK — so they may come from a Gradle property or an
@@ -38,7 +49,7 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix '.debug'
+            applicationIdSuffix debugApplicationIdSuffix
         }
         release {
             minifyEnabled false
@@ -63,9 +74,45 @@ android {
         resources.excludes += ['/META-INF/{AL2.0,LGPL2.1}']
     }
 
-    def externalAssetsDirectory = System.getenv('SP_ANDROID_ASSETS_DIR')
     if (externalAssetsDirectory) {
         sourceSets.main.assets.srcDirs = [file(externalAssetsDirectory)]
+    }
+}
+
+// The client program lives only inside the APK: START_URL loads
+// https://appassets.androidplatform.net/index.html and RuntimeAssetHandler answers every other request
+// from the APK whenever the layered asset store cannot. An APK built without a staged client therefore
+// has exactly one possible answer — a 404 whose body reads "not found" — so refuse to package it.
+//
+// The list is the bootable subset of REQUIRED_CLIENT_RUNTIME_FILES (tools/validate-client-runtime.mjs),
+// which the build script runs over the whole staged graph; test/android-package.test.js keeps the two
+// from drifting apart. Both Android profiles keep these files: a thin R2 APK drops the runtime art,
+// never the program.
+def requiredPackagedClientFiles = ['index.html', 'js/main.js', 'data.js']
+def packagedClientAssets = externalAssetsDirectory ? file(externalAssetsDirectory) : file("${projectDir}/src/main/assets")
+
+tasks.register('verifyPackagedClient') {
+    description = 'Refuses to package an APK that would carry no client runtime.'
+    doLast {
+        def missing = requiredPackagedClientFiles.findAll { relative ->
+            def target = new File(packagedClientAssets, relative)
+            !target.isFile() || target.length() == 0
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                    "No client runtime in ${packagedClientAssets}: missing ${missing.join(', ')}.\n" +
+                    "That APK would answer every WebView request with 404 \"not found\".\n" +
+                    "Build it with scripts/build-android-client.ps1, or set SP_ANDROID_ASSETS_DIR to a staged client.")
+        }
+    }
+}
+
+// Guard every path that leads to an APK, so neither a bare `assembleDebug` nor a packaging task a script
+// calls directly can produce the client-less APK.
+def packagedClientGuard = tasks.named('verifyPackagedClient')
+['preBuild', 'mergeDebugAssets', 'mergeReleaseAssets', 'packageDebug', 'packageRelease'].each { guarded ->
+    tasks.matching { it.name == guarded }.configureEach {
+        dependsOn packagedClientGuard
     }
 }
 

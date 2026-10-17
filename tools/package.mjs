@@ -90,6 +90,7 @@ import { rewriteManifest } from '../server/http/assetViews.js';
 import { mergeLocalManifests, planFromManifests } from '../public/js/assetPack.js';
 import { writePackIndex } from './packs.mjs';
 import { compareVersions, diffBases, manifestText, readBase, updateText } from './package-update.mjs';
+import { electronRuntimeProblems } from './validate-client-runtime.mjs';
 import {
   APPLIED_FILE, MANIFEST_FILE, UPDATE_FILE, affectsRuntime, digestFile, inManifest, isSetupArt, listedArtFiles,
   parseManifest, parseUpdate, pathProblem, removalProblem,
@@ -568,6 +569,9 @@ export function plan(root, opts = {}) {
   for (const p of importProblems(root, keep)) problems.push(p);
   for (const p of entryProblems(pkg, keep)) problems.push(p);
   for (const p of playerPackageProblems(pkg, keep)) problems.push(p);
+  // v2.6.4: the packaged Windows client is the Tauri binary built from src-tauri/; a tree that still
+  // expects an Electron runtime is not packageable (tools/validate-client-runtime.mjs owns the rule).
+  for (const p of electronRuntimeProblems(root)) problems.push(p);
   if (!opts.allowDirty) for (const f of dirtyFiles(root, keep)) problems.push(`uncommitted change: ${f} (commit it, or --allow-dirty)`);
   const names = scanNames(opts.env || process.env);
   const modules = opts.measure !== false || (opts.scan !== false && names.length) ? prodModuleFiles(root, lock) : [];

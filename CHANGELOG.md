@@ -3,6 +3,15 @@
 - 移除增强版账户与回放功能：服务端不再创建或读取身份/记录数据库（`SP_REPLAY_DB` / `var/replays.sqlite`），不再提供 `/api/profiles` 身份查询接口和独立回放 TCP 端口（`SPECTATOR_PORT` / `SPECTATOR_HOST` / `SP_REPLAYS` 一并失效），`hello` 协议不再有 `profileTag` 字段，客户端移除 `#tag` 输入、同名档案选择、「对局记录」界面和回放 TCP 客户端。已有数据库和录像文件不会被删除，也不再被读取或写入。
 - 新增本机资料复用：玩家代号、上次与自命名的配队、干员调配（技能、精锐模组、潜能与练度）保存到本机 `localStorage` 的 `sp.pref.profile`（带 `schemaVersion`），下次启动客户端自动恢复上一次的有效配置，并可在「干员调配」中保存/读取/删除本机配队。资料不含账号、四位 tag、凭据、对局结果或回放数据；数据损坏、版本不符、字段非法、干员不存在或超出当前模式容量时按默认值或过滤后的合法子集降级，服务端仍是配队规则的最终校验方。
 
+## 2.6.4 — 2026-10-17
+
+- 增强版版本更新为 2.6.4，Android `versionCode` 更新为 28（严格递增，只用于系统内部升级顺序）。
+- 2.6.4 不携带新的游戏素材：R2 素材索引沿用 2.6.3 已发布并已验证的基线与增量链，`versions["2.6.4"]` 记录 `reused: "2.6.3"`，不写入、不占据也不重复上传任何素材 ZIP；`node tools/assets-r2.mjs release` 与 `node tools/assets-r2.mjs publish-version --dir <渠道目录> --version 2.6.4 --write` 都只重写 `assets-index.json`，路由会把 2.6.4 解析到承载该素材集的 2.6.3 包，因此玩家仍判定素材为最新。
+- 新增确定性 R2 核对与同步计划：`npm run assets:r2:sync-plan -- --dir <渠道目录> --snapshot <桶快照>`（`tools/r2-sync-plan.mjs`）完全离线比较本地索引与桶快照，逐对象列出缺失、SHA-256 不符和大小不符，并给出唯一正确顺序——先上传缺失/不符的内容寻址 ZIP，再对每个上传对象做 `head-object` 校验哈希与元数据，最后才发布索引元数据。相同输入输出逐字节相同；快照无法证明计划完整时退出码非零，且不打印可被误读为「已完成」的内容。工具不联网、不列桶、不上传、不删除、不接触凭据。操作手册见 `docs/ASSETS-R2-SYNC.md`。
+- 修复登录页布局回归：`.title-main` 恢复为「左侧标题与徽记 + 右侧登录面板」的两列网格，完整素材按钮移入登录面板下方的 `.title-side`，不再是意外的第三个网格子项；同时恢复上游 0.3.0 同步时丢失的登录控件样式（传输方式切换、记住代号、粘贴邀请、底部工具行），并保留窄屏与 Android 横屏的两列/单列回退。新增 `test/client-login-layout.test.js` 与 `test/ui/login-layout.browser.test.js` 断言两列契约与窄屏回退。
+- Windows 打包客户端由 Electron 迁移到 Tauri 2（`src-tauri/`）：构建路径不再下载或打包 Electron，静态内容改由私有 `sp:` 协议提供（不监听本地 TCP 端口，保留路径校验、MIME/缓存头与 Range 206/416 语义），原生为本地 TCP 桥、剪贴板读取、单实例行为、窗口设置与受会话保护的 R2 运行素材路径，页面不持有会话令牌与素材 JWT，并去除 Node 集成；`scripts/build-windows-client.ps1` 改为 `cargo tauri build`，旧 `desktop/runtime/*.cjs` 已删除。
+- Android 薄客户端不再在启动或收到会话令牌时静默下载运行素材：登录后在「玩法说明」旁新增下载入口，先展示将要下载的素材包并要求确认，再逐步报告清单准备、逐包字节进度、校验安装、完成或可重试的失败，失败与取消时保留已安装素材；会话令牌仍只在原生代码中交换，JavaScript 仅通过 `StrongholdAndroidAssets` 的 start/status/cancel/retry 接口交互。
+
 
 ## 2.6.3 — 2026-10-16
 

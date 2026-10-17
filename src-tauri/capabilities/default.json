@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The minimum the packaged client window needs: Tauri core events for the TCP bridge, the clipboard read the login screen uses, and window focus for single-instance behaviour. No file-system, shell, HTTP or process permission is granted to the page.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "core:webview:allow-internal-toggle-devtools",
+    "clipboard-manager:allow-read-text"
+  ]
+}

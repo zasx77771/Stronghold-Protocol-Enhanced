@@ -13,9 +13,11 @@ A release now produces three kinds of artifact, and they serve different halves 
 The Windows updater must never update the art: `server/update.js` treats `public/assets/`, `public/fonts/` and the two art manifests as setup art, so a Windows update package leaves them alone and the players re-run `npm run assets` instead. From enhanced `2.6.2`, the game service signs a short-lived JWT and the existing Cloudflare Worker reads runtime art from R2; clients receive only authorized package responses and never receive R2 API credentials. Art changes reach configured clients in the background without a new APK. Details of the package format, the index, the client's store and the safety rules are in [docs/ASSETS.md](../docs/ASSETS.md) ("Runtime asset packages").
 
 When `publish-client-release.ps1` is passed both `-AssetIndexUrl` and `-AssetTokenUrl`, its Windows ZIP is a thin
-client as well as the Android APK: the ZIP carries only program files, Electron runtime support and public
+client as well as the Android APK: the ZIP carries only the Tauri 2 executable, its static client tree and the public
 `asset-config.json`; `assets/`, `fonts/` and the two art manifests are deliberately absent. The first successful
-game session authorizes a verified gateway-mediated R2 download into Electron user data. Without those options, the Windows ZIP is
+game session authorizes a verified gateway-mediated R2 download into the client's private data directory; the token
+exchange happens inside the Rust binary, so the page JavaScript never receives the session token or the short-lived
+JWT. Without those options, the Windows ZIP is
 the complete offline package. The Windows updater is still program-only in both modes; it never overwrites art.
 For an offline legacy/full Windows package, art remains local setup material. For a configured thin package, art
 changes reach Windows and Android in the background through the asset gateway without a program update.
@@ -91,8 +93,10 @@ Rules that are easy to get wrong:
 - The index is uploaded **last**. Clients always read it first, so it must never point at a package that is not there yet.
 - Windows thin builds follow the same rule as Android: `scripts/build-windows-client.ps1` requires both
   `-AssetIndexUrl` and `-AssetTokenUrl`, removes `assets/`, `fonts/`, `data/assets.json` and
-  `data/local-assets.json`, and writes `asset-config.json`. Runtime art is stored under Electron user data rather
-  than the install directory, so a Windows program update cannot replace it.
+  `data/local-assets.json`, and writes `asset-config.json`. Runtime art is stored under the Tauri app data directory
+  (`%APPDATA%\com.zasx77771.stronghold-protocol-enhanced.client\asset-runtime`) rather than the install directory, so a
+  Windows program update cannot replace it. The Windows payload is the Rust binary built from `src-tauri/` by
+  `cargo tauri build`; no Node process and no browser-engine runtime is downloaded or packaged any more.
 
 - The Android APK's asset updater is only enabled when the build was given an index URL (`-AssetIndexUrl`, `-AssetIndexBaseUrl`, or `SP_ASSET_INDEX_URL` / `SP_ASSET_BASE_URL`). A configured release is thin: it removes `assets/`, `fonts/`, both runtime manifests and `asset-state.json` from the APK, downloads a base on first launch, then reloads the WebView after verified art lands. Without an index URL the APK retains its offline art floor and never contacts the network. See `scripts/build-android-client.ps1`.
 - The URL is public configuration. No key, token, signed URL or account id may appear in it, in the APK, in the index, or in any file of this repository; the upload is done by the maintainer with their own credentials.

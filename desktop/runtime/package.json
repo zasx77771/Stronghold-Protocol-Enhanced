@@ -1,7 +1,7 @@
 {
   "name": "stronghold-protocol-portable-client",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "private": true,
   "productName": "Stronghold Protocol Client",
-  "main": "main.cjs"
+  "note": "已停用（retired）：打包客户端现在是 src-tauri/ 下的 Tauri 2 应用，main.cjs/preload.cjs/assets.cjs 已删除，仅 desktop/runtime/data.js 仍作为打包资源被 src-tauri/tauri.conf.json 引用。本文件只保留版本号，供 tools/release-policy.mjs 校验版本一致。"
 }

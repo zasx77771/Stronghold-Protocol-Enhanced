@@ -6,6 +6,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -64,9 +65,11 @@ public final class AssetSelfTest {
             } else {
                 System.out.println("[interop] no fixture directory given, skipped");
             }
+            explicitUpdate(fixture == null || fixture.isEmpty() ? null : new File(fixture), new File(work, "session"));
             selfContained(new File(work, "self"));
             concurrency(new File(work, "concurrency"));
             pointerFailures(new File(work, "pointer"));
+            redirects();
         } finally {
             deleteTree(work);
         }
@@ -130,6 +133,219 @@ public final class AssetSelfTest {
             for (AssetIndex.Step step : plan.steps) actual.add(step.name);
             check(label + " packages", actual.toString(), expected.toString());
         }
+    }
+
+    // ---------------------------------------------------------------- explicit session (enhanced 2.6.4)
+
+    /**
+     * Serves the fixture's index and packages from memory. The explicit session tests must prove what a
+     * transfer does, so nothing here touches a socket and every call is counted.
+     */
+    private static final class FixtureFetcher implements AssetUpdateSession.Fetcher {
+        private final byte[] index;
+        private final Map<String, byte[]> packages;
+        private final String token;
+        private final List<String> transfers = new ArrayList<>();
+        private final List<String> authentications = new ArrayList<>();
+        private int exchanges;
+        private int indexReads;
+        private int attempts;
+        private boolean failNext;
+
+        FixtureFetcher(byte[] index, Map<String, byte[]> packages, String token) {
+            this.index = index;
+            this.packages = packages;
+            this.token = token;
+        }
+
+        @Override
+        public String exchangeToken(AssetConfig config, String sessionToken) throws IOException {
+            exchanges += 1;
+            if (token == null) throw new IOException("the fixture has no asset token");
+            return token;
+        }
+
+        @Override
+        public byte[] bytes(String url, long limit, AssetConfig config, String authorization) throws IOException {
+            indexReads += 1;
+            authentications.add(authorization == null ? "" : authorization);
+            if (index == null) throw new IOException("the fixture has no index");
+            return index;
+        }
+
+        @Override
+        public void file(String url, File target, long limit, AssetConfig config, String authorization,
+                AssetUpdater.Progress progress) throws IOException {
+            attempts += 1;
+            String name = url.substring(url.lastIndexOf('/') + 1);
+            if (failNext) {
+                failNext = false;
+                throw new IOException("simulated network loss");
+            }
+            byte[] payload = packages.get(name);
+            if (payload == null) throw new IOException("unexpected package " + name);
+            transfers.add(name);
+            authentications.add(authorization == null ? "" : authorization);
+            int chunk = Math.max(1, payload.length / 3);
+            try (FileOutputStream out = new FileOutputStream(target)) {
+                for (int at = 0; at < payload.length; at += chunk) {
+                    int end = Math.min(payload.length, at + chunk);
+                    out.write(payload, at, end - at);
+                    if (progress != null) progress.onBytes(end, payload.length);
+                }
+                out.flush();
+            }
+        }
+    }
+
+    /**
+     * The 2.6.4 contract: the runtime asset session does nothing at all until the player taps the entry
+     * and confirms the plan, reports progress while it runs, and never leaks a token to the WebView.
+     */
+    private static void explicitUpdate(File fixture, File work) throws Exception {
+        AssetUpdateSession unavailable = new AssetUpdateSession(null, AssetConfig.disabled("no store"), new File(work, "cache-none"), null);
+        check("session: without a store the session is unavailable",
+                String.valueOf(unavailable.status().get("state")), AssetUpdateSession.UNAVAILABLE);
+        check("session: an unavailable session reports no plan", unavailable.status().get("plan") == null, true);
+        if (fixture == null) return;
+
+        Map<String, Object> manifest = obj(readText(new File(fixture, "manifest.json")));
+        byte[] indexBytes = read(new File(fixture,
+                "index/" + AssetJson.string(AssetJson.get(manifest, "indexName"), "assets-index.json")));
+        Map<String, Object> base = AssetJson.object(AssetJson.get(manifest, "base"));
+        Map<String, Object> delta = AssetJson.object(AssetJson.get(manifest, "delta"));
+        String baseName = AssetJson.string(AssetJson.get(base, "name"), "");
+        String deltaName = AssetJson.string(AssetJson.get(delta, "name"), "");
+        Map<String, byte[]> packages = new LinkedHashMap<>();
+        packages.put(baseName, read(new File(fixture, "packages/" + baseName)));
+        packages.put(deltaName, read(new File(fixture, "packages/" + deltaName)));
+        List<String> floorRoute = new ArrayList<>();
+        for (Object item : AssetJson.arrayOrEmpty(AssetJson.get(manifest, "routes"))) {
+            Map<String, Object> route = AssetJson.object(item);
+            if (!"floor".equals(AssetJson.string(AssetJson.get(route, "label"), ""))) continue;
+            for (Object name : AssetJson.arrayOrEmpty(AssetJson.get(route, "names"))) floorRoute.add(String.valueOf(name));
+        }
+        check("session: the fixture publishes the floor route to exercise", floorRoute.size() > 0);
+
+        File floor = new File(fixture, "floor");
+        AssetConfig protectedConfig = AssetConfig.from(obj("{\"format\":\"sp-assets-config-v1\","
+                + "\"indexUrl\":\"https://assets.example.invalid/index/assets-index.json\","
+                + "\"tokenUrl\":\"https://assets.example.invalid/token\",\"maxChain\":3}"));
+        check("session: the protected fixture configuration is valid", protectedConfig.enabled);
+
+        // ---- a protected deployment: nothing happens until the player asks for it
+        File cache = new File(work, "cache");
+        AssetStore store = AssetStore.openDir(new File(work, "store"), floor);
+        String installed = store.version();
+        FixtureFetcher fetch = new FixtureFetcher(indexBytes, packages, "fixture.asset.token");
+        List<Map<String, Object>> snapshots = new ArrayList<>();
+        AssetUpdateSession session = new AssetUpdateSession(store, protectedConfig, cache, fetch);
+        session.setListener(snapshots::add);
+        check("session: a protected deployment waits for the game session",
+                String.valueOf(session.status().get("state")), AssetUpdateSession.WAITING);
+        check("session: creating the session transfers nothing", fetch.attempts == 0 && fetch.indexReads == 0);
+        session.setSessionToken("not-a-session-token");
+        check("session: a malformed session token is refused", session.hasSession() == false);
+        check("session: the state stays waiting after a bad token",
+                String.valueOf(session.status().get("state")), AssetUpdateSession.WAITING);
+        session.setSessionToken("0123456789abcdef0123456789abcdef");
+        check("session: a valid session token is accepted", session.hasSession());
+        check("session: the state is idle once the token arrives",
+                String.valueOf(session.status().get("state")), AssetUpdateSession.IDLE);
+        check("session: the arrival of the session token starts no background work",
+                fetch.attempts == 0 && fetch.indexReads == 0);
+        check("session: the status never carries the game-session token",
+                AssetJson.stringify(session.status()).contains("0123456789abcdef0123456789abcdef") == false);
+
+        // ---- the confirmation gate: a plan is described first, and it transfers nothing
+        Map<String, Object> prepared = session.prepare();
+        check("session: prepare reaches the ready state",
+                String.valueOf(prepared.get("state")), AssetUpdateSession.READY);
+        check("session: prepare exchanged the session token exactly once", fetch.exchanges == 1);
+        check("session: prepare read the release index once", fetch.indexReads == 1);
+        check("session: prepare transferred no package", fetch.attempts == 0);
+        Map<String, Object> plan = AssetJson.object(AssetJson.get(prepared, "plan"));
+        List<String> planned = new ArrayList<>();
+        for (Object item : AssetJson.arrayOrEmpty(AssetJson.get(plan, "packages"))) {
+            planned.add(AssetJson.string(AssetJson.get(AssetJson.object(item), "name"), ""));
+        }
+        check("session: the prepared plan is the published floor route", planned.toString(), floorRoute.toString());
+        check("session: the plan announces its size for the confirmation dialog",
+                AssetJson.number(AssetJson.get(plan, "bytes"), 0) > 0);
+        check("session: the status does not carry the asset token either",
+                AssetJson.stringify(prepared).contains("fixture.asset.token") == false);
+        check("session: the index read used the exchanged asset token",
+                fetch.authentications.contains("fixture.asset.token"));
+        check("session: start outside the ready state changes nothing",
+                String.valueOf(new AssetUpdateSession(store, protectedConfig, new File(work, "cache-idle"), fetch).status().get("state")),
+                AssetUpdateSession.WAITING);
+
+        // ---- a failed transfer keeps the installed assets and stays retryable
+        fetch.failNext = true;
+        Map<String, Object> failed = session.start();
+        check("session: a transfer failure is reported as failed",
+                String.valueOf(failed.get("state")), AssetUpdateSession.FAILED);
+        check("session: a failure is retryable", Boolean.TRUE.equals(failed.get("retryable")));
+        check("session: a failure reports its reason", String.valueOf(failed.get("error")).isEmpty() == false);
+        check("session: a failure keeps the installed version", store.version(), installed);
+        check("session: a failure deletes its temporary package",
+                new File(cache, "asset-package.zip").exists() == false);
+
+        Map<String, Object> retried = session.retry();
+        check("session: retry reruns the plan",
+                String.valueOf(retried.get("state")), AssetUpdateSession.COMPLETE);
+        check("session: retry applied every planned package", fetch.transfers.toString(), floorRoute.toString());
+        check("session: the store landed on the published latest version",
+                store.version(), AssetJson.string(AssetJson.get(delta, "to"), ""));
+        check("session: completion reports every planned byte",
+                AssetJson.number(retried.get("done"), -1) == AssetJson.number(retried.get("total"), -1)
+                        && AssetJson.number(retried.get("total"), -1) > 0);
+        check("session: the last package is the one reported as current",
+                AssetJson.string(AssetJson.get(retried, "packageName"), ""),
+                floorRoute.isEmpty() ? "" : floorRoute.get(floorRoute.size() - 1));
+        check("session: the snapshot format is published",
+                AssetJson.string(AssetJson.get(retried, "format"), ""), AssetUpdateSession.STATUS_FORMAT);
+        boolean progressed = false;
+        boolean applying = false;
+        for (Map<String, Object> snapshot : snapshots) {
+            if (AssetUpdateSession.DOWNLOADING.equals(snapshot.get("state"))
+                    && AssetJson.number(snapshot.get("packageDone"), 0) > 0) progressed = true;
+            if (AssetUpdateSession.APPLYING.equals(snapshot.get("state"))) applying = true;
+        }
+        check("session: byte progress reaches the UI while downloading", progressed);
+        check("session: verification and application are reported", applying);
+
+        // ---- cancelling is only ever a user action, and it never transfers anything by itself
+        AssetConfig casualConfig = AssetConfig.from(obj("{\"format\":\"sp-assets-config-v1\","
+                + "\"indexUrl\":\"https://assets.example.invalid/index/assets-index.json\"}"));
+        check("session: an unprotected configuration is valid", casualConfig.enabled);
+        AssetStore casualStore = AssetStore.openDir(new File(work, "store-casual"), floor);
+        FixtureFetcher casualFetch = new FixtureFetcher(indexBytes, packages, null);
+        AssetUpdateSession casual = new AssetUpdateSession(casualStore, casualConfig, new File(work, "cache-casual"), casualFetch);
+        check("session: an unprotected deployment is idle at once",
+                String.valueOf(casual.status().get("state")), AssetUpdateSession.IDLE);
+        check("session: start without a confirmed plan transfers nothing",
+                String.valueOf(casual.start().get("state")), AssetUpdateSession.IDLE);
+        casual.cancel();
+        check("session: cancelling from idle is reported",
+                String.valueOf(casual.status().get("state")), AssetUpdateSession.CANCELLED);
+        check("session: cancelling from idle transferred nothing", casualFetch.attempts == 0);
+        Map<String, Object> casualPlan = casual.prepare();
+        check("session: an unprotected prepare needs no token exchange", casualFetch.exchanges == 0);
+        check("session: an unprotected prepare reaches ready",
+                String.valueOf(casualPlan.get("state")), AssetUpdateSession.READY);
+        casual.cancel();
+        check("session: cancelling the confirmation transfers nothing", casualFetch.attempts == 0);
+        check("session: the cancelled state is reported to the UI",
+                String.valueOf(casual.status().get("state")), AssetUpdateSession.CANCELLED);
+
+        AssetUpdateSession offline = new AssetUpdateSession(casualStore, AssetConfig.disabled("no configuration"),
+                new File(work, "cache-offline"), casualFetch);
+        check("session: a disabled configuration reports unconfigured",
+                String.valueOf(offline.status().get("state")), AssetUpdateSession.UNCONFIGURED);
+        check("session: an unconfigured session prepares nothing",
+                String.valueOf(offline.prepare().get("state")), AssetUpdateSession.UNCONFIGURED);
+        check("session: an unconfigured session transfers nothing", casualFetch.attempts == 0);
     }
 
     // ---------------------------------------------------------------- self-contained checks
@@ -827,6 +1043,29 @@ public final class AssetSelfTest {
         }
     }
 
+    // ---------------------------------------------------------------- redirects (origin pinning)
+
+    /** The Worker token is pinned to one origin, and the hop cap stays three. */
+    private static void redirects() throws Exception {
+        String origin = AssetUpdater.originOf(new URL("https://cdn.example.test/a/assets-index.json"));
+        check("an origin is scheme, host and effective port", origin, "https://cdn.example.test:443");
+        check("an explicit default port is the same origin", AssetUpdater.originOf(new URL("https://CDN.example.test:443/x")), origin);
+        check("a different host is a different origin", AssetUpdater.originOf(new URL("https://evil.example.test/x")), "https://evil.example.test:443");
+        check("a different port is a different origin", AssetUpdater.originOf(new URL("https://cdn.example.test:8443/x")), "https://cdn.example.test:8443");
+        check("plain http is a different origin", AssetUpdater.originOf(new URL("http://cdn.example.test/x")), "http://cdn.example.test:80");
+
+        URL index = new URL("https://cdn.example.test/a/assets-index.json");
+        check("a relative same-origin redirect is followed", AssetUpdater.redirectTarget(index, "asset-package.zip", origin).toString(), "https://cdn.example.test/a/asset-package.zip");
+        check("an absolute same-origin redirect keeps the origin", AssetUpdater.originOf(AssetUpdater.redirectTarget(index, "https://cdn.example.test/b/asset-package.zip", origin)), origin);
+
+        String crossed = failure(() -> AssetUpdater.redirectTarget(index, "https://evil.example.test/b/asset-package.zip", origin));
+        check("a cross-origin redirect is refused before the request is repeated", crossed != null && crossed.startsWith("refusing cross-origin asset redirect from https://cdn.example.test/a/assets-index.json"), true);
+        check("the refusal names the host it refused", crossed != null && crossed.contains("evil.example.test"), true);
+        check("a downgrade to plain http is refused", failure(() -> AssetUpdater.redirectTarget(index, "http://cdn.example.test/b/asset-package.zip", origin)) != null, true);
+        check("a redirect without a location is refused", failure(() -> AssetUpdater.redirectTarget(index, "", origin)), "redirect without a location from https://cdn.example.test/a/assets-index.json");
+        check("at most three redirects are followed", String.valueOf(AssetUpdater.MAX_REDIRECTS), "3");
+    }
+
     private static String served(AssetStore store, String rel) throws IOException {
         AssetStore.Hit hit = store.resolve(rel);
         if (hit == null) return null;
@@ -851,6 +1090,16 @@ public final class AssetSelfTest {
             System.out.println("FAIL " + what + ": expected " + expected + ", got " + actual);
         } else if (verbose) {
             System.out.println("  ok " + what);
+        }
+    }
+
+    /** Runs {@code body} and returns its failure message, or null when it did not fail. */
+    private static String failure(Attempt body) {
+        try {
+            body.run();
+            return null;
+        } catch (Exception error) {
+            return error.getMessage();
         }
     }
 

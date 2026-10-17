@@ -41,7 +41,8 @@ const PURE_SOURCES = [
   'AssetSource.java',
   'DirectoryAssetSource.java',
   'AssetConfig.java',
-  'AssetUpdater.java'
+  'AssetUpdater.java',
+  'AssetUpdateSession.java'
 ];
 
 const say = (message) => console.log(`android-asset-tests: ${message}`);

@@ -640,15 +640,16 @@ On `http://` to a LAN IP, `isSecureContext` is false. The import controls explai
 Starting with enhanced `2.6.2`, the delivery path is: the maintainer uploads immutable packages and the index to private R2; the client requests a short-lived JWT from the game service at `/api/assets/token`; the client sends that JWT to the existing Cloudflare Worker; and the Worker reads the requested objects from R2 and returns them. The game service only authenticates the session and signs the JWT; it does not download or proxy R2 objects. Clients and APKs never receive R2 API credentials.
 
 The art itself is downloaded at install time, never committed. An Android build with an asset-gateway index is a
-thin APK: it contains program files and credential-free gateway configuration, then downloads a verified baseline
-on first launch. Offline builds retain the art floor; later art changes still reach installed clients without a new
+thin APK: it contains program files and credential-free gateway configuration, and installs a verified baseline
+only after the player asks for one (since enhanced `2.6.4`; see [Explicit download on Android](#explicit-download-on-android-enhanced-264)).
+Offline builds retain the art floor; later art changes still reach installed clients without a new
 APK. Since enhanced `2.6.2`, clients read the **release index** and pull packages through the authenticated Cloudflare Worker, which fetches the corresponding objects from Cloudflare R2:
 **asset packages** — ZIPs made of file-level add/change/delete steps — for exactly that.
 
 Windows uses the same index and package format. A Windows build passed both `-AssetIndexUrl` and
-`-AssetTokenUrl` is a thin portable client: it contains the Electron shell, program files and public
+`-AssetTokenUrl` is a thin portable client: it contains the Tauri executable, program files and public
 `asset-config.json`, but no runtime art. After the first successful game session it installs the verified route
-under Electron `userData/asset-runtime/` and reloads the local page. A Windows build without this configuration
+under the client's application-data directory (`app_data_dir()/asset-runtime/`) and reloads the local page. A Windows build without this configuration
 remains a complete offline package with its embedded art.
 
 ### What a package may contain
@@ -739,8 +740,9 @@ asset-runtime/
 
 That is the offline floor mode. A build with an `asset-config.json` index URL removes the floor's
 `assets/`, `fonts/`, two runtime manifests and `asset-state.json` before Gradle packages the APK. It opens an
-empty store, fetches a baseline on first launch, then reloads the WebView only after the complete verified route
-has been applied; a failed network update leaves any already installed layers untouched.
+empty store and transfers nothing by itself: the first package arrives only after the player confirms a download,
+and the WebView reloads only after the complete verified route has been applied; a failed network update leaves
+any already installed layers untouched.
 
 The client: SHA-256s the whole ZIP against the index entry, extracts it into `asset-staging/`, checks every
 entry's size and SHA-256 against `ASSETS.json`, and checks the resulting inventory digest. Commits are
@@ -761,15 +763,39 @@ are dropped. An update takes effect on the next launch.
 
 The runtime `PathHandler` serves `assets/`, `fonts/` and the two manifests from that store and falls back to the
 APK for everything else, so a client that never updates behaves exactly like the current one.
-On Windows the Electron main process owns the same layered store under
-`app.getPath('userData')/asset-runtime/`; the renderer can only forward the existing WebSocket session token to a
-preload IPC entry. The main process exchanges it for the Worker JWT, downloads and verifies packages, and serves
-the resulting asset paths from its loopback server. Neither token is persisted or exposed back to the browser. A
+On Windows the Tauri process owns the same layered store under
+`app_data_dir()/asset-runtime/`; the page can only forward the existing WebSocket session token to the
+`sp_set_asset_session_token` command. Rust exchanges it for the Worker JWT, downloads and verifies packages, and serves
+the resulting asset paths from its custom `sp:` protocol. Neither token is persisted or exposed back to the page. A
 thin client can show missing art before its first authenticated game session, but it never falls back to an
 unverified download.
 
-The Windows incremental updater remains program-only. It can update the Electron shell, program files and public
-asset configuration, but never the user-data asset store; art changes arrive from R2 independently.
+The Windows incremental updater remains program-only. It can update the Tauri executable, program files and public
+asset configuration, but never the application-data asset store; art changes arrive from R2 independently.
+
+#### Explicit download on Android (enhanced 2.6.4)
+
+Enhanced `2.6.3` checked the release index at every launch and started downloading as soon as a game session
+token arrived. `2.6.4` replaces that silent traffic with one entry the player controls: a square download button
+in the lobby's tool row, immediately beside the book/guide button. It never appears on the pre-login title screen,
+and it is hidden everywhere the native bridge does not exist (the browser, the desktop client), so no other
+platform changes behaviour.
+
+Tapping it asks the native session to *prepare* — exchange the session token, read the index, compute the route —
+and the dialog then lists exactly what would come down: the route kind, the number of packages, their names, their
+announced bytes and the total. **开始下载** starts the transfer only after that positive confirmation, so creating
+the WebView, receiving a session token or opening the dialog all transfer zero bytes. While a transfer runs the
+dialog offers **取消下载**; progress is reported per package (bytes of the current ZIP) and for the whole route,
+with distinct phases for index/token preparation, the verified download, extraction/application and completion,
+and an actionable failure with **重试下载**.
+
+The native side lives in `AssetUpdateSession.java` (plain Java, no Android types, exercised on the JVM by
+`tools/android-asset-tests.mjs`). It owns both the game-session token and the exchanged asset JWT, applies each
+verified package through the unchanged `AssetStore.apply` path (hash, size and extraction limits, atomic pointer
+swap) and emits one snapshot per change. JavaScript can do exactly six things through the single
+`StrongholdAndroidAssets` interface — `available`, `status`, `prepare`, `start`, `retry`, `cancel` — and the
+snapshots it pushes carry no token, only a `hasSession` boolean. A failure, an aborted transfer or a crash keeps
+the installed layers and the store pointer exactly as they were.
 
 ### Configuration
 

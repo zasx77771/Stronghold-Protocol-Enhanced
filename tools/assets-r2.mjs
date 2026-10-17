@@ -19,10 +19,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CONFIG_FORMAT, DEFAULT_MAX_CHAIN, INDEX_FILE, KIND_BASE, KIND_DELTA, PACKAGE_FORMAT, STATE_FILE,
-  applyPackage, basePackageName, buildIndex, checkConfig, compareVersions, deltaPackageName,
-  formatBytes, inventoryDigest, inventoryStats, isAssetPath, loadInventory, loadRootState, makeConfig,
-  packageNameInfo, planPackage, planRelease, planRoute, readIndex, readPackageManifest, scanAssetFiles,
-  sha256File, stampRoot, stateFromInventory, strandedVersions, verifyPackage, writeIndex, writePackage, writeState
+  applyPackage, basePackageName, buildIndex, checkConfig, checkIndex, checkPublishTarget, compareVersions,
+  deltaPackageName, formatBytes, inventoryDigest, inventoryStats, isAssetPath, loadInventory, loadRootState,
+  makeConfig, packageNameInfo, planPackage, planRelease, planRoute, readIndex,
+  readPackageManifest, reuseCandidate, scanAssetFiles, sha256File, stampRoot, stateFromInventory,
+  strandedVersions, verifyPackage, versionProvides, writeIndex, writePackage, writeState
 } from './assetPackages.mjs';
 
 const USAGE = `usage: node tools/assets-r2.mjs <command> [options]
@@ -43,6 +44,12 @@ commands:
                  --dir <channel dir> --version <M.N.R> --after <dir>
                  [--from <version> --before <dir>] [--mainline] [--force-base]
                  [--max-chain <n>]
+
+  publish-version  record a release that ships no new asset bytes, reusing published packages
+                 --dir <channel dir> --version <M.N.R> [--write] [--check] [--quiet]
+                 [--inventory <sha256> | --root <asset tree>] [--max-chain <n>] [--no-hash]
+                 (default: report what would change; no index write happens without --write)
+                 (--check: assert the published index already records the reuse, write nothing)
 
   route        print the route a client with a given state would take
                  (--index <file> | --dir <dir>) [--root <dir> | --version <v> --inventory <sha256>]
@@ -205,13 +212,26 @@ function loadIndexFrom(args) {
   return { index: buildIndexFromDir(dir, args), file: null };
 }
 
-function packageEntries(dir, { maxChain }) {
+function packageEntries(dir, { maxChain, hash = true, published = null }) {
   const packages = [];
   for (const name of readdirSync(dir).sort()) {
     const info = packageNameInfo(name);
     if (!info) continue;
     const file = path.join(dir, name);
-    if (!statSync(file).isFile()) continue;
+    const stat = statSync(file);
+    if (!stat.isFile()) continue;
+    const size = stat.size;
+    // `--no-hash` trusts the digest already recorded in the published index for the very same file,
+    // and refuses to guess otherwise. It exists so a metadata-only release can record a version on a
+    // 850 MB baseline without re-reading the whole archive to learn a digest the index already holds.
+    let sha256;
+    if (hash) sha256 = sha256File(file);
+    else {
+      const known = ((published && published.bases) || []).concat((published && published.deltas) || [])
+        .find((item) => item.name === name && Number(item.size) === size);
+      if (!known) continue;
+      sha256 = known.sha256;
+    }
     const manifest = readPackageManifest(file);
     packages.push({
       name,
@@ -219,8 +239,8 @@ function packageEntries(dir, { maxChain }) {
       version: manifest.version,
       from: manifest.from,
       fromInventory: manifest.fromInventory || null,
-      size: statSync(file).size,
-      sha256: sha256File(file),
+      size,
+      sha256,
       inventory: manifest.inventory,
       count: manifest.count,
       bytes: manifest.bytes
@@ -233,6 +253,16 @@ function buildIndexFromDir(dir, args) {
   const index = packageEntries(dir, { maxChain: Number(args.maxChain || DEFAULT_MAX_CHAIN) });
   if (args.latest) index.latest = String(args.latest);
   return index;
+}
+
+/**
+ * Re-read every package in a channel directory and build the index again.
+ *
+ * This only knows the package files, so a version served by a `reused` pointer has no entry of its own
+ * here. Callers carry that decision forward themselves and re-check that the pointer still resolves.
+ */
+function reindexChannel(dir, { maxChain, published = null, hash = true }) {
+  return packageEntries(dir, { maxChain, hash, published });
 }
 
 function commandIndex(args) {
@@ -320,7 +350,19 @@ function commandRelease(args) {
   const indexPath = path.join(dir, INDEX_FILE);
   const published = existsSync(indexPath) ? readIndex(indexPath) : null;
   const notes = [];
+  /*
+   * A delta whose source version only reuses an older payload has to start at the version that really
+   * publishes those bytes: a client on the reused version is routed from its provider, so a delta named
+   * after the delegating version would leave that whole line on the (large) full baseline.
+   */
+  const delegated = from && published && published.versions && published.versions[from]
+    ? published.versions[from].reused : null;
+  if (delegated) {
+    notes.push(`${from} reuses the payload published for ${delegated}; publish this release with --from ${delegated} so clients on ${delegated} keep a delta route`);
+  }
   const wrote = { base: null, delta: null };
+  const targetProblems = checkPublishTarget(published, version);
+  if (targetProblems.length) fail(targetProblems.join('; '));
 
   const decision = planRelease({
     index: published,
@@ -335,6 +377,9 @@ function commandRelease(args) {
   notes.push(...decision.notes);
   const base = decision.base;
   const delta = decision.delta;
+  const reuse = decision.reuse
+    ? { [version]: { reused: decision.reuse.version, via: decision.reuse.via, inventory: decision.reuse.inventory } }
+    : {};
 
   if (base) wrote.base = writeReleasePackage({ kind: KIND_BASE, version, afterRoot, after: after.files, dir, notes });
   if (delta) {
@@ -342,20 +387,49 @@ function commandRelease(args) {
       kind: KIND_DELTA, version, from, afterRoot, after: after.files, before: before.files, dir, notes
     });
   }
-  if (!wrote.base && !wrote.delta) fail('nothing to publish: pass --after and either --from/--before or --mainline');
 
-  const refresh = () => {
-    const index = packageEntries(dir, { maxChain });
+  /**
+   * Rebuild the index from the packages on disk.
+   *
+   * `finish` carries the reuse pointers over: they are only written once nothing is stranded any more,
+   * because a version whose payload is identical to a published one still needs a reachable route. The
+   * first pass therefore decides, and the last pass writes the pointers that survived.
+   */
+  const refresh = ({ finish = false } = {}) => {
+    const index = reindexChannel(dir, { maxChain, published, hash: !args.noHash });
     index.latest = version;
-    writeIndex(indexPath, index);
+    if (finish) {
+      for (const [name, info] of Object.entries(index.versions || {})) {
+        const before = reuse[name] || ((published && published.versions && published.versions[name]) || null);
+        if (name === version || !before || !before.reused) continue;
+        if (!versionProvides(index, before.reused)) continue;
+        info.reused = String(before.reused);
+        if (before.reusedVia) info.reusedVia = before.reusedVia;
+      }
+      if (reuse[version] && versionProvides(index, reuse[version].reused)) {
+        index.versions[version].reused = reuse[version].reused;
+        index.versions[version].reusedVia = reuse[version].via;
+      }
+      writeIndex(indexPath, index);
+    }
     return index;
   };
   let index = refresh();
+  if (!wrote.base && !wrote.delta && !reuse[version]) {
+    fail('nothing to publish: pass --after and either --from/--before or --mainline');
+  }
   let stranded = strandedVersions(index, maxChain);
   if (stranded.length && !wrote.base) {
     notes.push(`${stranded.join(', ')} could no longer reach ${version}; publishing a baseline`);
     wrote.base = writeReleasePackage({ kind: KIND_BASE, version, afterRoot, after: after.files, dir, notes });
     index = refresh();
+    stranded = strandedVersions(index, maxChain);
+  }
+  if (stranded.length && !reuse[version]) fail(`${stranded.join(', ')} cannot reach ${version}`);
+  if (!wrote.base && !wrote.delta) {
+    // Nothing was published, so the index is the only object this release touches: it has to record the
+    // reuse pointer, which is what `refresh({ finish: true })` validates and writes.
+    index = refresh({ finish: true });
     stranded = strandedVersions(index, maxChain);
   }
 
@@ -381,11 +455,158 @@ function commandRelease(args) {
     maxChain,
     base: describe(wrote.base),
     delta: describe(wrote.delta),
+    reuse: index.versions[version] ? (index.versions[version].reused || null) : null,
     versions: Object.keys(index.versions).length,
     stranded,
     notes
   });
 }
+
+/**
+ * Record a release that ships no new asset bytes on top of the published packages.
+ *
+ * A version that only moves the program forward keeps the published baseline and delta chain exactly as
+ * they are: no new ZIP is written, no object key is invented and no already validated upload is
+ * repeated. The index gains one inventory entry that points at the published version carrying the same
+ * bytes, so routing, `strandedVersions` and the client verification of this version all keep working.
+ * Nothing is written without `--write`.
+ */
+function commandPublishVersion(args) {
+  const dir = path.resolve(need(args, 'dir', '--dir is required (the channel directory holding the published packages)'));
+  const version = need(args, 'version', '--version is required (the M.N.R version being published)');
+  const maxChain = args.maxChain ? Number(args.maxChain) : DEFAULT_MAX_CHAIN;
+  if (!Number.isInteger(maxChain) || maxChain < 1) fail('--max-chain must be a positive integer');
+  const indexPath = args.index ? path.resolve(String(args.index)) : path.join(dir, INDEX_FILE);
+  if (!existsSync(indexPath)) fail(`${indexPath} does not exist; publish a baseline first`);
+  const published = readIndex(indexPath);
+  /*
+   * `--check` re-asserts a release that is already published, so the version being equal to (not newer
+   * than) the published latest is the expected state there; it is only a problem when writing.
+   */
+  const targetProblems = args.check ? [] : checkPublishTarget(published, version);
+  if (targetProblems.length) fail(targetProblems.join('; '));
+
+  const hash = !args.noHash;
+  const packages = reindexChannel(dir, { maxChain, published, hash });
+  const inventory = inventoryFor(published, packages, version, args);
+  const reusable = reuseCandidate(packages, inventory.value);
+  if (!reusable) {
+    fail(`${version} has to publish a package: no published version carries its asset set (use the release command)`);
+  }
+
+  const keep = {
+    format: packages.format,
+    latest: version,
+    maxChain: packages.maxChain,
+    versions: {},
+    bases: packages.bases,
+    deltas: packages.deltas
+  };
+  for (const [name, info] of Object.entries(packages.versions || {})) {
+    const entry = { inventory: info.inventory, count: info.count || 0, bytes: info.bytes || 0 };
+    if (info.reused && versionProvides(packages, info.reused)) {
+      // A pointer carried over from the published index, kept only while it still resolves.
+      entry.reused = String(info.reused);
+      if (info.reusedVia) entry.reusedVia = info.reusedVia;
+    }
+    keep.versions[name] = entry;
+  }
+  /*
+   * The new version has no package of its own, so it is not in `packages.versions` yet: its entry is the
+   * reuse pointer, with the payload figures of the version that actually publishes those bytes.
+   */
+  const provider = packages.versions[reusable.version] || {};
+  keep.versions[version] = {
+    inventory: inventory.value,
+    count: provider.count || 0,
+    bytes: provider.bytes || 0,
+    reused: reusable.version,
+    reusedVia: reusable.via
+  };
+  const problems = checkIndex(keep);
+  if (problems.length) fail(problems.join('; '));
+  if (strandedVersions(keep, maxChain).length) {
+    fail(`${version} would strand ${strandedVersions(keep, maxChain).join(', ')}; publish a baseline instead`);
+  }
+
+  const writing = Boolean(args.write);
+  if (writing) {
+    writeIndex(indexPath, keep);
+    for (const item of [...keep.bases, ...keep.deltas]) {
+      const file = path.join(dir, item.name);
+      if (!existsSync(file)) fail(`${item.name} is listed in the index but missing in ${dir}`);
+      const size = statSync(file).size;
+      if (size !== Number(item.size)) fail(`${item.name} is listed with size ${item.size}, but the file is ${size} bytes`);
+    }
+  }
+  // Every package object the index serves: the release rewrites the metadata only, so this list must be
+  // exactly the set the bucket already holds (plus the index itself).
+  const objects = [...keep.bases.map((item) => item.name), ...keep.deltas.map((item) => item.name)].sort();
+  const summary = {
+    dir,
+    index: indexPath,
+    previousLatest: published.latest,
+    latest: version,
+    wrote: writing,
+    check: Boolean(args.check),
+    hash,
+    reusedFrom: keep.versions[version].reused,
+    reusedVia: keep.versions[version].reusedVia,
+    inventory: keep.versions[version].inventory,
+    inventorySource: inventory.source,
+    inventoryAssumed: Boolean(inventory.assumed),
+    newPackages: [],
+    objects,
+    maxChain,
+    versions: Object.keys(keep.versions).length,
+    stranded: strandedVersions(keep, maxChain)
+  };
+  if (args.json) json(summary);
+  else if (!args.quiet) {
+    console.log(`${indexPath}${writing ? '' : ' (not written; pass --write)'}`);
+    console.log(`  ${published.latest} -> ${version}; no new package is written or uploaded`);
+    console.log(`  ${version} reuses ${summary.reusedFrom} (${summary.reusedVia}) for inventory ${summary.inventory}`);
+    console.log(`  the inventory comes from ${inventory.source}${inventory.assumed ? ' -- verify --root <asset tree> before publishing' : ''}`);
+    console.log(`  the index still serves ${summary.versions} version(s) from ${objects.length} object(s)`);
+  }
+  if (args.check) {
+    const recorded = published.versions && published.versions[version];
+    if (!recorded || String(recorded.reused) !== String(summary.reusedFrom)) {
+      fail(`${version} is not recorded in ${indexPath} as reusing ${summary.reusedFrom} (run with --write)`);
+    }
+  }
+}
+
+/**
+ * The inventory a metadata-only release publishes: the digest kept by the index when this version
+ * already has an entry, otherwise the digest the caller proves (`--inventory <sha256>` or `--root <asset
+ * tree>`, the strongest proof because it comes from the release tree itself), otherwise the digest of the
+ * published latest, which is what "this version ships no new asset bytes" means and is reported as an
+ * assumption instead of being silent. A brand new version with none of these is not a metadata-only
+ * release at all.
+ */
+function inventoryFor(published, packages, version, args) {
+  const entry = (published.versions && published.versions[version]) || packages.versions[version];
+  if (entry && entry.inventory) return { value: entry.inventory, source: 'the published index entry' };
+  if (args.inventory) {
+    if (!/^[0-9a-f]{64}$/i.test(String(args.inventory))) {
+      fail(`--inventory must be the 64 hex sha256 of an asset inventory, received ${args.inventory}`);
+    }
+    return { value: String(args.inventory).toLowerCase(), source: '--inventory' };
+  }
+  if (args.root) {
+    const info = loadInventory(path.resolve(String(args.root)));
+    const stamped = info.version && info.version !== version ? ` (${args.root} is stamped ${info.version})` : '';
+    return { value: info.inventory, source: `--root ${args.root}${stamped}` };
+  }
+  const latest = published.latest;
+  const latestEntry = latest && published.versions && published.versions[latest];
+  if (latestEntry && latestEntry.inventory) {
+    return { value: latestEntry.inventory, source: `the published latest ${latest}`, assumed: true };
+  }
+  fail(`${version} has no published payload and no index entry; pass --inventory <sha256> or --root <asset tree>, or use the release command`);
+}
+
 
 function localState(args) {
   if (args.root) {
@@ -532,6 +753,7 @@ function main(argv) {
   else if (command === 'pack') commandPack(args);
   else if (command === 'index') commandIndex(args);
   else if (command === 'release') commandRelease(args);
+  else if (command === 'publish-version') commandPublishVersion(args);
   else if (command === 'route') commandRoute(args);
   else if (command === 'verify') commandVerify(args);
   else if (command === 'apply') commandApply(args);

@@ -18,6 +18,9 @@ public final class AssetPaths {
     private AssetPaths() {
     }
 
+    /** The client entry point. {@code MainActivity} loads exactly this file, so an APK without it can
+     *  answer nothing but a 404. */
+    public static final String ENTRY_FILE = "index.html";
     /** Asset root state stamped into the APK by the release build. */
     public static final String STATE_FILE = "asset-state.json";
     /** Optional public configuration shipped in the APK (index URL, limits). */

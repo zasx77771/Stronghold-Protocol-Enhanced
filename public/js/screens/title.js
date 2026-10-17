@@ -450,6 +450,9 @@ export function TitleScreen() {
   // a title in an alphabetic script (English, French …) is the big one in the display face and the wordmark above it
   // hides; a CJK / kana / Hangul title keeps the Chinese layout (shared/i18nPacks.js scriptOf — a pack needs no flag)
   const alphabetic = scriptOf(t('卫戍协议')) === 'alphabetic';
+  // The screen is TWO columns: .title-hero on the left and .title-side on the right. .title-side holds the login panel
+  // and, under it, the full-asset buttons (下载完整素材 / 导入素材包), so those buttons are never an accidental third grid
+  // child (the enhanced-v2.6.1 layout; see public/css/screens/title.css).
   return html`<div class=${`screen title-screen${androidClient ? ' title-screen--android' : ''}`}>
     <div class=${`title-bg${bgLoaded ? ' has-art' : ''}${ridgesLoaded ? ' has-ridges' : ''}`} aria-hidden="true">
       ${backdrop ? html`<img class="title-bg__art" src=${backdrop} alt="" draggable=${false}
@@ -494,52 +497,54 @@ export function TitleScreen() {
         <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
       </section>
 
-      <div class="title-login">
-        ${pendingJoin ? html`<div class="title-invite">
-          <${Icon} name="key" />
-          <span>${pastedInvite ? t('已识别同盟邀请') : t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
-          ${pastedInvite ? html`<button type="button" class="title-invite__reset" disabled=${starting}
-            onClick=${() => setPastedInvite(null)}>${t('重新填写')}</button>` : null}
-        </div>` : null}
-        ${!pastedInvite ? html`<div class="title-transport" role="group" aria-label=${t('连接协议')}>
-          <button type="button" class=${transport === TRANSPORT_WEBSOCKET ? 'is-active' : ''} disabled=${starting}
-            onClick=${() => changeTransport(TRANSPORT_WEBSOCKET)}>WebSocket <small>HTTP</small></button>
-          <button type="button" class=${transport === TRANSPORT_TCP ? 'is-active' : ''} disabled=${starting || !tcpAvailable}
-            title=${tcpAvailable ? t('原生 TCP 直连') : t('仅 Windows/Android 客户端可用')}
-            onClick=${() => changeTransport(TRANSPORT_TCP)}>TCP <small>${t('直连')}</small></button>
-        </div>` : null}
-        ${!pastedInvite ? html`<div class="title-server-row">
-          <${TextField} label=${transport === TRANSPORT_TCP ? t('TCP 服务器地址') : t('服务器地址')} micro="SERVER" size="lg" icon="link" value=${server} maxLength=${256}
-            placeholder=${transport === TRANSPORT_TCP ? t('例如 192.168.1.10:3001') : t('例如 192.168.1.10:3000')} disabled=${starting} invalid=${!!serverError} hint=${serverError || null}
-            labelEnd=${transport === TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} compact=${true} />` : null}
-            onInput=${(v) => { setPastedInvite(null); setServer(v); if (serverError) setServerError(''); }} onEnter=${() => start()} />
-        </div>` : null}
-        <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
-          placeholder=${t('请输入博士代号')} autoFocus=${!touchUi} disabled=${starting}
-          onInput=${updateName} onEnter=${() => start()} />
-        <button type="button" class=${`title-remember${rememberName ? ' is-on' : ''}`} role="switch"
-          aria-checked=${rememberName ? 'true' : 'false'} disabled=${starting}
-          onClick=${() => updateRememberName(!rememberName)}>
-          <i aria-hidden="true">${rememberName ? '✓' : ''}</i><span>${t('记住博士代号')}</span><small>${t('保存在此设备')}</small>
-        </button>
-        ${!pastedInvite ? html`<div class="title-actions">
-          <${Button} variant="secondary" size="lg" block=${true} icon="copy"
-            class="title-paste" disabled=${starting}
-            onClick=${() => applyClipboardInvite({ auto: true })}>${t('粘贴邀请链接')}<//>
-        </div>` : null}
-        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${starting}
-          disabled=${!valid || !server.trim()} onClick=${() => start()}>${starting ? t('正在连接') : roomCode ? t('连接并加入') : t('连接服务器')}<//>
-        <div class="title-bottom-tools">
-          ${transport !== TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} />` : null}
-          <${GuideButton} class="title-guide" />
-          <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
-            onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
-          ${!androidClient ? html`<${FullscreenButton} class="title-fs" />` : null}
+      <div class="title-side">
+        <div class="title-login">
+          ${pendingJoin ? html`<div class="title-invite">
+            <${Icon} name="key" />
+            <span>${pastedInvite ? t('已识别同盟邀请') : t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
+            ${pastedInvite ? html`<button type="button" class="title-invite__reset" disabled=${starting}
+              onClick=${() => setPastedInvite(null)}>${t('重新填写')}</button>` : null}
+          </div>` : null}
+          ${!pastedInvite ? html`<div class="title-transport" role="group" aria-label=${t('连接协议')}>
+            <button type="button" class=${transport === TRANSPORT_WEBSOCKET ? 'is-active' : ''} disabled=${starting}
+              onClick=${() => changeTransport(TRANSPORT_WEBSOCKET)}>WebSocket <small>HTTP</small></button>
+            <button type="button" class=${transport === TRANSPORT_TCP ? 'is-active' : ''} disabled=${starting || !tcpAvailable}
+              title=${tcpAvailable ? t('原生 TCP 直连') : t('仅 Windows/Android 客户端可用')}
+              onClick=${() => changeTransport(TRANSPORT_TCP)}>TCP <small>${t('直连')}</small></button>
+          </div>` : null}
+          ${!pastedInvite ? html`<div class="title-server-row">
+            <${TextField} label=${transport === TRANSPORT_TCP ? t('TCP 服务器地址') : t('服务器地址')} micro="SERVER" size="lg" icon="link" value=${server} maxLength=${256}
+              placeholder=${transport === TRANSPORT_TCP ? t('例如 192.168.1.10:3001') : t('例如 192.168.1.10:3000')} disabled=${starting} invalid=${!!serverError} hint=${serverError || null}
+              labelEnd=${transport === TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} compact=${true} />` : null}
+              onInput=${(v) => { setPastedInvite(null); setServer(v); if (serverError) setServerError(''); }} onEnter=${() => start()} />
+          </div>` : null}
+          <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
+            placeholder=${t('请输入博士代号')} autoFocus=${!touchUi} disabled=${starting}
+            onInput=${updateName} onEnter=${() => start()} />
+          <button type="button" class=${`title-remember${rememberName ? ' is-on' : ''}`} role="switch"
+            aria-checked=${rememberName ? 'true' : 'false'} disabled=${starting}
+            onClick=${() => updateRememberName(!rememberName)}>
+            <i aria-hidden="true">${rememberName ? '✓' : ''}</i><span>${t('记住博士代号')}</span><small>${t('保存在此设备')}</small>
+          </button>
+          ${!pastedInvite ? html`<div class="title-actions">
+            <${Button} variant="secondary" size="lg" block=${true} icon="copy"
+              class="title-paste" disabled=${starting}
+              onClick=${() => applyClipboardInvite({ auto: true })}>${t('粘贴邀请链接')}<//>
+          </div>` : null}
+          <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${starting}
+            disabled=${!valid || !server.trim()} onClick=${() => start()}>${starting ? t('正在连接') : roomCode ? t('连接并加入') : t('连接服务器')}<//>
+          <div class="title-bottom-tools">
+            ${transport !== TRANSPORT_TCP ? html`<${ConnectionStatus} conn=${conn} dotClass=${dotClass} />` : null}
+            <${GuideButton} class="title-guide" />
+            <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
+              onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
+            ${!androidClient ? html`<${FullscreenButton} class="title-fs" />` : null}
+          </div>
         </div>
-      </div>
-      <div class="title-assets">
-        <${AssetDownloadButton} />
-        <${AssetImportButton} />
+        <div class="title-assets">
+          <${AssetDownloadButton} />
+          <${AssetImportButton} />
+        </div>
       </div>
     </main>
 

@@ -122,3 +122,55 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 * 游戏不写注册表、不装服务；`启动游戏.bat` 内容只有几行（切到 UTF-8 代码页 → 找 `node\node.exe` →
   跑 `app\scripts\launch.mjs --no-setup`）。
 * 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](DEPLOY.md)）。
+
+## 7. Windows 桌面客户端（Tauri 2）
+
+前面几节讲的是「便携服务器包」。需要**独立桌面客户端**（原生窗口、TCP 直连、R2 运行时素材）时，
+它现在由 `src-tauri/` 下的 Tauri 2 应用构建（旧的自带浏览器引擎外壳已停用）：静态内容由 `src-tauri/src/protocol.rs`
+的私有 `sp:` 协议提供，TCP 桥在 `src-tauri/src/tcp.rs`，窗口与打包配置在 `src-tauri/tauri.conf.json`。
+
+前置条件（缺什么 `scripts/build-windows-client.ps1` 会直接告诉你该装什么）：
+
+* Rust 工具链：rustup stable（≥ 1.77）与 `x86_64-pc-windows-msvc` 目标
+* WebView2 运行时（Windows 11 与当前的 Windows 10 已自带）
+* Tauri CLI 2：`cargo install tauri-cli --version "^2" --locked`
+* Node.js 22+，只用来生成图标与写出薄客户端的 `asset-config.json`
+
+打包（在仓库根目录执行）：
+
+```powershell
+node tools/setup.mjs
+pwsh scripts/build-windows-client.ps1            # 版本取自 package.json
+pwsh scripts/build-windows-client.ps1 -NoArchive # 只要目录，不压 ZIP
+```
+
+脚本内部执行 `cargo tauri build`，产物是：
+
+* `src-tauri\target\release\stronghold-protocol-client.exe`（`tauri.conf.json` 的 `productName`）
+* `src-tauri\target\release\bundle\nsis\` 下的 NSIS 安装器（当前用户安装；`-SkipBundle` 可跳过）
+* 便携 payload：`<OutputRoot>\Stronghold-Protocol-Client-v<version>-win-x64\`
+
+`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `package.json` 的版本必须一致，
+`node tools/release-policy.mjs` 和 `test/windows-tauri.test.js` 会校验；图标由
+`node tools/tauri-icons.mjs --write` 现场生成，不进版本库（`src-tauri/icons/` 只保留说明文件）。
+客户端不再携带第二套 Node 运行时：payload 里没有 `node_modules`，也没有浏览器引擎下载步骤。
+
+### 7.1 从旧的自带浏览器引擎外壳迁移过来
+
+| 旧文件 | 现在的实现 |
+| --- | --- |
+| `desktop/runtime/main.cjs`（回环 HTTP 服务、`ipcMain`、窗口） | `src-tauri/src/protocol.rs`（`sp:` 私有协议，不监听任何端口）、`src-tauri/src/tcp.rs`、`src-tauri/src/lib.rs` |
+| `desktop/runtime/preload.cjs`（`contextBridge` 暴露 `strongholdClient`） | `public/js/desktopBridge.js`（注入脚本，建在 Tauri `invoke`/`event` 上，配合 `app.withGlobalTauri: true`） |
+| `desktop/runtime/assets.cjs`（R2 运行时素材） | `src-tauri/src/assets.rs`（换取 JWT、下载、校验、应用全在 Rust 内完成） |
+
+* 页面契约不变：窗口加载 `sp://localhost/index.html?desktop=1`，`public/js/serverAddress.js` 的
+  `isDesktopClient()` 仍按查询串判断；`globalThis.strongholdClient` 的成员名（`platform`、`tcpAvailable`、
+  `tcpConnect`、`tcpSend`、`tcpClose`、`onTcpEvent`、`readClipboardText`、`setAssetSessionToken`）逐字保持兼容，
+  浏览器与 Android 端不受影响。
+* 会话令牌与素材网关签发的短期 JWT 只存在于客户端原生代码里：页面 JavaScript 能拿到的只有 32 位十六进制会话令牌。
+* 迁移后请删除三个已停用的文件：
+  `git rm desktop/runtime/main.cjs desktop/runtime/preload.cjs desktop/runtime/assets.cjs`。
+  沙箱环境不允许删除时它们会以「已停用」占位注释保留，`test/windows-tauri.test.js` 与
+  `test/windows-r2-assets.test.js` 只校验其中不再含任何实现（不要求文件必须消失）。
+* `desktop/runtime/package.json` 必须保留：`node tools/release-policy.mjs` 仍从它读取版本号并与 `package.json` 比对；
+  建议后续把这条校验移到 `src-tauri/tauri.conf.json`。
