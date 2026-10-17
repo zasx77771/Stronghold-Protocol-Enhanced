@@ -150,15 +150,22 @@ Write-Host "Tauri CLI: $($TauriVersion -join ' ')"
 
 $CargoArguments = @('tauri', 'build')
 if ($SkipBundle) { $CargoArguments += '--no-bundle' }
-if ($TargetDir) { $CargoArguments += @('--target-dir', $TargetDir) }
+
 
 New-Item -ItemType Directory -Force -Path $DistRoot, $CacheDir | Out-Null
 Write-Host "Building the Tauri client: $Cargo $($CargoArguments -join ' ')"
 Push-Location $TauriRoot
+$PreviousCargoTargetDir = $env:CARGO_TARGET_DIR
+$env:CARGO_TARGET_DIR = $TargetDir
 try {
   & $Cargo @CargoArguments
   if ($LASTEXITCODE -ne 0) { throw "cargo tauri build failed with exit code $LASTEXITCODE." }
 } finally {
+  if ($null -eq $PreviousCargoTargetDir) {
+    Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+  } else {
+    $env:CARGO_TARGET_DIR = $PreviousCargoTargetDir
+  }
   Pop-Location
 }
 if (-not (Test-Path -LiteralPath $BuiltBinary -PathType Leaf)) {
