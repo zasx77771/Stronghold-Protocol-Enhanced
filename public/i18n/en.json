@@ -1850,5 +1850,19 @@
   "其余 {n} 个已移到 plugins/_removed/。": "The other {n} {n|was|were} moved to plugins/_removed/.",
   "已移到 plugins/_removed/：{n} 个插件": "Moved to plugins/_removed/: {n} {n|plugin|plugins}",
   "选中「{name}」": "Select \"{name}\"",
-  "符号链接的插件文件夹不能在这里删除。": "A plugin folder that is a symbolic link cannot be deleted here."
+  "符号链接的插件文件夹不能在这里删除。": "A plugin folder that is a symbolic link cannot be deleted here.",
+  "下载运行素材": "Download runtime assets",
+  "确认后会开始下载；未确认前不会传输任何数据。": "Nothing is transferred until you confirm.",
+  "正在准备素材清单…": "Preparing the asset list…",
+  "本次下载共 {n} 个素材包，约 {size}。": "{n} package(s), about {size}.",
+  "开始下载": "Start download",
+  "素材已是最新，无需下载。": "Your assets are up to date. Nothing to download.",
+  "正在下载 {name}": "Downloading {name}",
+  "正在校验并安装 {name}": "Verifying and installing {name}",
+  "素材下载完成，下次进入对局即可使用。": "Download complete. The assets are ready for your next match.",
+  "下载已取消，已安装的素材保持不变。": "Download cancelled. Installed assets are unchanged.",
+  "下载失败：{reason}": "Download failed: {reason}",
+  "取消下载": "Cancel download",
+  "这台设备没有可下载的运行素材配置。": "This device has no runtime asset configuration to download from.",
+  "登录后即可下载运行素材。": "Sign in to download runtime assets."
 }

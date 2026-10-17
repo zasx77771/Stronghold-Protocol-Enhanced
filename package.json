@@ -1,6 +1,6 @@
 {
   "name": "stronghold-protocol-alliance",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "private": true,
   "description": "Stronghold Protocol Enhanced client and server",
   "license": "GPL-3.0-or-later",
@@ -26,6 +26,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "check:release-policy": "node tools/release-policy.mjs",
+    "assets:r2:sync-plan": "node tools/r2-sync-plan.mjs",
     "preversion": "npm run check:release-policy",
     "postversion": "npm run check:release-policy",
     "test": "node --test",

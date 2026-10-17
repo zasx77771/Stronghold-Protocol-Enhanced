@@ -37,6 +37,9 @@ android/.gradle/
 android/local.properties
 android/app/build/
 android/app/src/main/assets/
+# Tauri 2 (the packaged Windows client, 2.6.4): Rust build products and any generated schema, never committed
+src-tauri/target/
+src-tauri/gen/
 
 # --- Python (optional local-client extraction) ----------------------------------------------------
 .venv*/

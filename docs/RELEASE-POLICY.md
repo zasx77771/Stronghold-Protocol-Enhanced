@@ -35,8 +35,9 @@ through `legacyVersionLine`; later upstream baselines continue to follow the nor
 
 - `package.json` 与 `package-lock.json`
 - `shared/constants.js`
-- `desktop/runtime/package.json`
-- Android `versionName` 使用相同的 `M.N.R`；内部 `versionCode` 保持严格递增
+- `desktop/runtime/package.json`（停用占位，仅保留版本号）
+- `src-tauri/tauri.conf.json`（Windows 桌面客户端的产品版本号）
+- Android `versionName` 使用相同的 `M.N.R`；内部 `versionCode` 保持严格递增（当前正式版本对应 `28`，前一版本为 `27`）
 - `release-policy.json`
 - `CHANGELOG.md` 和显示版本号的说明文件
 
@@ -51,6 +52,8 @@ Android 的素材（`assets/`、`fonts/`、`data/assets.json`、`data/local-asse
 - 发布产出的素材包与 Windows 增量包放在同一个发布目录（`08-客户端增量包/<渠道>/`）：日常发布产出 `assets-delta-<from>-<to>.zip`（文件级新增/变更/删除的压缩增量），首次安装、修复、跨越过多版本或主线发布产出 `assets-base-<version>.zip`（完整基线），并刷新很小的 `assets-index.json`。
 - R2 只承载运行时需要的素材包和索引；本地正式发布目录同时保留本体更新产物和对应的素材增量包。每隔数个大版本生成新的完整基线包，旧基线和旧链在确认没有受支持版本需要之后才清理（`node tools/assets-r2.mjs route` 是判断依据）。
 - 索引必须最后上传：Cloudflare Worker 从 R2 读取索引后再向客户端提供，索引不得指向尚未上传的包。已发布的包不得原地替换，修复后发布新版本。
+- **只更新元数据的版本不重复上传素材**：当新版本的素材集与已发布版本逐字节相同（例如 2.6.4 相对 2.6.3 只更换程序本体），不写入新的基线/增量 ZIP，也不占用新的对象名。索引在 `versions[<新版本>]` 记录 `reused: <已发布版本>`（以及 `reusedVia: base|delta`），沿用桶中已有的内容寻址包；`node tools/assets-r2.mjs publish-version --dir <渠道目录> --version <M.N.R> --write` 只重写 `assets-index.json`，`node tools/assets-r2.mjs release` 在检测到相同素材集时同样只刷新索引并在输出中给出 `reuse`。
+- **上传前后的确定性核对**：`node tools/r2-sync-plan.mjs --dir <渠道目录> --snapshot <桶快照 JSON/NDJSON>` 完全离线地比较本地渠道与桶快照，列出缺失、哈希不符和大小不符的对象，并给出唯一正确的顺序：先上传缺失/不符的内容寻址 ZIP，再对每个上传对象做 `head-object` 校验哈希与元数据，最后才发布签名索引元数据。该工具不联网、不列桶、不上传、不删除，退出码非零时不打印任何可能被误读为「已完成」的内容。完整操作手册见 `docs/ASSETS-R2-SYNC.md`。
 - 素材包与索引由维护者用本人凭据手工上传。仓库、脚本、APK、索引和 URL 中不得出现 R2 密钥、账户信息、签名 URL 或令牌；构建时/运行时使用公开配置，未配置时客户端安全降级为只使用 APK 内置素材。
 - 下载的素材与素材包不得提交 Git。
 
@@ -69,7 +72,7 @@ Android 的素材（`assets/`、`fonts/`、`data/assets.json`、`data/local-asse
 5. 验证完整 Windows 客户端、完整 Android APK、Windows 增量包和运行时素材包（基线/增量 ZIP 与 `assets-index.json`，逐包校验 SHA-256 并确认索引指向最新版本、没有版本变成不可达）；服务端变化时还要验证完整 Windows 服务端。
 6. 任一测试、构建、清单、校验或升级验证失败时停止，不创建标签或 Release。
 7. 只有完整包、主线增量包、清单和校验全部成功后，才允许清理两个主线端点之间的小版本完整客户端包。
-8. 维护者用本人凭据把素材包与索引上传到 R2（先包后索引），并核对 Cloudflare Worker 能从私有 R2 拉取，授权客户端能通过网关完整下载。
+8. 维护者用本人凭据把素材包与索引上传到 R2（先包后索引）：先用桶快照跑 `node tools/r2-sync-plan.mjs` 得到确定的上传计划，按计划只上传缺失/不符的对象并逐个 `head-object` 校验，最后才发布索引；随后核对 Cloudflare Worker 能从私有 R2 拉取，授权客户端能通过网关完整下载。
 9. 创建 `enhanced-vM.N.R`，在个人仓库发布标题为 `Stronghold Protocol Enhanced M.N.R` 的 GitHub Release 并上传产物。
 10. 已发布产物不得原地替换；修复后发布新版本。
 

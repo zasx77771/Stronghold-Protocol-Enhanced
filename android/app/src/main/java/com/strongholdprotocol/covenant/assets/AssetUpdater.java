@@ -17,12 +17,16 @@ public final class AssetUpdater {
     private AssetUpdater() { }
     public interface Listener { void onResult(String message); }
     public interface CompletionListener { void onComplete(Outcome outcome); }
+    /** Byte-level progress of one package download; a throw aborts the transfer. */
+    public interface Progress { void onBytes(long done, long announced); }
     public static final class Outcome {
         public final String status, version, message;
         Outcome(String status, String version, String message) { this.status = status; this.version = version; this.message = message; }
         @Override public String toString() { return status + " " + version + (message == null || message.isEmpty() ? "" : ": " + message); }
     }
-    private static final int CONNECT_TIMEOUT_MS = 15000, READ_TIMEOUT_MS = 30000, MAX_REDIRECTS = 3;
+    private static final int CONNECT_TIMEOUT_MS = 15000, READ_TIMEOUT_MS = 30000;
+    /** Redirect hops one transfer may take; package-private so the asset self-test pins the cap. */
+    static final int MAX_REDIRECTS = 3;
     private static final String USER_AGENT = "StrongholdProtocolAssets/1";
 
     public static Thread start(AssetStore store, AssetConfig config, File cacheDir, Listener listener) { return start(store, config, cacheDir, null, listener, null); }
@@ -67,7 +71,7 @@ public final class AssetUpdater {
         }
     }
 
-    private static String exchangeToken(AssetConfig config, String sessionToken) throws IOException {
+    static String exchangeToken(AssetConfig config, String sessionToken) throws IOException {
         if (sessionToken == null || !sessionToken.matches("[0-9a-f]{32}")) throw new IOException("game session token is required for protected assets");
         try {
             Map<String, Object> response = AssetJson.object(AssetJson.parse(new String(fetchBytes(config.tokenUrl, config.maxIndexBytes, config, sessionToken), StandardCharsets.UTF_8)));
@@ -86,8 +90,14 @@ public final class AssetUpdater {
             return readAll(connection.getInputStream(), limit);
         } finally { connection.disconnect(); }
     }
-    static void fetchFile(String url, File target, long limit, AssetConfig config) throws IOException { fetchFile(url, target, limit, config, null); }
-    static void fetchFile(String url, File target, long limit, AssetConfig config, String authorization) throws IOException {
+    static void fetchFile(String url, File target, long limit, AssetConfig config) throws IOException { fetchFile(url, target, limit, config, null, null); }
+    static void fetchFile(String url, File target, long limit, AssetConfig config, String authorization) throws IOException { fetchFile(url, target, limit, config, authorization, null); }
+    /**
+     * Download one package. {@code progress} (optional) is told the running and announced byte counts
+     * after every chunk; it may throw to abort the transfer, which leaves {@code target} partial and is
+     * the caller's to delete.
+     */
+    static void fetchFile(String url, File target, long limit, AssetConfig config, String authorization, Progress progress) throws IOException {
         HttpURLConnection connection = open(url, config, authorization);
         try {
             long declared = connection.getContentLengthLong();
@@ -95,28 +105,57 @@ public final class AssetUpdater {
             long total = 0;
             try (InputStream in = connection.getInputStream(); OutputStream out = new FileOutputStream(target)) {
                 byte[] buffer = new byte[1 << 16]; int read;
-                while ((read = in.read(buffer)) > 0) { total += read; if (total > limit) throw new IOException("package is larger than the " + limit + " byte limit"); out.write(buffer, 0, read); }
+                while ((read = in.read(buffer)) > 0) {
+                    total += read; if (total > limit) throw new IOException("package is larger than the " + limit + " byte limit"); out.write(buffer, 0, read);
+                    if (progress != null) progress.onBytes(total, declared);
+                }
             }
             if (declared >= 0 && total != declared) throw new IOException("package is " + total + " bytes, the server announced " + declared);
         } finally { connection.disconnect(); }
     }
 
     private static HttpURLConnection open(String url, AssetConfig config, String authorization) throws IOException {
-        String current = url;
+        URL first = AssetConfig.parseUrl(url);
+        if (first == null) throw new IOException("invalid asset URL: " + url);
+        String origin = originOf(first);
+        boolean credential = authorization != null && !authorization.isEmpty();
+        URL current = first;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-            URL parsed = AssetConfig.parseUrl(current);
-            if (parsed == null) throw new IOException("invalid asset URL: " + current);
-            requireAllowed(parsed, config);
-            HttpURLConnection connection = (HttpURLConnection) parsed.openConnection();
+            requireAllowed(current, config);
+            HttpURLConnection connection = (HttpURLConnection) current.openConnection();
             connection.setInstanceFollowRedirects(false); connection.setConnectTimeout(CONNECT_TIMEOUT_MS); connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setRequestProperty("Accept-Encoding", "identity"); connection.setRequestProperty("User-Agent", USER_AGENT);
-            if (authorization != null && !authorization.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + authorization);
+            if (credential && originOf(current).equals(origin)) connection.setRequestProperty("Authorization", "Bearer " + authorization);
             int code = connection.getResponseCode();
-            if (code >= 300 && code < 400) { String location = connection.getHeaderField("Location"); connection.disconnect(); if (location == null || location.isEmpty()) throw new IOException("redirect without a location from " + current); current = new URL(parsed, location).toString(); continue; }
+            if (code >= 300 && code < 400) { String location = connection.getHeaderField("Location"); connection.disconnect(); current = redirectTarget(current, location, origin); continue; }
             if (code != HttpURLConnection.HTTP_OK) { connection.disconnect(); throw new IOException("HTTP " + code + " from " + current); }
             return connection;
         }
         throw new IOException("too many redirects from " + url);
+    }
+
+    /**
+     * The origin of an asset URL: scheme plus host plus effective port. Only URLs that share an origin
+     * with the first hop may receive the Worker token.
+     */
+    static String originOf(URL url) {
+        String protocol = url.getProtocol() == null ? "" : url.getProtocol().toLowerCase(Locale.ROOT);
+        String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+        int port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+        return protocol + "://" + host + ":" + port;
+    }
+
+    /**
+     * The URL a redirect points at, or an {@link IOException} when following it would move the transfer
+     * off {@code origin}. The refusal happens before the request is repeated, so the token is never sent
+     * rather than sent and then undone.
+     */
+    static URL redirectTarget(URL current, String location, String origin) throws IOException {
+        if (location == null || location.isEmpty()) throw new IOException("redirect without a location from " + current);
+        URL next;
+        try { next = new URL(current, location); } catch (IOException error) { throw new IOException("invalid redirect target from " + current, error); }
+        if (!originOf(next).equals(origin)) throw new IOException("refusing cross-origin asset redirect from " + current + " to " + next.getHost());
+        return next;
     }
     private static void requireAllowed(URL url, AssetConfig config) throws IOException {
         String protocol = url.getProtocol() == null ? "" : url.getProtocol().toLowerCase(Locale.ROOT);

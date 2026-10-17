@@ -7,10 +7,11 @@
 ## 版本基线
 
 - 上游代码基线：`0.3.0`
-- 当前增强代码版本：`2.6.3`
-- Android `versionName`：`2.6.3`
-- Android 内部 `versionCode`：`27`
+- 当前增强代码版本：`2.6.4`（工作树版本；2.6.3 为上一正式版本）
+- Android `versionName`：`2.6.4`
+- Android 内部 `versionCode`：`28`（上一版本为 `27`，必须严格递增）
 - `release-policy.json` 为 `0.3.0` 保留已确认的 `2.6.*` 兼容版本线。
+- 2.6.4 未改动运行时素材：R2 索引沿用 2.6.3 已发布的基线/增量链，只重写 `assets-index.json`，不产生新的素材 ZIP。
 
 以上只描述代码与元数据，不等同于已经打包、打标签或发布。必须分别核验 Git 标签、产物和 GitHub Release。
 

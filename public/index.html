@@ -75,6 +75,8 @@
 
   <noscript><p style="color:#c3cbc7;text-align:center;padding:40px">需要启用 JavaScript 才能运行本游戏。</p></noscript>
 
+  <!-- Tauri 2 exposes its IPC global before document parsing. Load this bridge before every application script. -->
+  <script src="/js/desktopBridge.js"></script>
   <script src="/js/boot.js"></script>
   <script type="module" src="/js/main.js" id="sp-main"></script>
   <script nomodule src="/js/bootLegacy.js"></script>

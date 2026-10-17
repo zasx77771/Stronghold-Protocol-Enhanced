@@ -57,6 +57,7 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
   const pkg = readJson(root, 'package.json');
   const lock = readJson(root, 'package-lock.json');
   const desktop = readJson(root, 'desktop/runtime/package.json');
+  const tauri = readJson(root, 'src-tauri/tauri.conf.json');
   const constants = readFileSync(resolve(root, 'shared/constants.js'), 'utf8');
   const androidGradle = readFileSync(resolve(root, 'android/app/build.gradle'), 'utf8');
   const appVersion = /export const APP_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(constants)?.[1];
@@ -72,6 +73,7 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
     'package-lock.json root package version': lock.packages?.['']?.version,
     'shared/constants.js APP_VERSION': appVersion,
     'desktop/runtime/package.json version': desktop.version,
+    'src-tauri/tauri.conf.json version': tauri.version,
     'android/app/build.gradle versionName': androidVersion,
   })) {
     if (value !== pkg.version) fail(`${label} must equal package.json version ${pkg.version}, received ${value ?? 'missing'}`);

@@ -27,7 +27,7 @@ import com.strongholdprotocol.covenant.assets.AssetInventory;
 import com.strongholdprotocol.covenant.assets.AssetJson;
 import com.strongholdprotocol.covenant.assets.AssetPaths;
 import com.strongholdprotocol.covenant.assets.AssetStore;
-import com.strongholdprotocol.covenant.assets.AssetUpdater;
+import com.strongholdprotocol.covenant.assets.AssetUpdateSession;
 import com.strongholdprotocol.covenant.assets.RuntimeAssetHandler;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -47,15 +47,20 @@ import org.json.JSONObject;
 
 public final class MainActivity extends Activity {
     private static final String TAG = "StrongholdProtocol";
+    /** The packaged client entry point; everything the page loads afterwards hangs off this file. */
+    private static final String CLIENT_ENTRY = AssetPaths.ENTRY_FILE;
     private static final String START_URL =
-            "https://appassets.androidplatform.net/index.html?desktop=1&android=1";
+            "https://appassets.androidplatform.net/" + CLIENT_ENTRY + "?desktop=1&android=1";
     /** Where the runtime asset store lives inside the app's private files directory. */
     private static final String ASSET_STORE_DIR = "asset-runtime";
     private WebView webView;
     private TcpBridge tcpBridge;
     private AssetStore assetStore;
     private AssetConfig assetConfig;
-    private boolean assetUpdateStarted;
+    /** The explicit, user-driven asset update session (never starts a transfer by itself). */
+    private AssetUpdateSession assetSession;
+    /** One worker for the session's blocking network calls, so the WebView thread never waits. */
+    private volatile ExecutorService assetExecutor;
 
     private interface AssetSessionListener { void onToken(String token); }
 
@@ -223,6 +228,14 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         assetStore = openAssetStore();
+        if (!new AssetApkSource(getAssets()).has(CLIENT_ENTRY)) {
+            // Nothing else explains a window that only reads "not found": the APK carries no client at
+            // all, so every request falls through to RuntimeAssetHandler's 404. No runtime fallback can
+            // invent the missing files — the repair is a build that packages the staged client.
+            Log.e(TAG, "this APK carries no " + CLIENT_ENTRY
+                    + "; the client was not packaged. Build it with scripts/build-android-client.ps1,"
+                    + " or set SP_ANDROID_ASSETS_DIR to a staged client before Gradle runs.");
+        }
 
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidplatform.net")
@@ -263,16 +276,24 @@ public final class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
-        tcpBridge = new TcpBridge(webView, token -> startAssetUpdate(token));
+        // The game-session token only travels from the TCP bridge into the native session; page
+        // JavaScript never sees it, and receiving it no longer starts any download.
+        tcpBridge = new TcpBridge(webView, this::setAssetSessionToken);
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroidTcp");
         webView.addJavascriptInterface(tcpBridge, "StrongholdAndroid");
+        assetConfig = loadAssetConfig();
+        assetSession = new AssetUpdateSession(assetStore, assetConfig, getCacheDir(), null);
+        assetSession.setListener(this::emitAssetState);
+        assetExecutor = Executors.newSingleThreadExecutor();
+        webView.addJavascriptInterface(new AssetBridge(), "StrongholdAndroidAssets");
         setContentView(webView);
         // The window's DecorView/InsetsController may not exist until content is attached
         // (notably on Android emulators and some vendor builds). Post the first fullscreen
         // request and keep the method null-safe for later focus changes.
         getWindow().getDecorView().post(this::enterImmersiveMode);
         webView.loadUrl(START_URL);
-        startAssetUpdate();
+        Log.i(TAG, "asset runtime: " + (assetStore == null ? "no store" : assetStore.describe()) + "; " + assetConfig.describe()
+                + "; waiting for an explicit download request");
     }
 
     /**
@@ -306,32 +327,84 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /**
-     * Check the release index once per launch, on a background thread. Failures are logged and the
-     * installed assets stay exactly as they were; a package that lands takes effect from the next
-     * launch, so a running match is never disturbed.
-     */
-    private void startAssetUpdate() {
-        startAssetUpdate(null);
+    /** The native TCP bridge delivers the private game-session token; nothing starts downloading. */
+    private void setAssetSessionToken(String sessionToken) {
+        AssetUpdateSession session = assetSession;
+        if (session != null) session.setSessionToken(sessionToken);
     }
 
-    /** A protected gateway waits for the established game session before downloading anything. */
-    private synchronized void startAssetUpdate(String sessionToken) {
-        if (assetStore == null || assetUpdateStarted) return;
-        if (assetConfig == null) assetConfig = loadAssetConfig();
-        final AssetConfig config = assetConfig;
-        Log.i(TAG, "asset runtime: " + assetStore.describe() + "; " + config.describe());
-        if (!config.enabled) return;
-        if (config.tokenUrl != null && !config.tokenUrl.isEmpty() && (sessionToken == null || !sessionToken.matches("[0-9a-f]{32}"))) {
-            Log.i(TAG, "asset runtime: waiting for game session before protected update");
-            return;
+    /** Push one session snapshot into the page's narrow asset channel. */
+    private void emitAssetState(Map<String, Object> status) {
+        WebView view = webView;
+        if (view == null || status == null) return;
+        String script = "if(globalThis.__strongholdAssetUpdate)globalThis.__strongholdAssetUpdate("
+                + AssetJson.stringify(status) + ");";
+        view.post(() -> view.evaluateJavascript(script, null));
+    }
+
+    private interface SessionTask {
+        void run(AssetUpdateSession session);
+    }
+
+    /**
+     * The only JavaScript surface for runtime assets: read the status, prepare a plan, start or retry
+     * the transfer the player confirmed, and cancel. It carries no token in either direction and can
+     * never start a transfer by itself: the token exchange stays inside {@link AssetUpdateSession}.
+     */
+    private final class AssetBridge {
+        @JavascriptInterface
+        public boolean available() {
+            return assetSession != null;
         }
-        assetUpdateStarted = true;
-        final String initialInventory = assetStore.inventoryDigest();
-        AssetUpdater.start(assetStore, config, getCacheDir(), sessionToken, message -> Log.i(TAG, message), outcome -> {
-            boolean changed = !initialInventory.equals(assetStore.inventoryDigest());
-            if (changed && ("repair".equals(outcome.status) || "update".equals(outcome.status)) && webView != null) webView.post(() -> webView.reload());
-        });
+
+        @JavascriptInterface
+        public String status() {
+            AssetUpdateSession session = assetSession;
+            if (session == null) {
+                return "{\"format\":\"" + AssetUpdateSession.STATUS_FORMAT + "\",\"state\":\""
+                        + AssetUpdateSession.UNAVAILABLE + "\",\"message\":\"the runtime asset store is unavailable\"}";
+            }
+            return AssetJson.stringify(session.status());
+        }
+
+        @JavascriptInterface
+        public void prepare() {
+            submit(session -> session.prepare());
+        }
+
+        @JavascriptInterface
+        public void start() {
+            submit(session -> session.start());
+        }
+
+        @JavascriptInterface
+        public void retry() {
+            submit(session -> session.retry());
+        }
+
+        @JavascriptInterface
+        public void cancel() {
+            AssetUpdateSession session = assetSession;
+            if (session != null) session.cancel();
+        }
+
+        /** Blocking network work leaves the WebView thread; the session reports back by listener. */
+        private void submit(SessionTask task) {
+            AssetUpdateSession session = assetSession;
+            ExecutorService executor = assetExecutor;
+            if (session == null || executor == null || executor.isShutdown()) return;
+            try {
+                executor.execute(() -> {
+                    try {
+                        task.run(session);
+                    } catch (RuntimeException failed) {
+                        Log.w(TAG, "asset request failed", failed);
+                    }
+                });
+            } catch (RuntimeException rejected) {
+                Log.w(TAG, "asset request was not scheduled", rejected);
+            }
+        }
     }
     /** Public configuration only: the packaged file wins, then the build-time defaults. */
     private AssetConfig loadAssetConfig() {
@@ -406,6 +479,13 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (assetSession != null) {
+            assetSession.cancel();
+            assetSession.setListener(null);
+        }
+        ExecutorService executor = assetExecutor;
+        assetExecutor = null;
+        if (executor != null) executor.shutdownNow();
         if (webView != null) {
             if (tcpBridge != null) {
                 webView.removeJavascriptInterface("StrongholdAndroidTcp");
@@ -413,6 +493,7 @@ public final class MainActivity extends Activity {
                 tcpBridge.shutdown();
                 tcpBridge = null;
             }
+            webView.removeJavascriptInterface("StrongholdAndroidAssets");
             webView.loadUrl("about:blank");
             webView.stopLoading();
             webView.destroy();

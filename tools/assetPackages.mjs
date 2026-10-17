@@ -706,6 +706,86 @@ export function readIndex(file) {
   return index;
 }
 
+const isInventoryDigest = (value) => typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+
+/** Every version the index itself publishes a payload for (an index-wide fact, never cached in it). */
+export function providerVersions(index) {
+  const names = new Set();
+  const versions = new Set();
+  for (const item of (index && index.bases) || []) { names.add(item.name); versions.add(String(item.version)); }
+  for (const item of (index && index.deltas) || []) { versions.add(String(item.to)); }
+  return { names, versions };
+}
+
+/**
+ * True when the index still holds the exact payload that a client at `version` needs. A version is
+ * served either by its own base/delta or by a `reused` pointer at an older version whose published
+ * inventory is identical, which is how a release that ships no new asset bytes reuses the chain that
+ * is already in the bucket instead of uploading the same content again under a new version name.
+ */
+export function versionProvides(index, version) {
+  const { names, versions } = providerVersions(index);
+  const want = String(version);
+  if (names.has(basePackageName(want))) return true;
+  return versions.has(want);
+}
+
+/** The published version whose payload is byte-identical to `inventory`, or null. */
+export function reuseCandidate(index, inventory) {
+  if (!index || !isInventoryDigest(inventory)) return null;
+  const wanted = String(inventory).toLowerCase();
+  const options = [];
+  for (const item of index.bases || []) {
+    const info = index.versions && index.versions[item.version];
+    if (info && String(info.inventory).toLowerCase() === wanted) options.push({ version: String(item.version), via: KIND_BASE });
+  }
+  for (const item of index.deltas || []) {
+    const info = index.versions && index.versions[item.to];
+    if (info && String(info.inventory).toLowerCase() === wanted) options.push({ version: String(item.to), via: KIND_DELTA });
+  }
+  /**
+   * The newest version wins; at the same version a baseline beats the delta that arrives at it, because the
+   * baseline is the package that carries the full payload for every client, not only for the ones already
+   * sitting on the delta's `from`. The order is total, so the choice is deterministic.
+   */
+  options.sort((a, b) => compareVersions(a.version, b.version)
+    || (a.via === b.via ? 0 : a.via === KIND_BASE ? 1 : -1));
+  return options.length ? options[options.length - 1] : null;
+}
+
+/**
+ * The version whose package actually carries `version`'s asset set.
+ *
+ * A metadata-only release records `versions[version].reused = <older version>` because the bytes are
+ * already in the bucket. Routing and stranding have to follow that pointer: the delegated version has
+ * no package of its own, so a route is computed to the version that publishes the payload. A cycle or a
+ * pointer at a version the index does not serve resolves to `version` itself, which then routes (or
+ * fails) exactly as it did before the pointer existed.
+ */
+export function resolveProviderVersion(index, version) {
+  let current = version ? String(version) : null;
+  if (!current || !index || !index.versions) return current;
+  const seen = new Set([current]);
+  for (let step = 0; step < 8; step += 1) {
+    const info = index.versions[current];
+    const next = info && info.reused ? String(info.reused) : null;
+    if (!next || seen.has(next) || !versionProvides(index, next)) return current;
+    seen.add(next);
+    current = next;
+  }
+  return current;
+}
+
+/** Problems that stop a version from being published on top of `index`, in report order. */
+export function checkPublishTarget(index, version) {
+  const problems = [];
+  if (!version) return ['publish: no version was given'];
+  if (index && index.latest && compareVersions(version, index.latest) <= 0) {
+    problems.push(`publish: ${version} does not come after the published latest ${index.latest}`);
+  }
+  return problems;
+}
+
 export function checkIndex(index) {
   const problems = [];
   if (!index || typeof index !== 'object') return ['index: not an object'];
@@ -722,6 +802,13 @@ export function checkIndex(index) {
     if (!/^[0-9a-f]{64}$/.test(String(item.sha256))) problems.push(`index: delta ${item.name} has no sha256`);
   }
   if (!index.versions || typeof index.versions !== 'object') problems.push('index: no versions map');
+  for (const [version, info] of Object.entries(index.versions || {})) {
+    if (!info || typeof info !== 'object') { problems.push(`index: version ${version} is not an object`); continue; }
+    if (!info.inventory) problems.push(`index: version ${version} has no inventory digest`);
+    if (info.reused && !versionProvides(index, info.reused)) {
+      problems.push(`index: version ${version} reuses ${info.reused}, which the index does not publish`);
+    }
+  }
   return problems;
 }
 
@@ -828,12 +915,30 @@ export function planRelease({
     if (!base) notes.push('no baseline has been published yet, so this release starts one');
     base = true;
   }
-  if (published && comparable && published.versions && published.versions[from]
+  /*
+   * A release that ships no new asset bytes must not publish a package at all. When the index already
+   * serves a version whose published inventory is exactly this release's inventory, that version's
+   * baseline and delta chain stay in the bucket and the new version is recorded as reusing it; the
+   * release only republishes the index metadata. Reuse is decided before any baseline/delta decision
+   * so a version bump cannot duplicate an already validated upload.
+   */
+  let reuse = null;
+  /* Reuse only applies to a forward release: `to` must come after the version the previous tree came from. */
+  const forward = Boolean(to && from && compareVersions(to, from) > 0);
+  if (published && !base && to && isInventoryDigest(afterDigest) && forward) {
+    const candidate = reuseCandidate(published, afterDigest);
+    if (candidate && !versionProvides(published, to)) {
+      reuse = { ...candidate, inventory: String(afterDigest).toLowerCase() };
+      notes.push(`the asset set of ${to || 'the new version'} is identical to published ${candidate.version}, so its ${candidate.via} package is reused and no new object is uploaded`);
+      base = false;
+    }
+  }
+  if (published && !base && !reuse && comparable && published.versions && published.versions[from]
     && published.versions[from].inventory !== beforeDigest) {
     base = true;
     notes.push(`the previous tree does not match the published inventory of ${from}, so its delta would reach nobody`);
   }
-  if (published && !base && comparable) {
+  if (published && !base && !reuse && comparable) {
     const newestBase = published.bases[published.bases.length - 1].version;
     const since = published.deltas.filter((item) => compareVersions(item.to, newestBase) > 0).length;
     if (since >= maxChain) {
@@ -841,8 +946,9 @@ export function planRelease({
       notes.push(`${since} deltas already follow baseline ${newestBase}; a longer chain would exceed the client limit of ${maxChain}`);
     }
   }
-  const delta = comparable && !mainline;
-  if (mainline) notes.push('a mainline release needs no delta across the baseline');
+  const delta = comparable && !mainline && !reuse;
+  if (reuse) notes.push(`a reused release needs no delta from ${from}`);
+  else if (mainline) notes.push('a mainline release needs no delta across the baseline');
   else if (!comparable) {
     notes.push('no usable previous tree was given, so only a baseline can be published');
     base = true;
@@ -850,7 +956,7 @@ export function planRelease({
   if (delta && beforeDigest === afterDigest) {
     notes.push(`the asset set did not change between ${from} and ${to || 'the new version'}`);
   }
-  return { base, delta, notes };
+  return { base, delta, reuse, notes };
 }
 
 /** Versions a client can no longer bring up to date through any route it is allowed to take. */
@@ -872,26 +978,46 @@ export function planRoute(index, local, { maxChain = index.maxChain || DEFAULT_M
   let verification = 'unknown';
   if (version && published && inventory) verification = published.inventory === inventory ? 'ok' : 'mismatch';
   else if (version && !published) verification = 'unpublished';
-  const baseRoute = bestBaseRoute(index, latest, maxChain);
+  /*
+   * A version can be served by a package published under an older version (`versions[v].reused`). The
+   * delegated version has no package of its own, so both ends of the route have to be resolved to the
+   * versions that really publish the bytes: `providerVersion` is what the client has, `target` is what
+   * `latest` serves. A client on the reused payload is then up to date instead of being reported as
+   * stranded, and one that is behind still gets the existing delta chain to that payload.
+   */
+  const providerVersion = version ? resolveProviderVersion(index, version) : null;
+  const providerEntry = providerVersion && index.versions ? index.versions[providerVersion] : null;
+  if (providerVersion !== version && providerEntry && inventory) {
+    verification = providerEntry.inventory === inventory ? 'ok' : 'mismatch';
+  }
+  const target = latest ? resolveProviderVersion(index, latest) : null;
+  const baseRoute = bestBaseRoute(index, target, maxChain);
   const result = {
     status: 'blocked',
     local: { version, inventory },
     latest,
+    providerVersion,
     verification,
     route: null,
     base: baseRoute ? { steps: baseRoute, bytes: routeBytes(baseRoute) } : null,
     reason: ''
   };
-  if (compareVersions(version, latest) === 0 && verification !== 'mismatch') {
-    return { ...result, status: 'current', reason: `already on ${latest}` };
+  if (compareVersions(providerVersion, target) === 0 && verification !== 'mismatch') {
+    return {
+      ...result,
+      status: 'current',
+      reason: providerVersion === version
+        ? (target === latest ? `already on ${latest}` : `already on the asset set published for ${latest}`)
+        : `${version} reuses the payload published for ${providerVersion}`
+    };
   }
-  const deltaChain = version && verification === 'ok' ? shortestDeltaChain(index, version, latest, maxChain) : null;
+  const deltaChain = providerVersion && verification === 'ok' ? shortestDeltaChain(index, providerVersion, target, maxChain) : null;
   if (deltaChain && deltaChain.length && preferDelta) {
     return {
       ...result,
       status: 'update',
       route: { kind: KIND_DELTA, steps: deltaChain, bytes: routeBytes(deltaChain) },
-      reason: `${deltaChain.length} delta package(s) from ${version}`
+      reason: `${deltaChain.length} delta package(s) from ${providerVersion}`
     };
   }
   if (baseRoute) {
@@ -905,7 +1031,7 @@ export function planRoute(index, local, { maxChain = index.maxChain || DEFAULT_M
         : !version ? 'no local state; using a base package' : `no usable delta chain; base ${baseRoute[0].from}`
     };
   }
-  if (compareVersions(version, latest) === 0) {
+  if (compareVersions(providerVersion, target) === 0) {
     return { ...result, status: 'current', reason: `already on ${latest}` };
   }
   return { ...result, reason: 'the index has no route to the latest version' };

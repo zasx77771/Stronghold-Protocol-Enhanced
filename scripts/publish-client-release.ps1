@@ -3,8 +3,6 @@ param(
   [string]$PreviousVersion = '',
   [string]$UpstreamMainlineVersion = '',
   [switch]$MainlineUpdate,
-  [string]$ElectronVersion = '44.5.1',
-  [string]$ElectronZip = '',
   [string]$WindowsCacheDir = '',
   [string]$WindowsAssetSourceDir = '',
   [string]$AndroidToolchainDir = '',
@@ -48,14 +46,11 @@ if ($MainlineUpdate) { $PolicyArguments += '--mainline' }
 & node @PolicyArguments
 if ($LASTEXITCODE -ne 0) { throw 'Release policy validation failed.' }
 
-$WindowsArguments = @{
-  ElectronVersion = $ElectronVersion
-}
+$WindowsArguments = @{}
 if ($AssetIndexUrl) { $WindowsArguments.AssetIndexUrl = $AssetIndexUrl }
 if ($AssetTokenUrl) { $WindowsArguments.AssetTokenUrl = $AssetTokenUrl }
 if ($AssetMaxChain -gt 0) { $WindowsArguments.AssetMaxChain = $AssetMaxChain }
 if ($AssetAllowHttp) { $WindowsArguments.AssetAllowHttp = $true }
-if ($ElectronZip) { $WindowsArguments.ElectronZip = $ElectronZip }
 if ($WindowsCacheDir) { $WindowsArguments.CacheDir = $WindowsCacheDir }
 if ($WindowsAssetSourceDir) { $WindowsArguments.AssetSourceDir = $WindowsAssetSourceDir }
 
