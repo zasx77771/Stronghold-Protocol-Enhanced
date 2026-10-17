@@ -206,6 +206,8 @@ test('the Windows build and packaging surface no longer downloads or packages El
   const build = read('scripts/build-windows-client.ps1');
   assert.match(build, /cargo tauri build/, 'the build must run cargo tauri build');
   assert.match(build, /src-tauri/, 'the build must operate on the src-tauri project');
+  assert.match(build, /\$env:CARGO_TARGET_DIR = \$TargetDir/, "the target directory is passed through Cargo's supported environment variable");
+  assert.doesNotMatch(build, /--target-dir/, "cargo tauri does not accept Cargo's --target-dir option");
   assert.doesNotMatch(build, /github\.com\/electron/i, 'no Electron download URL may remain');
 
   // The client runtime therefore no longer has a Node main process to ship. A normal checkout deletes
