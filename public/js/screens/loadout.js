@@ -46,6 +46,8 @@ import { DiyPanel, diyData } from './diy.js';
 import { LoadoutStats } from '../ui/loadoutStats.js';
 export { LoadoutStats, statsPreview } from '../ui/loadoutStats.js';
 import { diyCount, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES } from '../ui/diyModel.js';
+// 本地配队 (enhanced, 阶段 E): named snapshots of the stored loadout, on this device only
+import { LINEUPS_MAX, LINEUP_NAME_MAX_LEN, loadLineups, saveLineup, removeLineup, clearLineups, lineupPayload, lineupSize } from '../ui/lineupModel.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { copyText } from '../ui/clipboard.js';
 import { toast } from '../ui/toasts.js';
@@ -504,6 +506,10 @@ function LoadoutScreen({ st }) {
   // the detail's 普通 / 精锐 skill toggle: one preview for its skills, its 特质 and the rows' skill details (display only)
   const [previewLevel, setPreviewLevel] = useState('normal');
   const [io, setIo] = useState(null);                      // 导出 / 导入 dialog: { mode, text } | null
+  // 本地配队 (enhanced, 阶段 E): the saved snapshots (re-read on open, so another tab's save shows up) and the name field
+  const [lineupOpen, setLineupOpen] = useState(false);
+  const [lineupDoc, setLineupDoc] = useState(() => loadLineups());
+  const [lineupName, setLineupName] = useState('');
 
   const tab = st.tab === 'ownership' || st.tab === 'diy' ? st.tab : 'loadout';
   const lost = ready ? missingGameData(tab) : [];
@@ -618,6 +624,60 @@ function LoadoutScreen({ st }) {
         : t('已导入 {applied} 名干员的调配', { applied }), dropped ? 'warn' : 'success');
   };
 
+  // 本地配队 (enhanced, 阶段 E): snapshots of the stored loadout kept on this device. Saving copies the current
+  // `{ entries, ops }`; reading applies a snapshot through the SAME path as 导入 (applyLoadoutEntries → sanitizeEntries /
+  // sanitizeOps → the sync), after a confirm, so the server never receives an entry it would refuse and an unsaved-looking
+  // current squad is not lost without a question. Deleting and clearing touch only the snapshot list.
+  const openLineups = () => { setLineupDoc(loadLineups()); setLineupName(''); setLineupOpen(true); };
+  const storeLineup = () => {
+    const cur = loadoutStore.get();
+    const res = saveLineup(loadLineups(), { name: lineupName, entries: cur.entries, ops: cur.ops });
+    if (!res.ok) {
+      toast(res.error === 'NAME_REQUIRED' ? t('请先给这份配队起一个名字') : t('当前没有可保存的调配（技能、模组或潜能与练度都未调整）'), 'error');
+      return;
+    }
+    setLineupDoc(res.doc);
+    setLineupName('');
+    toast(t('已保存配队「{name}」', { name: res.item.name }), 'success');
+  };
+  const readLineup = async (item) => {
+    const refused = importRefusal('loadout', ready);
+    if (refused) { toast(refused.text, refused.tone); return; }
+    const payload = lineupPayload(item);
+    // the same rule as 导入: a payload with `ops` (even an empty one) needs the 自选 data, because only backups.json
+    // names the owned 6★ (GitHub #538) — refuse instead of silently clearing a 练度 the snapshot did not carry
+    const opsRefused = loadoutOpsImportRefusal(payload.ops, ready);
+    if (opsRefused) { toast(opsRefused.text, opsRefused.tone); return; }
+    const ok = await confirmDialog({ title: t('读取配队'), text: t('读取「{name}」会覆盖当前的干员调配，继续？', { name: item.name }), okText: t('读取') });
+    if (!ok) return;
+    const opIds = cultivationCharIds(data.get('chess'), data.get('backups'));
+    // `ops: {}` is a snapshot that saved no 潜能 / 练度: reading it restores the defaults, like 导入 with `ops: {}`
+    const r = applyLoadoutEntries(payload.entries, getChess, { ops: payload.ops, isOperator: (id) => opIds.has(id) });
+    const { applied, dropped } = r;
+    const nKept = r.ops ?? 0;
+    // nothing survived sanitising (unknown chess, or every choice already the default): keep the current loadout
+    if (!applied && !nKept) { toast(t('读取失败：这份配队在当前版本没有可用的调配，未做任何改动'), 'error'); return; }
+    setLineupOpen(false);
+    setLineupDoc(loadLineups());
+    toast(!applied ? t('已读取配队「{name}」的潜能与练度', { name: item.name })
+      : dropped ? t('已读取配队「{name}」（{applied} 名干员，另有 {dropped} 项不可用已跳过）', { name: item.name, applied, dropped })
+        : t('已读取配队「{name}」（{applied} 名干员）', { name: item.name, applied }), dropped ? 'warn' : 'success');
+  };
+  const dropLineup = async (item) => {
+    const ok = await confirmDialog({ title: t('删除配队'), text: t('删除本机保存的配队「{name}」？', { name: item.name }), okText: t('删除'), danger: true });
+    if (!ok) return;
+    setLineupDoc(removeLineup(loadLineups(), item.id));
+    toast(t('已删除配队「{name}」', { name: item.name }), 'success');
+  };
+  const clearAllLineups = async () => {
+    const n = lineupDoc.items.length;
+    if (!n) return;
+    const ok = await confirmDialog({ title: t('清空全部配队'), text: t('清空本机保存的全部 {n} 个配队？', { n }), okText: t('全部清空'), danger: true });
+    if (!ok) return;
+    setLineupDoc(clearLineups());
+    toast(t('已清空本机保存的全部配队'), 'success');
+  };
+
   // Esc closes; ←/→ browse the filtered roster (not while typing in the search field)
   useEffect(() => {
     const onKey = (e) => {
@@ -694,6 +754,7 @@ function LoadoutScreen({ st }) {
         ${inMatch && hasDeadline(infoDeadline) ? html`<${Countdown} deadline=${infoDeadline} size="sm" gauge=${false} label=${t('调配截止')} class="lo-deadline" />` : null}
         ${syncText ? html`<span class=${cx('lo-sync', syncCls)} role="status">${t(syncText)}</span>` : null}
         <span class="lo-count">${t('已调整')} <b class="num">${nChanged}</b><span class="num t-dim">/${roster.length}</span></span>
+        <${Button} variant="ghost" size="sm" icon="book" data-testid="loadout-presets" onClick=${openLineups} title=${t('本机保存的配队：读取会覆盖当前的干员调配')}>${t('本地配队')}<//>
         <${Button} variant="ghost" size="sm" data-testid="loadout-export" disabled=${!nChanged && !Object.keys(st.ops || {}).length} onClick=${openExport} title=${t('导出当前调配（可复制或下载）')}>${t('导出')}<//>
         <${Button} variant="ghost" size="sm" data-testid="loadout-import" disabled=${!ready} onClick=${openImport} title=${t('导入调配（粘贴或选择文件）')}>${t('导入')}<//>
         <${Button} variant="secondary" size="sm" icon="refresh" disabled=${!nChanged} onClick=${resetAll}>${t('全部恢复默认')}<//>
@@ -756,6 +817,28 @@ function LoadoutScreen({ st }) {
         onInput=${(e) => setIo({ ...io, text: e.currentTarget.value })}></textarea>
       <input type="file" accept=".json,application/json,text/plain" class="lo-io__file" ref=${fileRef} onChange=${ioFile} />
     <//>` : null}
+  ${lineupOpen ? html`<${Modal} open=${true} onClose=${() => setLineupOpen(false)}
+      title=${t('本地配队')} micro="LOCAL LINEUPS"
+      actions=${html`<${Button} variant="ghost" onClick=${() => setLineupOpen(false)}>${t('关闭')}<//>
+        <${Button} variant="secondary" size="sm" icon="refresh" data-testid="lineup-clear" disabled=${!lineupDoc.items.length} onClick=${clearAllLineups}>${t('全部清空')}<//>`}>
+    <p class="lo-lineup__hint">${t('本机保存的配队：读取会覆盖当前的干员调配。保存在此设备，不含账号信息，换设备时请用「导出」。')}</p>
+    <div class="lo-lineup__save">
+      <${TextField} label=${t('配队名称')} value=${lineupName} maxLength=${LINEUP_NAME_MAX_LEN} placeholder=${t('例如：高台连携')}
+        onInput=${(v) => setLineupName(String(v))} onEnter=${storeLineup} class="lo-lineup__field" />
+      <${Button} variant="primary" icon="plus" data-testid="lineup-save" onClick=${storeLineup}>${t('保存当前配队')}<//>
+    </div>
+    ${lineupDoc.items.length ? html`<ul class="lo-lineup__list" data-testid="lineup-list">
+      ${lineupDoc.items.map((it) => html`<li key=${it.id} class="lo-lineup__row" data-testid="lineup-row">
+        <span class="lo-lineup__name">${it.name}</span>
+        <span class="lo-lineup__meta">${t('{n} 名干员', { n: lineupSize(it) })}</span>
+        <span class="lo-lineup__acts">
+          <${Button} variant="secondary" size="sm" data-testid="lineup-load" onClick=${() => readLineup(it)}>${t('读取')}<//>
+          <${Button} variant="ghost" size="sm" data-testid="lineup-delete" onClick=${() => dropLineup(it)}>${t('删除')}<//>
+        </span>
+      </li>`)}
+    </ul>` : html`<p class="lo-lineup__empty t-dim" data-testid="lineup-empty">${t('本机还没有保存的配队。')}</p>`}
+    <p class="lo-lineup__note">${t('最多保存 {max} 份，同名的保存会覆盖旧的一份。', { max: LINEUPS_MAX })}</p>
+  <//>` : null}
 <//>`;
 }
 

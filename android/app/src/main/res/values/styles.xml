@@ -1,0 +1,6 @@
+<resources>
+  <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+    <item name="android:windowFullscreen">true</item>
+    <item name="android:colorAccent">#6cae7d</item>
+  </style>
+</resources>
