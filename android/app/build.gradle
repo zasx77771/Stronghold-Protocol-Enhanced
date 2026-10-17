@@ -18,6 +18,17 @@ if (!(debugApplicationIdSuffix ==~ /\.[A-Za-z][A-Za-z0-9_]*/)) {
     throw new GradleException("spDebugApplicationIdSuffix must be one dot-prefixed package segment")
 }
 
+// Release automation supplies this only through process environment variables. The keystore
+// itself and its passwords are deliberately never copied into the repository or package tree.
+def controlledSigningStore = System.getenv('SP_ANDROID_SIGNING_STORE_FILE') ?: ''
+def controlledSigningStorePassword = System.getenv('SP_ANDROID_SIGNING_STORE_PASSWORD') ?: ''
+def controlledSigningKeyAlias = System.getenv('SP_ANDROID_SIGNING_KEY_ALIAS') ?: ''
+def controlledSigningKeyPassword = System.getenv('SP_ANDROID_SIGNING_KEY_PASSWORD') ?: ''
+def controlledSigningFields = [controlledSigningStore, controlledSigningStorePassword, controlledSigningKeyAlias, controlledSigningKeyPassword]
+def controlledSigning = controlledSigningFields.every { !it.isEmpty() }
+if (!controlledSigning && controlledSigningFields.any { !it.isEmpty() }) {
+    throw new GradleException('Android signing configuration must provide store file, store password, key alias and key password together')
+}
 android {
     namespace 'com.strongholdprotocol.covenant'
     compileSdk 35
@@ -26,8 +37,8 @@ android {
         applicationId 'com.strongholdprotocol.covenant'
         minSdk 26
         targetSdk 35
-        versionCode 28
-        versionName '2.6.4'
+        versionCode 29
+        versionName '2.6.5'
 
         // Public runtime configuration for the runtime asset updater. The index URL and the limits are
         // not secrets — the URL is baked into the APK — so they may come from a Gradle property or an
@@ -47,9 +58,22 @@ android {
         buildConfigField 'boolean', 'ASSET_ALLOW_HTTP', assetAllowHttp
     }
 
+    if (controlledSigning) {
+        signingConfigs {
+            controlled {
+                storeFile file(controlledSigningStore)
+                storePassword controlledSigningStorePassword
+                keyAlias controlledSigningKeyAlias
+                keyPassword controlledSigningKeyPassword
+            }
+        }
+    }
     buildTypes {
         debug {
             applicationIdSuffix debugApplicationIdSuffix
+            if (controlledSigning) {
+                signingConfig signingConfigs.controlled
+            }
         }
         release {
             minifyEnabled false

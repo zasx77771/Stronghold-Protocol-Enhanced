@@ -58,11 +58,13 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
   const lock = readJson(root, 'package-lock.json');
   const desktop = readJson(root, 'desktop/runtime/package.json');
   const tauri = readJson(root, 'src-tauri/tauri.conf.json');
+  const cargo = readFileSync(resolve(root, 'src-tauri/Cargo.toml'), 'utf8');
   const constants = readFileSync(resolve(root, 'shared/constants.js'), 'utf8');
   const androidGradle = readFileSync(resolve(root, 'android/app/build.gradle'), 'utf8');
   const appVersion = /export const APP_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(constants)?.[1];
   const androidVersion = /versionName\s+['"]([^'"]+)['"]/.exec(androidGradle)?.[1];
   const androidCode = Number(/versionCode\s+(\d+)/.exec(androidGradle)?.[1]);
+  const cargoVersion = /^version\s*=\s*[\'\"]([^\'\"]+)[\'\"]/m.exec(cargo)?.[1];
   if (/versionNameSuffix\b/.test(androidGradle)) {
     fail('android build types must not override the public versionName');
   }
@@ -74,6 +76,7 @@ export function validateReleasePolicy({ root = ROOT, upstreamMainlineVersion = n
     'shared/constants.js APP_VERSION': appVersion,
     'desktop/runtime/package.json version': desktop.version,
     'src-tauri/tauri.conf.json version': tauri.version,
+    'src-tauri/Cargo.toml version': cargoVersion,
     'android/app/build.gradle versionName': androidVersion,
   })) {
     if (value !== pkg.version) fail(`${label} must equal package.json version ${pkg.version}, received ${value ?? 'missing'}`);

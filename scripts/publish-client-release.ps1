@@ -9,6 +9,11 @@ param(
   [string]$AndroidCacheRoot = '',
   [string]$AndroidResourceSourceDir = '',
   [switch]$AndroidClean,
+  # Android signing is forwarded only at process execution time; credentials are never persisted.
+  [string]$AndroidSigningKeystore = '',
+  [string]$AndroidSigningStorePassword = '',
+  [string]$AndroidSigningKeyAlias = '',
+  [string]$AndroidSigningKeyPassword = '',
   [string]$IncrementalOutputRoot = '',
   # Public runtime asset configuration for the Android client (baked into the APK and its asset-config.json).
   [string]$AssetIndexUrl = '',
@@ -64,6 +69,15 @@ if ($AndroidCacheRoot) { $AndroidArguments.CacheRoot = $AndroidCacheRoot }
 if ($AndroidResourceSourceDir) { $AndroidArguments.ResourceSourceDir = $AndroidResourceSourceDir }
 if ($AssetTokenUrl) { $AndroidArguments.AssetTokenUrl = $AssetTokenUrl }
 if ($AndroidClean) { $AndroidArguments.Clean = $true }
+$AndroidSigningInputs = @($AndroidSigningKeystore, $AndroidSigningStorePassword, $AndroidSigningKeyAlias, $AndroidSigningKeyPassword)
+$MissingAndroidSigningInputCount = $AndroidSigningInputs.Where({ [string]::IsNullOrWhiteSpace([string]$_) }).Count
+if ($MissingAndroidSigningInputCount -ne $AndroidSigningInputs.Count) {
+  if ($MissingAndroidSigningInputCount -ne 0) { throw 'Android signing requires the keystore, store password, key alias and key password together.' }
+  $AndroidArguments.SigningKeystore = $AndroidSigningKeystore
+  $AndroidArguments.SigningStorePassword = $AndroidSigningStorePassword
+  $AndroidArguments.SigningKeyAlias = $AndroidSigningKeyAlias
+  $AndroidArguments.SigningKeyPassword = $AndroidSigningKeyPassword
+}
 if ($AssetIndexUrl) { $AndroidArguments.AssetIndexUrl = $AssetIndexUrl }
 if ($AssetIndexBaseUrl) { $AndroidArguments.AssetIndexBaseUrl = $AssetIndexBaseUrl }
 if ($AssetMaxChain -gt 0) { $AndroidArguments.AssetMaxChain = $AssetMaxChain }

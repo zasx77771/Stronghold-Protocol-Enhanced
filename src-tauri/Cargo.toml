@@ -1,6 +1,6 @@
 [package]
 name = "stronghold-protocol-client"
-version = "2.6.4"
+version = "2.6.5"
 description = "Stronghold Protocol Enhanced Windows desktop client"
 authors = ["zasx77771"]
 edition = "2021"

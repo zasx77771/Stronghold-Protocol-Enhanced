@@ -58,11 +58,14 @@ public final class AssetIndex {
         public final String inventory;
         public final long count;
         public final long bytes;
+        /** Version whose package carries the identical bytes for this metadata-only release. */
+        public final String reused;
 
-        VersionInfo(String inventory, long count, long bytes) {
+        VersionInfo(String inventory, long count, long bytes, String reused) {
             this.inventory = inventory == null ? null : inventory.toLowerCase(Locale.ROOT);
             this.count = count;
             this.bytes = bytes;
+            this.reused = reused == null || reused.isEmpty() ? null : reused;
         }
     }
 
@@ -132,7 +135,8 @@ public final class AssetIndex {
                 versions.put(item.getKey(), new VersionInfo(
                     AssetJson.string(entry.get("inventory"), null),
                     AssetJson.number(entry.get("count"), 0),
-                    AssetJson.number(entry.get("bytes"), 0)));
+                    AssetJson.number(entry.get("bytes"), 0),
+                    AssetJson.string(entry.get("reused"), null)));
             }
         }
         List<Step> bases = new ArrayList<>();
@@ -247,6 +251,31 @@ public final class AssetIndex {
         return best;
     }
 
+    /** A version can serve bytes either directly or through a delta ending at that version. */
+    private boolean versionProvides(String version) {
+        for (Step base : bases) if (base.to.equals(version)) return true;
+        for (Step delta : deltas) if (delta.to.equals(version)) return true;
+        return false;
+    }
+
+    /** Resolve a metadata-only release to the version whose package carries its exact payload. */
+    private String providerVersion(String version) {
+        if (version == null || version.isEmpty()) return version;
+        String original = version;
+        String current = version;
+        Set<String> seen = new HashSet<>();
+        seen.add(current);
+        for (int step = 0; step < 8; step += 1) {
+            VersionInfo info = versions.get(current);
+            String next = info == null ? null : info.reused;
+            if (next == null) break;
+            if (seen.contains(next) || !versionProvides(next)) return original;
+            seen.add(next);
+            current = next;
+        }
+        return current;
+    }
+
     /**
      * Decide how a client with the given local state reaches the published latest version.
      *
@@ -264,13 +293,22 @@ public final class AssetIndex {
         } else if (version != null && published == null) {
             verification = "unpublished";
         }
-        List<Step> baseRoute = bestBaseRoute(latest, limit);
-        if (compareVersions(version, latest) == 0 && !"mismatch".equals(verification)) {
-            return new Plan("current", "already on " + latest, verification, version, latest, null, new ArrayList<Step>(), 0);
+        String provider = providerVersion(version);
+        VersionInfo providerInfo = provider == null ? null : versions.get(provider);
+        if (provider != null && !provider.equals(version) && providerInfo != null && inventory != null) {
+            verification = providerInfo.inventory != null && providerInfo.inventory.equals(inventory) ? "ok" : "mismatch";
         }
-        List<Step> deltaChain = version != null && "ok".equals(verification) ? shortestDeltaChain(version, latest, limit) : null;
+        String target = providerVersion(latest);
+        List<Step> baseRoute = bestBaseRoute(target, limit);
+        if (compareVersions(provider, target) == 0 && !"mismatch".equals(verification)) {
+            String reason = provider != null && provider.equals(version)
+                ? (target.equals(latest) ? "already on " + latest : "already on the asset set published for " + latest)
+                : version + " reuses the payload published for " + provider;
+            return new Plan("current", reason, verification, version, latest, null, new ArrayList<Step>(), 0);
+        }
+        List<Step> deltaChain = provider != null && "ok".equals(verification) ? shortestDeltaChain(provider, target, limit) : null;
         if (deltaChain != null && !deltaChain.isEmpty()) {
-            return new Plan("update", deltaChain.size() + " delta package(s) from " + version, verification, version, latest,
+            return new Plan("update", deltaChain.size() + " delta package(s) from " + provider, verification, version, latest,
                 AssetPackage.KIND_DELTA, deltaChain, bytes(deltaChain));
         }
         if (baseRoute != null) {
@@ -282,13 +320,12 @@ public final class AssetIndex {
             return new Plan(repair ? "repair" : "update", reason, verification, version, latest,
                 AssetPackage.KIND_BASE, baseRoute, bytes(baseRoute));
         }
-        if (compareVersions(version, latest) == 0) {
+        if (compareVersions(provider, target) == 0) {
             return new Plan("current", "already on " + latest, verification, version, latest, null, new ArrayList<Step>(), 0);
         }
         return new Plan("blocked", "the index has no route to the latest version", verification, version, latest, null,
             new ArrayList<Step>(), 0);
     }
-
     private static long bytes(List<Step> steps) {
         long total = 0;
         for (Step step : steps) total += step.size;
