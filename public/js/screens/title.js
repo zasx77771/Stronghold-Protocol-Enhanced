@@ -23,13 +23,14 @@
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { AssetDownloadButton } from '../ui/assetDownload.js';
 import { AssetImportButton } from '../ui/assetImport.js';
-import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
+import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, NAME_MAX_UNITS, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { toast } from '../ui/toasts.js';
 import { net, identity } from '../net.js';
+import { readSettings, parseAddress, saveSettings, inviteCode, DEFAULT_TCP_ADDRESS } from '../connection.js';
 import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, PwaInstallButton, detectFeatures } from '../ui/device.js';
@@ -173,6 +174,13 @@ export function TitleScreen() {
     if (currentName) setName((draft) => draft || currentName);
   }, [currentName]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Server address and transport for this machine (connection.js): a browser page is always
+  // WebSocket; a native shell can use its own TCP socket instead.
+  const [connection] = useState(() => readSettings());
+  const [transport, setTransport] = useState(connection.transport);
+  const [address, setAddress] = useState(connection.address);
+  const [invite, setInvite] = useState('');
+  const nameRef = useRef(null);
   // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
   const [Installed, setInstalled] = useState(null);
   const openPlugins = () => {
@@ -197,6 +205,38 @@ export function TitleScreen() {
   const start = () => {
     if (!valid) { toast(t('请输入博士代号'), 'warn'); return; }
     enterSession(name);
+  };
+
+  // Apply the address typed above: same transport → re-point the socket; a transport switch has to
+  // reload, because the native bridge decides once at load whether to replace WebSocket.
+  const applyConnection = () => {
+    const parsed = parseAddress(address, { transport });
+    if (!parsed.ok) {
+      const message = parsed.error === 'invalid_endpoint' ? '请输入 主机:端口，例如 192.168.1.10:3001'
+        : parsed.error === 'invalid_scheme' ? '服务器地址必须以 ws:// 或 wss:// 开头' : '服务器地址格式无效';
+      toast(t(message), 'warn');
+      return;
+    }
+    saveSettings({ transport: parsed.transport, address: parsed.address });
+    if (parsed.transport !== connection.transport) { location.reload(); return; }
+    if (parsed.socketUrl) net.setUrl(parsed.socketUrl);
+    net.close();
+    net.connect();
+    toast(t('已应用服务器地址'));
+  };
+
+  // A pasted invite (link, `room: CODE` or bare code) sets the deep-link state main.js auto-joins;
+  // without a callsign the title asks for one first instead of navigating.
+  const applyInvite = (text) => {
+    const code = inviteCode(text);
+    if (!code) { toast(t('未识别到同盟密钥'), 'warn'); return; }
+    store.patch('ui', { pendingJoin: code });
+    if (!valid) {
+      toast(t('请先输入博士代号，随后自动加入同盟'), 'warn');
+      nameRef.current?.focus();
+      return;
+    }
+    if (!store.get().session.entered) enterSession(name);
   };
 
   const online = conn.status === 'online' || conn.status === 'connected';
@@ -256,7 +296,9 @@ export function TitleScreen() {
         </div>` : null}
         <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
           placeholder=${t('输入你的代号（最多 {NAME_MAX_UNITS} 个字符，汉字算 2 个）', { NAME_MAX_UNITS })} autoFocus=${!touchUi}
-          onInput=${setName} onEnter=${start} />
+          inputRef=${nameRef} onInput=${setName} onEnter=${start} />
+        <${TextField} label=${t('同盟邀请')} micro="INVITE" size="md" icon="key" value=${invite}
+          placeholder=${t('粘贴邀请链接或同盟密钥')} onInput=${setInvite} onEnter=${() => applyInvite(invite)} />
         <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
         <div class="title-conn">
           <span class=${`status-dot ${dotClass}`}></span>
@@ -266,6 +308,18 @@ export function TitleScreen() {
           <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
           <${FullscreenButton} class="title-fs" />
+        </div>
+        <div class="title-connect">
+          ${connection.supportsTcp ? html`<div class="title-connect__modes" role="group" aria-label=${t('连接方式')}>
+            <button type="button" class=${`title-connect__mode${transport === 'websocket' ? ' is-on' : ''}`}
+              aria-pressed=${transport === 'websocket'} onClick=${() => setTransport('websocket')}>WebSocket</button>
+            <button type="button" class=${`title-connect__mode${transport === 'tcp' ? ' is-on' : ''}`}
+              aria-pressed=${transport === 'tcp'} onClick=${() => setTransport('tcp')}>TCP</button>
+          </div>` : null}
+          <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" value=${address}
+            placeholder=${transport === 'tcp' ? DEFAULT_TCP_ADDRESS : t('留空则使用当前页面地址')}
+            onInput=${setAddress} onEnter=${applyConnection} />
+          <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
         </div>
       </div>
       <div class="title-assets">

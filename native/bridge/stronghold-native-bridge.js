@@ -15,6 +15,15 @@
   const hasAndroid = Boolean(android && typeof android.connect === 'function');
   if (!hasTauri && !hasAndroid) return;
 
+  // The page's transport choice (title screen → public/js/connection.js) decides whether the native
+  // socket replaces the host's WebSocket at all: `websocket` leaves it alone; `tcp`, or no choice at
+  // all (an upgraded install), installs the TCP facade below.
+  let transport = 'tcp';
+  try {
+    if (globalThis.localStorage?.getItem('sp.server.transport') === 'websocket') transport = 'websocket';
+  } catch { /* private mode */ }
+  if (transport === 'websocket') return;
+
   globalThis.__strongholdNativeBridgeInstalled = true;
   const NativeWebSocket = globalThis.WebSocket;
   const CONNECTING = 0;
@@ -39,8 +48,12 @@
 
   function configuredEndpoint() {
     let saved = '';
-    try { saved = globalThis.localStorage?.getItem(ADDRESS_KEY) || ''; } catch { /* private mode */ }
-    return endpointFrom(saved) || endpointFrom(globalThis.__STRONGHOLD_NATIVE_ENDPOINT__);
+    let address = '';
+    try {
+      saved = globalThis.localStorage?.getItem(ADDRESS_KEY) || '';
+      address = globalThis.localStorage?.getItem('sp.server.address') || '';
+    } catch { /* private mode */ }
+    return endpointFrom(saved) || endpointFrom(address) || endpointFrom(globalThis.__STRONGHOLD_NATIVE_ENDPOINT__);
   }
 
   function showEndpointSetup() {
