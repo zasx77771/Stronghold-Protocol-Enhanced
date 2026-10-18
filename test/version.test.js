@@ -8,6 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, PROTOCOL_VERSION, DEV_BUILD } from '../shared/constants.js';
 import { isDevVersion } from '../tools/package.mjs';
+import { validateReleasePolicy } from '../tools/release-policy.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -23,6 +24,14 @@ test('one release version: package.json, package-lock.json and APP_VERSION', () 
   assert.equal(lock.packages[''].version, APP_VERSION);
   assert.equal(PROTOCOL_VERSION, 1, 'the wire protocol number is separate from the release version');
   assert.equal(pkg.private, true, 'never published to npm');
+});
+
+test('the native Windows and Android shells use the same governed release version', () => {
+  assert.deepEqual(validateReleasePolicy({ mainline: true }), {
+    localVersion: pkg.version,
+    upstreamMainlineVersion: '0.3.1',
+    androidVersionCode: 30,
+  });
 });
 
 test('CHANGELOG.md opens with the release version, and the README links it', () => {
