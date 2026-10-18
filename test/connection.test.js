@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
   ADDRESS_KEY, TCP_ENDPOINT_KEY, TRANSPORT_KEY, DEFAULT_TCP_ADDRESS,
-  parseEndpoint, parseAddress, defaultSocketUrl, readSettings, saveSettings, inviteCode, nativePlatform,
+  parseEndpoint, parseAddress, defaultSocketUrl, readSettings, saveSettings, inviteCode, inviteAddress, nativePlatform, transportForAddress,
 } from '../public/js/connection.js';
 
 /** Minimal localStorage stand-in. */
@@ -29,6 +29,16 @@ test('parseEndpoint accepts host:port, tcp:// and bracketed IPv6', () => {
   assert.equal(parseEndpoint('127.0.0.1:0'), null);
   assert.equal(parseEndpoint('127.0.0.1:99999'), null);
   assert.equal(parseEndpoint(''), null);
+});
+
+test('transportForAddress selects TCP only for an explicit TCP endpoint', () => {
+  assert.equal(transportForAddress('192.168.1.10:3001'), 'tcp');
+  assert.equal(transportForAddress('tcp://[::1]:3001'), 'tcp');
+  assert.equal(transportForAddress('https://game.example/ws'), 'websocket');
+  assert.equal(transportForAddress('wss://game.example/ws'), 'websocket');
+  assert.equal(transportForAddress('game.example'), 'websocket');
+  assert.equal(transportForAddress('', 'tcp'), 'tcp');
+  assert.equal(transportForAddress('', 'websocket'), 'websocket');
 });
 
 test('parseAddress: TCP needs a host:port', () => {
@@ -126,6 +136,15 @@ test('inviteCode refuses text without a usable code', () => {
   assert.equal(inviteCode('AB'), null);
   assert.equal(inviteCode('ABCD1234'), null);
   assert.equal(inviteCode('https://game.example/?room=toolong123'), null);
+});
+
+test('inviteAddress removes a room query before reconnecting, but keeps a bare key on the current server', () => {
+  assert.equal(inviteAddress('https://game.example/?room=ABCD'), 'https://game.example');
+  assert.equal(inviteAddress('wss://game.example/rooms/join?room=ABCD#share'), 'wss://game.example/rooms/join');
+  assert.equal(inviteAddress('tcp://[::1]:3001?room=ABCD'), '[::1]:3001');
+  assert.equal(inviteAddress('room: ABCD'), null);
+  assert.equal(inviteAddress('ABCD'), null);
+  assert.equal(inviteAddress('https://game.example/?room=TOOLONG123'), null);
 });
 
 test('the default TCP placeholder is a valid endpoint', () => {

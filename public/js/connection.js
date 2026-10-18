@@ -26,6 +26,17 @@ export function parseEndpoint(value) {
   return { host, port };
 }
 
+/**
+ * Infer the native transport from the address itself: `host:port` / `tcp://` selects TCP,
+ * while HTTP(S), WS(S), a hostname, and an empty field select the WebSocket path. Empty input
+ * preserves the last usable default so an upgraded native install remains compatible.
+ */
+export function transportForAddress(value, fallback = 'websocket') {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback === 'tcp' ? 'tcp' : 'websocket';
+  return parseEndpoint(raw) ? 'tcp' : 'websocket';
+}
+
 /** The WebSocket URL for this page (`ws(s)://host/ws`), the same rule as net.js defaultWsUrl. */
 export function defaultSocketUrl(loc = globalThis.location) {
   if (!loc || !loc.host) return 'ws://localhost:3000/ws';
@@ -101,4 +112,22 @@ export function inviteCode(text, codeLen = 4) {
   const code = (link ? link[1] : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!code) return null;
   return code.length >= codeLen && code.length <= codeLen + 2 ? code : null;
+}
+
+/**
+ * The transport address carried by a full invite URL, without its room query.
+ * A bare room key deliberately returns null: it joins through the already configured server.
+ */
+export function inviteAddress(text) {
+  const raw = String(text ?? '').trim();
+  if (!inviteCode(raw)) return null;
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  if (!url.searchParams.has('room')) return null;
+  if (url.protocol === 'tcp:') {
+    const host = url.hostname.startsWith('[') ? url.hostname
+      : url.hostname.includes(':') ? `[${url.hostname}]` : url.hostname;
+    return url.port ? `${host}:${url.port}` : null;
+  }
+  return `${url.protocol}//${url.host}${url.pathname === '/' ? '' : url.pathname}`;
 }
