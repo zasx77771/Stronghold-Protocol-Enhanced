@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 /**
  * Path rules and file-name constants shared by the runtime asset store.
  *
- * <p>The rules are the mirror image of {@code tools/assetPackages.mjs}: the runtime set is exactly
+ * <p>The rules define the {@code sp-assets-package-v1} contract: the runtime set is exactly
  * {@code assets/**}, {@code fonts/**}, {@code data/assets.json} and {@code data/local-assets.json} —
  * everything else is program code and stays in the APK. The canonical inventory digest is built from
  * the raw paths, so both sides must agree byte for byte; that is why non-ASCII and control characters

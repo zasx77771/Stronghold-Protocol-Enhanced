@@ -248,7 +248,9 @@
 
 未验证项：本工作机未执行 `cargo check`/`gradlew`/`npm test`（由 Codex 复核）；Rust 命令签名、Android 编译与真机文件选择器均需实际构建确认。新增静态契约测试 `test/native/asset-import.test.js`，并扩展 `npm run native:check`。
 
-## 阶段 D 实施记录：原生素材包生成器（2026-10-17）
+## 阶段 D 历史记录：原生素材包生成器（2026-10-17，已删除）
+
+> **历史记录（已被 2.1 取代）**：`tools/assetPackages.mjs`、`assets-index.json`、`assets-base`/delta 包与 `npm run assets:package` 已随 R2 在线更新一起删除。下面只保留设计沿革；本地导入仍接受同格式的 `ASSETS.json` 包，由 `AssetStore` 校验，但仓库不再提供生成器。
 
 新增 `tools/assetPackages.mjs`，作为 Windows Tauri 与 Android WebView 共用的原生 AssetStore 包生成器。它只负责把已经整理好的运行素材树打成原生格式，**不是**正式发布流程，也不上传 R2、不生成正式产物、不写版本号。
 

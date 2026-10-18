@@ -15,7 +15,7 @@ import java.util.TreeMap;
  * index.
  *
  * <p>The digest is the SHA-256 of {@code <path>\t<size>\t<sha256>\n} for every path in ascending
- * order, byte for byte the same computation {@code tools/assetPackages.mjs} performs. Paths are
+ * order, the canonical form of the {@code sp-assets-package-v1} contract. Paths are
  * restricted to printable ASCII, so a {@link TreeMap} (which orders by {@code String.compareTo},
  * that is, by UTF-16 code unit) reproduces the JavaScript {@code Array.sort()} order exactly.
  */
