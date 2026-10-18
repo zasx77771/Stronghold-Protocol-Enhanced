@@ -281,50 +281,54 @@ export function TitleScreen() {
     </div>
 
     <main class="title-main">
-      <${Emblem} />
-      ${alphabetic ? null : html`<div class="title-en">
-        <span class="title-en__a">STRONGHOLD PROTOCOL</span>
-        <span class="title-en__b">ALLIANCE</span>
-      </div>`}
-      <h1 class=${`title-cn${alphabetic ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${alphabetic ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
-      <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
-
-      <div class="title-login">
-        ${pendingJoin ? html`<div class="title-invite">
-          <${Icon} name="key" />
-          <span>${t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
-        </div>` : null}
-        <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
-          placeholder=${t('输入你的代号（最多 {NAME_MAX_UNITS} 个字符，汉字算 2 个）', { NAME_MAX_UNITS })} autoFocus=${!touchUi}
-          inputRef=${nameRef} onInput=${setName} onEnter=${start} />
-        <${TextField} label=${t('同盟邀请')} micro="INVITE" size="md" icon="key" value=${invite}
-          placeholder=${t('粘贴邀请链接或同盟密钥')} onInput=${setInvite} onEnter=${() => applyInvite(invite)} />
-        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
-        <div class="title-conn">
-          <span class=${`status-dot ${dotClass}`}></span>
-          <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
-          ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
-          <${GuideButton} class="title-guide" label=${t('玩法说明')} />
-          <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
-            onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
-          <${FullscreenButton} class="title-fs" />
-        </div>
-        <div class="title-connect">
-          ${connection.supportsTcp ? html`<div class="title-connect__modes" role="group" aria-label=${t('连接方式')}>
-            <button type="button" class=${`title-connect__mode${transport === 'websocket' ? ' is-on' : ''}`}
-              aria-pressed=${transport === 'websocket'} onClick=${() => setTransport('websocket')}>WebSocket</button>
-            <button type="button" class=${`title-connect__mode${transport === 'tcp' ? ' is-on' : ''}`}
-              aria-pressed=${transport === 'tcp'} onClick=${() => setTransport('tcp')}>TCP</button>
-          </div>` : null}
-          <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" value=${address}
-            placeholder=${transport === 'tcp' ? DEFAULT_TCP_ADDRESS : t('留空则使用当前页面地址')}
-            onInput=${setAddress} onEnter=${applyConnection} />
-          <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
-        </div>
+      <div class="title-hero">
+        <${Emblem} />
+        ${alphabetic ? null : html`<div class="title-en">
+          <span class="title-en__a">STRONGHOLD PROTOCOL</span>
+          <span class="title-en__b">ALLIANCE</span>
+        </div>`}
+        <h1 class=${`title-cn${alphabetic ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${alphabetic ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
+        <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
       </div>
-      <div class="title-assets">
-        <${AssetDownloadButton} />
-        <${AssetImportButton} />
+
+      <div class="title-side">
+        <div class="title-login">
+          ${pendingJoin ? html`<div class="title-invite">
+            <${Icon} name="key" />
+            <span>${t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
+          </div>` : null}
+          <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
+            placeholder=${t('输入你的代号（最多 {NAME_MAX_UNITS} 个字符，汉字算 2 个）', { NAME_MAX_UNITS })} autoFocus=${!touchUi}
+            inputRef=${nameRef} onInput=${setName} onEnter=${start} />
+          <${TextField} label=${t('同盟邀请')} micro="INVITE" size="md" icon="key" value=${invite}
+            placeholder=${t('粘贴邀请链接或同盟密钥')} onInput=${setInvite} onEnter=${() => applyInvite(invite)} />
+          <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
+          <div class="title-conn">
+            <span class=${`status-dot ${dotClass}`}></span>
+            <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
+            ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+            <${GuideButton} class="title-guide" label=${t('玩法说明')} />
+            <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
+              onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
+            <${FullscreenButton} class="title-fs" />
+          </div>
+          <div class="title-connect">
+            ${connection.supportsTcp ? html`<div class="title-connect__modes" role="group" aria-label=${t('连接方式')}>
+              <button type="button" class=${`title-connect__mode${transport === 'websocket' ? ' is-on' : ''}`}
+                aria-pressed=${transport === 'websocket'} onClick=${() => setTransport('websocket')}>WebSocket</button>
+              <button type="button" class=${`title-connect__mode${transport === 'tcp' ? ' is-on' : ''}`}
+                aria-pressed=${transport === 'tcp'} onClick=${() => setTransport('tcp')}>TCP</button>
+            </div>` : null}
+            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" value=${address}
+              placeholder=${transport === 'tcp' ? DEFAULT_TCP_ADDRESS : t('留空则使用当前页面地址')}
+              onInput=${setAddress} onEnter=${applyConnection} />
+            <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
+          </div>
+        </div>
+        <div class="title-assets">
+          <${AssetDownloadButton} />
+          <${AssetImportButton} />
+        </div>
       </div>
     </main>
 

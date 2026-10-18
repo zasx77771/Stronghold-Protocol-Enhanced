@@ -364,3 +364,12 @@ node tools/assetPackages.mjs --verify-index .native-assets/packages/assets-index
 - `net.setUrl()` 让启动时保存的地址覆盖页面推导的 WebSocket URL。
 - 测试：`test/connection.test.js`（11 项），以及 `test/lobby.test.js`、`test/client-static.test.js`、`test/docs-consistency.test.js`、`test/docs-paths.test.js` 全通过；`node tools/i18n.mjs check --all --strict` 2176/2176。
 - 未验证：Windows/Android 真机上的 TCP 与 WebSocket 切换（需要实际构建与局域网服务器）。
+
+## 阶段 E 实施记录：标题画面左横幅 / 右登录（E2，2026-10-18）
+
+- 结构：`<main class="title-main">` 里先是 `<div class="title-hero">`（徽记 `Emblem`、英文标题、`title-cn`、`title-tag`），随后是 `<div class="title-side">`（完整登录框 `.title-login` 与素材按钮 `.title-assets`）；登录框内部保持一列：博士代号 → 同盟邀请 → 开始 → 连接状态 → 连接方式/地址/应用。
+- CSS：`.title-main` 在任何视口都是 `flex-direction: row`，没有堆叠断点、没有 `order` 调换；`.title-hero` 为 `flex: 1 1 auto`，`.title-side` 固定 `4.9rem` 宽、`max-height: 92vh` 且 `overflow-y: auto`，让窄屏时登录列自己滚动；`.title-side > .title-login/.title-assets` 宽 `100%` 且 `flex: 0 0 auto`，避免被 flex 压缩后内容溢出面板。
+- 窄屏（`max-width: 640px`）：间距收到 `.08rem`、横幅上限 `3.7rem`、标题/英文字号按比例缩小、登录列 `4.4rem` 宽且 `max-height: 96vh`；控件尺寸不动，触控目标沿用项目既有的 `--tap-min: 44px`（`public/css/devices.css:20`），连接方式按钮在 `pointer: coarse` 下用 `min-height: var(--tap-min, 44px)`。
+- 不改变既有接线：`开始` 仍是 `.title-login .btn--primary`，第一个输入框仍是博士代号，邀请粘贴与 `applyConnection` 逻辑未动；未重新引入任何下载/镜像入口。
+- 测试：`test/ui/title-layout.test.js` 8 项（左右分块与顺序、登录框单列、行列方向无堆叠、登录列滚动与子项不压缩、窄屏让位与 `--tap-min`、四个语言包已删的旧分组文案、无远程素材入口）；另用本机 Chrome（puppeteer-core）在 1280×800、915×412、700×500、640×360、568×320、412×915、360×640、320×568 八个视口实测：全部 `flex-direction: row`、登录列在标题右侧且完整落在视口内、`document.scrollWidth === innerWidth`（无横向滚动），915×412 与 700×500 下登录列 `scrollHeight > clientHeight`（可纵向滚动）。
+- 未验证：Windows/Android 真机观感（需要构建与设备）；上述几何由无头 Chrome 量取，真机触屏的 `pointer: coarse` 分支（44px 命中高度）未在设备上复测。
