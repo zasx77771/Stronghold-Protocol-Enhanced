@@ -230,6 +230,27 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
+/* 第 2 项：任何视口都是「左标题/徽记、右完整登录区」两栏，绝不纵向堆叠。
+   两栏宽度随视口收缩（长度单位本身按 --t 缩放）；窄屏收紧间距、让出登录列宽度，
+   登录列自身可纵向滚动，控件尺寸沿用项目既有 btn--xl/TextField 规范，不再缩小触控目标。 */
+.title-main { flex-direction: row; align-items: center; justify-content: center; gap: .45rem; }
+.title-hero { display: flex; flex-direction: column; align-items: center; flex: 1 1 auto; min-width: 0; max-width: 7.6rem; }
+.title-side { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; width: 4.9rem; max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; }
+/* 登录框与素材按钮充满登录列；列内子项不压缩，超高时由登录列整体滚动 */
+.title-side > .title-login, .title-side > .title-assets { width: 100%; flex: 0 0 auto; }
+@media (max-width: 640px) {
+  .title-main { gap: .08rem; }
+  .title-hero { max-width: 3.7rem; }
+  .title-en__a { font-size: .2rem; letter-spacing: .18em; padding-left: .18em; }
+  .title-en__b { font-size: .24rem; letter-spacing: .2em; padding-left: .2em; }
+  .title-cn { font-size: .46rem; letter-spacing: .02em; }
+  .title-cn--latin { font-size: .3rem; }
+  .title-side { width: 4.4rem; max-height: 96vh; }
+}
+/* 触屏可访问性：连接方式按钮沿用项目既有 --tap-min（44px）命中高度 */
+@media (pointer: coarse) {
+  .title-connect__mode { min-height: var(--tap-min, 44px); }
+}
 /* 下载完整素材 and 导入素材包 side by side under the login box (ui/assetDownload.js, ui/assetImport.js), each with its hint line;
    a label too long for its half (a larger 文字大小) wraps inside its button instead of spilling over the other one */
 .title-assets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .12rem; width: 4.9rem; margin-top: .12rem; text-align: center; }
