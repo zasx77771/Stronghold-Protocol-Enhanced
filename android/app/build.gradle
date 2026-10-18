@@ -17,7 +17,35 @@ android {
     sourceSets { main.assets.srcDir(layout.buildDirectory.dir('generated/nativeWeb')) }
 
     def generatedWeb = layout.buildDirectory.dir('generated/nativeWeb')
+
+    // A packaged APK carries the official art `data/assets.json` lists, so a build without it
+    // fails here instead of installing a client whose images 404. The check mirrors
+    // tools/check-embedded-assets.mjs, which the Windows build runs from src-tauri/build.rs.
+    tasks.register('checkEmbeddedAssets') {
+        def manifest = file('../../data/assets.json')
+        def webRoot = file('../../public')
+        inputs.files(manifest)
+        outputs.upToDateWhen { false }
+        doLast {
+            if (!manifest.isFile()) {
+                throw new GradleException('embedded assets: data/assets.json is missing')
+            }
+            def urls = []
+            (manifest.getText('UTF-8') =~ /"\/(?:assets|fonts)\/[^"]+"/).each { urls << it.substring(1, it.length() - 1) }
+            urls = urls.unique()
+            if (urls.isEmpty()) {
+                throw new GradleException('embedded assets: data/assets.json lists no /assets/ URL')
+            }
+            def missing = urls.findAll { url -> !new File(webRoot, url.substring(1)).isFile() }
+            if (missing) {
+                throw new GradleException("embedded assets: ${missing.size()} of ${urls.size()} manifest files are missing " +
+                    "(e.g. ${missing.take(3).join(', ')}); run `npm run assets`")
+            }
+        }
+    }
+
     tasks.register('syncNativeWeb', Copy) {
+        dependsOn(tasks.named('checkEmbeddedAssets'))
         from('../../public')
         into(generatedWeb)
         from('../../data') { into('data') }
