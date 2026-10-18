@@ -25,7 +25,6 @@
   const ADDRESS_KEY = 'sp.native.tcp';
   let nextSocketId = 0;
   let tauriListener = null;
-  let assetReloaded = false;
   let setupShown = false;
   const sockets = new Map();
 
@@ -90,23 +89,12 @@
         },
         send(id, data) { void tauri.core.invoke('sp_tcp_send', { id, data: [...new TextEncoder().encode(data)] }); },
         close(id, code, reason) { void tauri.core.invoke('sp_tcp_close', { id, code, reason }); },
-        assetToken(token) {
-          // Windows keeps the "session token arrives → check automatically" behaviour; a changed
-          // generation reloads the page once so the new manifest and store are what it renders.
-          void tauri.core.invoke('sp_set_asset_session_token', { token }).then((changed) => {
-            if (changed === true && !assetReloaded) {
-              assetReloaded = true;
-              globalThis.location?.reload();
-            }
-          }).catch(() => {});
-        },
       };
     }
     return {
       connect(id, host, port) { android.connect(String(id), String(host), Number(port)); },
       send(id, data) { android.send(String(id), String(data)); },
       close(id, code, reason) { android.close(String(id), Number(code), String(reason)); },
-      assetToken(token) { if (typeof android.setAssetSessionToken === 'function') android.setAssetSessionToken(String(token)); },
     };
   }
 
@@ -120,16 +108,6 @@
     }
     if (type === 'error' && typeof ErrorEvent === 'function') return new ErrorEvent(type, { message: fields.message });
     return new Event(type);
-  }
-
-  function observeAssetToken(text) {
-    let message;
-    try { message = JSON.parse(text); } catch { return; }
-    if (message?.t !== 'welcome') return;
-    // The game server puts the 32-hex session token in `token` (server/net.js welcome); the native
-    // side exchanges it for the short-lived asset JWT and never returns that JWT to the page.
-    const token = message.token;
-    if (typeof token === 'string' && /^[0-9a-f]{32}$/.test(token)) native.assetToken(token);
   }
 
   class TcpWebSocket extends EventTarget {
@@ -185,7 +163,6 @@
         if (this.readyState !== OPEN) return;
         const data = String(payload.data || '');
         if (this._control(data)) return;
-        observeAssetToken(data);
         this._emit('message', { data });
         return;
       }
@@ -242,29 +219,7 @@
   }
 
   function assetStateLabel(status) {
-    const plan = status.plan || {};
-    const state = String(status.state || '');
-    if (state === 'checking' || state === 'preparing') return '正在检查素材更新…';
-    if (state === 'waiting' || state === 'waiting-session') return '等待登录会话后检查素材…';
-    if (state === 'unconfigured') return `未配置素材源：${status.message || status.disabledReason || 'asset-config.json'}`;
-    if (state === 'unavailable') return '素材存储不可用';
-    if (state === 'idle') return `当前素材 ${status.current || plan.localVersion || '未安装'}`;
-    if (state === 'ready') {
-      const count = Number(plan.count || 0);
-      const latest = plan.latest || status.latest || '新版本';
-      return count > 0 ? `可下载 ${latest}：${count} 个包，共 ${bytesText(plan.bytes)}` : `素材已是最新 ${status.current || latest}`;
-    }
-    if (state === 'downloading') {
-      const index = Number(status.packageIndex || status.index || 0);
-      const count = Number(status.packageCount || status.count || plan.count || 0);
-      const name = status.packageName || status.name || '';
-      const done = Number(status.packageDone || status.done || 0);
-      const size = Number(status.packageSize || status.size || 0);
-      return `下载中 ${index + 1}/${count || 1} ${name} ${bytesText(done)} / ${bytesText(size)}`;
-    }
-    if (state === 'verifying') return '校验下载包 SHA-256…';
-    if (state === 'applying') return '解压并原子安装…';
-    if (state === 'complete') return `素材已更新到 ${status.latest || plan.latest || status.current || ''}`;
+    const state = String(status?.state || '');
     if (state === 'importing') return '读取本地素材包…（仅经原生文件选择器）';
     if (state === 'import-verifying') return '校验 ASSETS.json、SHA-256 与 inventory…';
     if (state === 'import-applying') return '解压到临时目录并原子切换素材层…';
@@ -273,40 +228,17 @@
       if (status.cancelled || status.message === '已取消导入') return '已取消导入';
       return `导入失败：${status.error || status.message || '未知错误'}`;
     }
-    if (state === 'cancelled') return '已取消下载';
-    if (state === 'blocked') return `无法更新：${status.error || status.message || '被阻止'}`;
-    if (state === 'failed') return `更新失败：${status.error || status.message || '未知错误'}`;
-    return status.message || '素材状态未知';
+    return status?.current ? `当前素材：本地覆盖 ${status.current}` : '素材随安装包内嵌，可用本地素材包覆盖';
   }
 
   function assetProgress(status) {
-    const plan = status.plan || {};
-    const state = String(status.state || '');
-    if (state === 'complete' || state === 'imported') return 1;
-    const total = Number(status.total || plan.bytes || 0);
-    const done = Number(status.done || 0);
-    const packageTotal = Number(status.packageSize || 0);
-    const packageDone = Number(status.packageDone || 0);
-    const ratio = total > 0 ? done / total : packageTotal > 0 ? packageDone / packageTotal : 0;
-    return Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0));
+    return String(status?.state || '') === 'imported' ? 1 : 0;
   }
 
   function assetButtons(status) {
-    const state = String(status.state || '');
-    const busy = ['preparing', 'downloading', 'verifying', 'applying', 'importing', 'import-verifying', 'import-applying'].includes(state);
-    const canPrepare = !busy && ['idle', 'unconfigured', 'waiting-session', 'complete', 'failed', 'cancelled', 'blocked'].includes(state);
-    const canStart = state === 'ready';
-    const canCancel = ['preparing', 'downloading', 'verifying', 'applying'].includes(state);
-    const canRetry = state === 'failed' || state === 'cancelled';
-    const canImport = nativeImportAvailable && !busy;
-    const canReload = state === 'imported';
-    return { canPrepare, canStart, canCancel, canRetry, canImport, canReload };
-  }
-
-  function callAndroidAsset(method) {
-    try {
-      if (androidAssets && typeof androidAssets[method] === 'function') androidAssets[method]();
-    } catch { /* the interface can disappear on navigation */ }
+    const state = String(status?.state || '');
+    const busy = ['importing', 'import-verifying', 'import-applying'].includes(state);
+    return { canImport: nativeImportAvailable && !busy, canReload: state === 'imported' };
   }
 
   function importAssetPackage() {
@@ -323,13 +255,10 @@
     callAndroidAsset('importPackage');
   }
 
-  function mirrorLine(status) {
-    const mirrors = Array.isArray(status.mirrors) ? status.mirrors : [];
-    const problems = Array.isArray(status.mirrorProblems) ? status.mirrorProblems : [];
-    if (!mirrors.length && !problems.length) return '镜像：未配置（预留入口，默认仍走 R2）';
-    const names = mirrors.map((entry) => entry.name || entry.url).join('、');
-    const suffix = problems.length ? `；${problems.length} 条配置无效` : '';
-    return `镜像（预留，不自动使用）：${names}${suffix}`;
+  function callAndroidAsset(method) {
+    try {
+      if (androidAssets && typeof androidAssets[method] === 'function') androidAssets[method]();
+    } catch { /* the interface can disappear on navigation */ }
   }
 
   function ensureAssetPanel() {
@@ -337,14 +266,13 @@
     const panel = document.createElement('section');
     panel.id = 'sp-native-assets';
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483646;min-width:300px;max-width:420px;padding:14px;border-radius:10px;background:#0c0f0ef2;color:#edf2ee;font:13px/1.5 system-ui,sans-serif;box-shadow:0 8px 30px #0008';
-    panel.innerHTML = '<div style="display:flex;gap:8px;align-items:center"><strong style="flex:1">运行素材</strong><button type="button" data-sp-act="close" style="background:none;border:0;color:#9fb3a8;font-size:16px;cursor:pointer">×</button></div><p data-sp-line style="margin:8px 0;color:#cfe0d5"></p><div style="height:6px;background:#24302a;border-radius:3px;overflow:hidden"><div data-sp-bar style="height:100%;width:0;background:#6fd08c;transition:width .2s"></div></div><p data-sp-mirrors style="margin:8px 0 0;color:#9fb3a8;font-size:12px"></p><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" data-sp-act="prepare">准备</button><button type="button" data-sp-act="start">开始下载</button><button type="button" data-sp-act="cancel">取消</button><button type="button" data-sp-act="retry">重试</button><button type="button" data-sp-act="import">导入素材包…</button><button type="button" data-sp-act="reload" style="display:none">重新加载</button></div>';
+    panel.innerHTML = '<div style="display:flex;gap:8px;align-items:center"><strong style="flex:1">运行素材</strong><button type="button" data-sp-act="close" style="background:none;border:0;color:#9fb3a8;font-size:16px;cursor:pointer">×</button></div><p data-sp-line style="margin:8px 0;color:#cfe0d5"></p><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" data-sp-act="import">导入素材包…</button><button type="button" data-sp-act="reload" style="display:none">重新加载</button></div>';
     panel.addEventListener('click', (ev) => {
       const action = ev.target?.dataset?.spAct;
       if (!action) return;
       if (action === 'close') { panel.remove(); assetPanel = null; return; }
       if (action === 'import') { importAssetPackage(); return; }
-      if (action === 'reload') { globalThis.location?.reload(); return; }
-      callAndroidAsset(action);
+      if (action === 'reload') { globalThis.location?.reload(); }
     });
     document.body.append(panel);
     assetPanel = panel;
@@ -353,34 +281,16 @@
 
   function renderAsset(status) {
     if (!status || typeof status !== 'object') return;
-    assetLast = status;
     const panel = ensureAssetPanel();
     if (!panel) return;
     panel.querySelector('[data-sp-line]').textContent = assetStateLabel(status);
-    panel.querySelector('[data-sp-bar]').style.width = `${Math.round(assetProgress(status) * 100)}%`;
-    const mirrors = panel.querySelector('[data-sp-mirrors]');
-    if (mirrors) mirrors.textContent = mirrorLine(status);
     const buttons = assetButtons(status);
-    const enabledByAction = {
-      prepare: buttons.canPrepare,
-      start: buttons.canStart,
-      cancel: buttons.canCancel,
-      retry: buttons.canRetry,
-      import: buttons.canImport,
-      reload: buttons.canReload,
-    };
-    for (const [action, enabled] of Object.entries(enabledByAction)) {
-      const button = panel.querySelector(`[data-sp-act="${action}"]`);
-      if (!button) continue;
-      button.disabled = !enabled;
-      if (action === 'reload') {
-        button.style.display = enabled ? '' : 'none';
-      } else if (action === 'import') {
-        button.style.display = '';
-      } else {
-        // Windows updates automatically after `welcome`; only Android has explicit transfer actions.
-        button.style.display = hasTauri ? 'none' : '';
-      }
+    const importButton = panel.querySelector('[data-sp-act="import"]');
+    const reloadButton = panel.querySelector('[data-sp-act="reload"]');
+    if (importButton) importButton.disabled = !buttons.canImport;
+    if (reloadButton) {
+      reloadButton.disabled = !buttons.canReload;
+      reloadButton.style.display = buttons.canReload ? '' : 'none';
     }
   }
 

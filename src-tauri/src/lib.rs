@@ -29,8 +29,6 @@ pub fn run() -> i32 {
             commands::sp_tcp_connect,
             commands::sp_tcp_send,
             commands::sp_tcp_close,
-            commands::sp_set_asset_session_token,
-            commands::sp_assets_ready,
             commands::sp_client_info,
             commands::sp_asset_status,
             commands::sp_import_asset_package,

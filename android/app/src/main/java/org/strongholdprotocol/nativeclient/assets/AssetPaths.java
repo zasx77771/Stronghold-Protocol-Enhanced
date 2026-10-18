@@ -23,8 +23,6 @@ public final class AssetPaths {
     public static final String ENTRY_FILE = "index.html";
     /** Asset root state stamped into the APK by the release build. */
     public static final String STATE_FILE = "asset-state.json";
-    /** Optional public configuration shipped in the APK (index URL, limits). */
-    public static final String CONFIG_FILE = "asset-config.json";
     /** Active pointer inside the writable store. */
     public static final String STORE_FILE = "asset-store.json";
     public static final String LAYER_DIR = "asset-layers";
@@ -148,7 +146,7 @@ public final class AssetPaths {
     /** Bookkeeping files and directories of the updater: never served to the client. */
     public static boolean isInternal(String rel) {
         if (rel == null) return true;
-        if (rel.equals(STATE_FILE) || rel.equals(CONFIG_FILE) || rel.equals(STORE_FILE)) return true;
+        if (rel.equals(STATE_FILE) || rel.equals(STORE_FILE)) return true;
         for (String dir : new String[] {LAYER_DIR, STAGING_DIR, RETIRED_DIR}) {
             if (rel.equals(dir) || rel.startsWith(dir + "/")) return true;
         }

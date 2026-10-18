@@ -54,7 +54,7 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
 fn serve_file(request: &Request<Vec<u8>>, file: &Path, cache: &str) -> Option<Response<Vec<u8>>> {
     let size = std::fs::metadata(file).ok()?.len();
     let content_type = mime_for(file);
-    let mut builder = Response::builder()
+    let builder = Response::builder()
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CACHE_CONTROL, cache)
         .header(header::ACCEPT_RANGES, "bytes")

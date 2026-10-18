@@ -19,11 +19,10 @@ test('current upstream entry retains the injection anchor', () => {
   assert.match(index, /<script type="module" src="\/js\/main\.js"/);
 });
 
-test('native bridge observes the game session token from `welcome` only', () => {
-  assert.match(bridge, /message\?\.t !== 'welcome'/);
-  assert.match(bridge, /const token = message\.token;/);
-  assert.match(bridge, /\/\^\[0-9a-f\]\{32\}\$\//);
-  assert.match(bridge, /native\.assetToken\(token\)/);
+test('native bridge never lifts the game session token into the asset channel', () => {
+  // The R2 asset token handoff is retired: no welcome-token observer, no assetToken hook.
+  assert.doesNotMatch(bridge, /observeAssetToken|assetToken\(/);
+  assert.doesNotMatch(bridge, /message\?\.t !== 'welcome'/);
   assert.doesNotMatch(bridge, /registerImportedAssetWorker/);
 });
 

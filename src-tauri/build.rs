@@ -11,6 +11,7 @@ fn main() {
     if release && std::env::var_os("SP_SKIP_EMBED_CHECK").is_none() {
         let status = std::process::Command::new("node")
             .arg("../tools/check-embedded-assets.mjs")
+            .arg("--strict")
             .status()
             .unwrap_or_else(|err| panic!("release builds need Node.js to verify the embedded assets: {err}"));
         if !status.success() {

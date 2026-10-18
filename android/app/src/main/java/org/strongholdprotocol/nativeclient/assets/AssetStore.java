@@ -350,6 +350,20 @@ public final class AssetStore {
      * up; the caller only has to delete the downloaded file. Commits are serialized, and the new
      * state becomes visible in one step.
      */
+    /** Numeric dotted-version comparison, enough to refuse importing an older package. */
+    private static int compareVersions(String left, String right) {
+        String[] a = left.split("\\.");
+        String[] b = right.split("\\.");
+        for (int i = 0; i < Math.max(a.length, b.length); i++) {
+            long x = 0L;
+            long y = 0L;
+            try { if (i < a.length) x = Long.parseLong(a[i]); } catch (NumberFormatException ignored) { }
+            try { if (i < b.length) y = Long.parseLong(b[i]); } catch (NumberFormatException ignored) { }
+            if (x != y) return x < y ? -1 : 1;
+        }
+        return 0;
+    }
+
     public synchronized Applied apply(File packageFile, String expectedSha256, long maxExtractBytes) throws IOException {
         if (!packageFile.isFile()) throw new IOException("no such package: " + packageFile);
         if (expectedSha256 != null) {
@@ -370,7 +384,7 @@ public final class AssetStore {
             if (manifest.fromInventory == null || !manifest.fromInventory.equalsIgnoreCase(before.digest())) {
                 throw new IOException("package expects source inventory " + manifest.fromInventory + ", the local state is " + before.digest());
             }
-        } else if (beforeVersion != null && AssetIndex.compareVersions(manifest.version, beforeVersion) < 0) {
+        } else if (beforeVersion != null && compareVersions(manifest.version, beforeVersion) < 0) {
             throw new IOException("package " + manifest.version + " is older than the local " + beforeVersion);
         }
         AssetInventory next = AssetPackage.merge(before, manifest);

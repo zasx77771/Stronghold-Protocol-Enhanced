@@ -6,7 +6,6 @@ const rustAssets = await readFile(new URL('../../src-tauri/src/assets.rs', impor
 const rustCommands = await readFile(new URL('../../src-tauri/src/commands.rs', import.meta.url), 'utf8');
 const activity = await readFile(new URL('../../android/app/src/main/java/org/strongholdprotocol/nativeclient/MainActivity.java', import.meta.url), 'utf8');
 const androidPackage = await readFile(new URL('../../android/app/src/main/java/org/strongholdprotocol/nativeclient/assets/AssetPackage.java', import.meta.url), 'utf8');
-const packages = await readFile(new URL('../../tools/assetPackages.mjs', import.meta.url), 'utf8');
 
 test('asset status and client info never carry a private filesystem path into page JavaScript', () => {
   assert.doesNotMatch(rustAssets, /"storeRoot"/);
@@ -22,6 +21,11 @@ test('the native import command accepts no page-supplied path and reports no pic
   assert.doesNotMatch(rustCommands, /path\.file_name\(\)/);
 });
 
+test('asset status carries no URL, token or remote endpoint', () => {
+  assert.doesNotMatch(rustAssets, /"indexUrl"|"tokenUrl"|"mirrors"|"mirrorProblems"/);
+  assert.doesNotMatch(activity, /"tokenUrl"|"indexUrl"|"mirrors"/);
+});
+
 test('Android import errors redact private directories, content URIs and absolute paths', () => {
   assert.match(activity, /message\.replace\(cache, "<应用私有目录>"\)/);
   assert.match(activity, /\[a-z\]:\\\\\\\\\[\^\\\\s/);
@@ -31,13 +35,7 @@ test('Android import errors redact private directories, content URIs and absolut
   assert.match(activity, /已有导入任务在进行/);
 });
 
-test('the generator bounds ZIP entry counts and rejects hashed web paths and release folders', () => {
-  assert.match(packages, /export const MAX_ZIP_ENTRIES = 60_000/);
-  assert.match(packages, /entries\.length >= MAX_ZIP_ENTRIES/);
-  assert.match(packages, /hashed web path in native package/);
-  assert.match(packages, /enhanced-client-servers/);
-  assert.match(packages, /成果文件/);
-  assert.match(packages, /a package cannot both ship and remove/);
+test('a package cannot both ship and remove files, on either platform', () => {
   assert.match(androidPackage, /a package cannot both ship and remove/);
   assert.match(rustAssets, /a package cannot both ship and remove/);
 });

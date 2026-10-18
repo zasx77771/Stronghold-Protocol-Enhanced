@@ -12,8 +12,8 @@ import java.util.Map;
  * platform may change: no {@code org.json} (which is only present on Android, and whose behaviour
  * differs between releases) and no reflection. This parser accepts exactly the data the release
  * tooling writes (objects, arrays, strings, numbers, booleans, null) and rejects everything else.
- * The semantics that matter for safety are checked by {@link AssetConfig}, {@link AssetPackage} and
- * {@link AssetIndex} rather than here.
+ * The semantics that matter for safety are checked by {@link AssetPackage} and {@link AssetStore}
+ * rather than here.
  */
 public final class AssetJson {
     private AssetJson() {
