@@ -11,7 +11,6 @@
 //! published by an atomic rename that keeps the previous one on failure.
 
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
