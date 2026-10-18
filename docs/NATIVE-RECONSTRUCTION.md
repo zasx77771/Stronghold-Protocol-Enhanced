@@ -22,12 +22,23 @@
 
 这是一个功能组；R2、未来国内镜像和本地导入不是三个互相替代的产品。
 
+> 2026-10-18 起，R2 在线素材更新连同索引、token、delta 与镜像一并放弃，素材改为随安装包内嵌（见 2.1）。以下 R2/镜像条目保留为历史设计记录，不再是待实施项。
+
 - 保持 R2 在线更新：Windows 登录后自动检查；Android 使用“准备、确认、下载”。
 - 两端显示计划、当前包与总下载字节、校验、解压/安装、完成和可操作错误。
 - 增加用户显式触发的离线导入，作为在线源不可达时的兜底；绝不自动把在线失败转为本地导入。
 - 在线 R2、未来镜像与本地导入最终只写入一个 `AssetStore`，共用锁、inventory 和原子提交。
 - 预留受服务端认证的 `mirrors` 配置。当前无国内供应商时它为空，并显示“待接入”；不改变 R2 的默认功能。
 - 原生离线导入仅接受带清单、`ASSETS.json`、SHA-256 与 inventory 的原生 `assets-base` / delta 包。上游网页用的 `Stronghold-Protocol-v0.3.0-assets.zip` 仍只用于网页导入，不能直接解压进原生存储。
+
+### 2.1 素材随包内嵌（0.3.1 起取代在线素材更新）
+
+上游 0.3.0 的在线素材更新（R2、索引、token、delta、镜像）不再随增强客户端发布：Windows 完整客户端与 Android APK 直接携带 `data/assets.json` 列出的官方素材，离线可用。原生 `AssetStore` 与导入仍是本地存储层，但不再有远程下载路径。
+
+- 素材仍由 `npm run assets` 生成到 `public/assets`（git 忽略），构建时整体进入安装包或 APK。
+- 发布构建必须通过 `npm run assets:check`：清单里每个 `/assets/…`、`/fonts/…` 都要在 `public/assets` 下真实存在，且 `stats.files` 与清单的 `/assets/` 条目数一致（防止清单过期掩盖缺文件）。Windows 由 `src-tauri/build.rs` 在 release 构建中自动执行该脚本；Android 由 `checkEmbeddedAssets` Gradle 任务在 `syncNativeWeb` 前执行。缺失即构建失败，避免发出图片 404 的安装包。
+- 仅本地调试允许 `SP_SKIP_EMBED_CHECK=1` 跳过；正式产物不得使用该开关。
+- 打包不引入任何在线素材源、凭证或下载路径，客户端启动即可离线进入对局。
 
 ### 3. 发布与更新工具链
 
