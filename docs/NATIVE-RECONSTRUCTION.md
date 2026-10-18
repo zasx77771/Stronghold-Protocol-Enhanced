@@ -356,3 +356,11 @@ node tools/assetPackages.mjs --verify-index .native-assets/packages/assets-index
 4. 入口：只在干员调配标题栏加按钮，不改标题页与大厅其它入口。
 5. 读取：覆盖前确认；一份都应用不上时不动当前调配；损坏条目在读取时静默丢弃，不弹错误。
 6. i18n：四包都补齐（en/ja/ko/zh-TW），未新增机器翻译占位。
+## 阶段 E 实施记录：连接与邀请（E1，2026-10-18）
+
+- 新增 `public/js/connection.js`：解析并保存本机连接方式（`sp.server.transport` = `websocket` | `tcp`）与服务器地址（`sp.server.address`；TCP 端点同时写入 bridge 的 `sp.native.tcp`）。
+- 原生 bridge 只在连接方式不是 `websocket` 时替换 `globalThis.WebSocket`；升级安装没有该键时仍按 `tcp` 处理，保持旧行为。
+- 标题画面在「开始」下方提供连接方式切换（仅原生外壳显示 TCP）、服务器地址与「应用」，以及「同盟邀请」粘贴框；粘贴邀请只设置 `ui.pendingJoin`，由 `main.js` 在进入且连上后自动加入，未填代号时聚焦代号输入框。
+- `net.setUrl()` 让启动时保存的地址覆盖页面推导的 WebSocket URL。
+- 测试：`test/connection.test.js`（11 项），以及 `test/lobby.test.js`、`test/client-static.test.js`、`test/docs-consistency.test.js`、`test/docs-paths.test.js` 全通过；`node tools/i18n.mjs check --all --strict` 2176/2176。
+- 未验证：Windows/Android 真机上的 TCP 与 WebSocket 切换（需要实际构建与局域网服务器）。
