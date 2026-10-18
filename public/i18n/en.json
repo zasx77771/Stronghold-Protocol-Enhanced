@@ -2213,5 +2213,17 @@
   "删除这台浏览器里、当前服务器版本已经用不到的导入素材；仍在使用的会保留。": "Delete the imported assets in this browser that this server's current version no longer uses; the ones still in use stay.",
   "已清理 {n} 个旧版本文件。": "Cleared {n} old-version files.",
   "没有需要清理的旧版本文件。": "No old-version files to clear.",
-  "读不到服务器的素材清单，没有删除任何文件。": "Could not read the server's asset lists; nothing was deleted."
+  "读不到服务器的素材清单，没有删除任何文件。": "Could not read the server's asset lists; nothing was deleted.",
+  "同盟邀请": "Alliance invite",
+  "粘贴邀请链接或同盟密钥": "Paste an invite link or an alliance key",
+  "未识别到同盟密钥": "No alliance key found in that text.",
+  "请先输入博士代号，随后自动加入同盟": "Enter your callsign first; the alliance will be joined automatically.",
+  "连接方式": "Connection",
+  "服务器地址": "Server address",
+  "留空则使用当前页面地址": "Leave blank to use this page's address",
+  "应用": "Apply",
+  "已应用服务器地址": "Server address applied.",
+  "请输入 主机:端口，例如 192.168.1.10:3001": "Enter host:port, for example 192.168.1.10:3001",
+  "服务器地址必须以 ws:// 或 wss:// 开头": "The server address must start with ws:// or wss://",
+  "服务器地址格式无效": "That server address is not valid."
 }

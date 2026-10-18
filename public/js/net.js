@@ -209,6 +209,11 @@ export class Net {
     this._emit('status', this.snapshot());
   }
 
+  /** Point the socket at another server (the title screen's server address); applies on the next connect(). */
+  setUrl(url) {
+    this.url = url || null;
+  }
+
   // ---- lifecycle -------------------------------------------------------------------------------
 
   /** Open the socket (no-op when already open/connecting). Also resumes after close()/replacement. */
