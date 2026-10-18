@@ -32,7 +32,7 @@ public final class AssetPackage {
     public static final String KIND_BASE = "base";
     public static final String KIND_DELTA = "delta";
     private static final String HEX64 = "^[0-9a-f]{64}$";
-    /** Mirrors `MAX_FILE_BYTES` in tools/assetPackages.mjs. */
+    /** Mirrors `MAX_FILE_BYTES` in src-tauri/src/assets.rs. */
     private static final long MAX_FILE_BYTES = 512L * 1024 * 1024;
 
     /** A deleted file, kept as a tombstone so a client can prove it removed the right content. */

@@ -43,7 +43,8 @@
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
-import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
+import { ERR, ERR_TEXT, NAME_MAX_UNITS, PROTOCOL_VERSION } from '../shared/constants.js';
+import { clampName } from '../shared/nameWidth.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
 export const NET_DEFAULTS = Object.freeze({
@@ -358,14 +359,16 @@ const LONE_SURROGATE_RE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff
 
 /**
  * Normalize a nickname: strip control/invisible characters and lone surrogates, collapse whitespace,
- * trim, cap at NAME_MAX_LEN code points. Returns null when nothing printable remains.
+ * trim, then cap at NAME_MAX_UNITS display columns (a wide character counts two: 16 Latin or 8 Hanzi;
+ * shared/nameWidth.js) — the same clamp the title screen applies. Returns null when nothing printable
+ * remains.
  * @param {unknown} raw
  * @returns {string | null}
  */
 export function sanitizeName(raw) {
   if (typeof raw !== 'string') return null;
   let s = raw.normalize('NFC').replace(LONE_SURROGATE_RE, '').replace(/\s+/g, ' ').replace(STRIP_RE, '').replace(/ {2,}/g, ' ').trim();
-  s = [...s].slice(0, NAME_MAX_LEN).join('').trim();
+  s = clampName(s, NAME_MAX_UNITS).trim();
   return s.length > 0 ? s : null;
 }
 

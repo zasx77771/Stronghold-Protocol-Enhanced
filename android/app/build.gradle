@@ -17,7 +17,42 @@ android {
     sourceSets { main.assets.srcDir(layout.buildDirectory.dir('generated/nativeWeb')) }
 
     def generatedWeb = layout.buildDirectory.dir('generated/nativeWeb')
+
+    // A packaged APK carries the official art `data/assets.json` lists, so a build without it
+    // fails here instead of installing a client whose images 404. The check mirrors
+    // tools/check-embedded-assets.mjs, which the Windows build runs from src-tauri/build.rs.
+    tasks.register('checkEmbeddedAssets') {
+        def manifest = file('../../data/assets.json')
+        def webRoot = file('../../public')
+        inputs.files(manifest)
+        outputs.upToDateWhen { false }
+        doLast {
+            if (!manifest.isFile()) {
+                throw new GradleException('embedded assets: data/assets.json is missing')
+            }
+            def urls = []
+            (manifest.getText('UTF-8') =~ /"\/(?:assets|fonts)\/[^"]+"/).each { urls << it.substring(1, it.length() - 1) }
+            urls = urls.unique()
+            if (urls.isEmpty()) {
+                throw new GradleException('embedded assets: data/assets.json lists no /assets/ URL')
+            }
+            def missing = urls.findAll { url -> !new File(webRoot, url.substring(1)).isFile() }
+            if (missing) {
+                throw new GradleException("embedded assets: ${missing.size()} of ${urls.size()} manifest files are missing " +
+                    "(e.g. ${missing.take(3).join(', ')}); run `npm run assets`")
+            }
+            // Same strict rule as `npm run assets:check`: a stale manifest must not hide
+            // files the client would then request and 404 on.
+            def declared = new groovy.json.JsonSlurper().parseText(manifest.getText('UTF-8'))?.stats?.files
+            def listed = urls.count { it.startsWith('/assets/') }
+            if (declared instanceof Number && declared.intValue() != listed) {
+                throw new GradleException("embedded assets: data/assets.json stats.files (${declared}) disagrees with its ${listed} /assets/ URLs")
+            }
+        }
+    }
+
     tasks.register('syncNativeWeb', Copy) {
+        dependsOn(tasks.named('checkEmbeddedAssets'))
         from('../../public')
         into(generatedWeb)
         from('../../data') { into('data') }
@@ -27,31 +62,5 @@ android {
         from('../../native/bridge/stronghold-native-bridge.js') { into('native'); rename { 'bridge.js' } }
     }
 
-    // The R2 endpoint never ships in the page source: the build writes the runtime asset
-    // configuration next to the packaged web root, exactly like the Windows client does.
-    tasks.register('writeAssetConfig') {
-        mustRunAfter(tasks.named('syncNativeWeb'))
-        def indexUrl = project.findProperty('SP_ASSET_INDEX_URL')
-        def tokenUrl = project.findProperty('SP_ASSET_TOKEN_URL')
-        inputs.property('indexUrl', indexUrl ?: '')
-        inputs.property('tokenUrl', tokenUrl ?: '')
-        outputs.file(layout.buildDirectory.file('generated/nativeWeb/asset-config.json'))
-        doLast {
-            def target = new File(generatedWeb.get().asFile, 'asset-config.json')
-            if (!indexUrl) {
-                target.delete()
-                return
-            }
-            def config = [
-                format  : 'sp-assets-config-v1',
-                enabled : true,
-                indexUrl: indexUrl,
-                tokenUrl: tokenUrl ?: '',
-                maxChain: 3,
-                allowHttp: false,
-            ]
-            target.text = groovy.json.JsonOutput.toJson(config)
-        }
-    }
-    preBuild.dependsOn(tasks.named('syncNativeWeb'), tasks.named('writeAssetConfig'))
+    preBuild.dependsOn(tasks.named('syncNativeWeb'))
 }

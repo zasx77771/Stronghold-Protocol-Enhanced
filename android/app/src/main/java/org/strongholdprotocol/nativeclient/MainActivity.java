@@ -28,33 +28,28 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.strongholdprotocol.nativeclient.assets.AssetApkSource;
-import org.strongholdprotocol.nativeclient.assets.AssetConfig;
 import org.strongholdprotocol.nativeclient.assets.AssetInventory;
 import org.strongholdprotocol.nativeclient.assets.AssetJson;
 import org.strongholdprotocol.nativeclient.assets.AssetPaths;
 import org.strongholdprotocol.nativeclient.assets.AssetStore;
-import org.strongholdprotocol.nativeclient.assets.AssetUpdateSession;
 
 public final class MainActivity extends Activity {
   private static final String ORIGIN = "https://appassets.androidplatform.net";
   private static final String ASSET_STORE_DIR = "asset-runtime";
   private static final int REQUEST_IMPORT_PACKAGE = 0x5350;
+  private static final long MAX_PACKAGE_BYTES = 1536L * 1024 * 1024;
+  private static final long MAX_EXTRACT_BYTES = 4096L * 1024 * 1024;
   private static final String TAG = "StrongholdNative";
   private final ExecutorService io = Executors.newCachedThreadPool();
   private final Map<String, NativeSocket> sockets = new ConcurrentHashMap<>();
   private WebView webView;
   private AssetStore assetStore;
-  private AssetConfig assetConfig;
-  private AssetUpdateSession assetSession;
   private ExecutorService assetExecutor;
   private volatile boolean importBusy;
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     assetStore = openAssetStore();
-    assetConfig = loadAssetConfig();
-    assetSession = new AssetUpdateSession(assetStore, assetConfig, getCacheDir(), null);
-    assetSession.setListener(this::emitAssetState);
     assetExecutor = Executors.newSingleThreadExecutor();
     webView = new WebView(this);
     webView.getSettings().setJavaScriptEnabled(true);
@@ -81,7 +76,6 @@ public final class MainActivity extends Activity {
   }
 
   @Override protected void onDestroy() {
-    if (assetSession != null) assetSession.cancel();
     if (assetExecutor != null) assetExecutor.shutdownNow();
     for (NativeSocket socket : sockets.values()) socket.close(1000, "activity destroyed");
     sockets.clear();
@@ -106,8 +100,6 @@ public final class MainActivity extends Activity {
       return;
     }
     importBusy = true;
-    // One writer at a time: a running online transfer must not race the local package.
-    if (assetSession != null) assetSession.cancel();
     Uri uri = data.getData();
     emitImportState("importing", "正在读取本地素材包", "");
     ExecutorService executor = assetExecutor;
@@ -126,8 +118,8 @@ public final class MainActivity extends Activity {
 
   private void importFromUri(Uri uri) {
     File temporary = new File(getCacheDir(), "import-package.zip");
-    long maxExtract = assetConfig == null ? AssetConfig.DEFAULT_MAX_EXTRACT_BYTES : assetConfig.maxExtractBytes;
-    long limit = Math.min(maxExtract, AssetConfig.DEFAULT_MAX_DOWNLOAD_BYTES);
+    long maxExtract = MAX_EXTRACT_BYTES;
+    long limit = MAX_PACKAGE_BYTES;
     String digest;
     try {
       MessageDigest sha = MessageDigest.getInstance("SHA-256");
@@ -195,14 +187,13 @@ public final class MainActivity extends Activity {
 
   private void emitImportState(String state, String message, String current) {
     Map<String, Object> payload = new HashMap<>();
-    payload.put("format", AssetUpdateSession.STATUS_FORMAT);
+    payload.put("format", "sp-asset-status-v1");
+    payload.put("mode", "embedded");
     payload.put("state", state);
     payload.put("message", message);
     payload.put("error", "import-failed".equals(state) ? message : "");
     payload.put("current", current == null || current.isEmpty()
         ? (assetStore != null && assetStore.hasState() ? assetStore.version() : "") : current);
-    payload.put("mirrors", assetConfig == null ? new java.util.ArrayList<Map<String, String>>() : assetConfig.mirrors);
-    payload.put("mirrorProblems", assetConfig == null ? new java.util.ArrayList<String>() : assetConfig.mirrorProblems);
     payload.put("importAvailable", assetStore != null);
     emitAssetState(payload);
   }
@@ -300,35 +291,30 @@ public final class MainActivity extends Activity {
       NativeSocket socket = sockets.remove(id);
       if (socket != null) socket.close(code, reason == null ? "" : reason);
     }
-    @JavascriptInterface public void setAssetSessionToken(String token) {
-      AssetUpdateSession session = assetSession;
-      if (session != null && token != null && token.matches("[0-9a-f]{32}")) session.setSessionToken(token);
-    }
   }
 
   /**
-   * The only JavaScript surface for runtime assets: read status, prepare a plan, start/retry the
-   * confirmed transfer, cancel.  It carries no token in either direction and never starts a
-   * transfer by itself.
+   * The only JavaScript surface for runtime assets.  The official art ships inside the APK, so the
+   * bridge only reports the imported override layer and opens the native picker; it never carries a
+   * token, a URL or a path in either direction.
    */
   private final class AssetBridge {
-    @JavascriptInterface public boolean available() { return assetSession != null; }
+    @JavascriptInterface public boolean available() { return assetStore != null; }
 
     @JavascriptInterface public String status() {
-      AssetUpdateSession session = assetSession;
-      if (session == null) {
-        return "{\"format\":\"" + AssetUpdateSession.STATUS_FORMAT + "\",\"state\":\""
-            + AssetUpdateSession.UNAVAILABLE + "\",\"message\":\"the runtime asset store is unavailable\"}";
+      AssetStore store = assetStore;
+      if (store == null) {
+        return "{\"format\":\"sp-asset-status-v1\",\"mode\":\"embedded\",\"enabled\":false,"
+            + "\"current\":\"\",\"files\":0,\"importAvailable\":true}";
       }
-      return AssetJson.stringify(session.status());
-    }
-
-    @JavascriptInterface public void prepare() { submit(AssetUpdateSession::prepare); }
-    @JavascriptInterface public void start() { submit(AssetUpdateSession::start); }
-    @JavascriptInterface public void retry() { submit(AssetUpdateSession::retry); }
-    @JavascriptInterface public void cancel() {
-      AssetUpdateSession session = assetSession;
-      if (session != null) session.cancel();
+      java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+      out.put("format", "sp-asset-status-v1");
+      out.put("mode", "embedded");
+      out.put("enabled", true);
+      out.put("current", store.version() == null ? "" : store.version());
+      out.put("files", store.inventory() == null ? 0 : store.inventory().count());
+      out.put("importAvailable", true);
+      return AssetJson.stringify(out);
     }
 
     /** Native picker only: opens the system document UI; the page gets no path and no URI. */
@@ -347,22 +333,6 @@ public final class MainActivity extends Activity {
         startActivityForResult(intent, REQUEST_IMPORT_PACKAGE);
       } catch (RuntimeException error) {
         emitImportState("import-failed", "无法打开文件选择器：" + describe(error), "");
-      }
-    }
-
-    private void submit(java.util.function.Consumer<AssetUpdateSession> task) {
-      // A local import owns the store while it runs; queued online actions must not race it.
-      if (importBusy) return;
-      AssetUpdateSession session = assetSession;
-      ExecutorService executor = assetExecutor;
-      if (session == null || executor == null || executor.isShutdown()) return;
-      try {
-        executor.execute(() -> {
-          try { task.accept(session); }
-          catch (RuntimeException failed) { Log.w(TAG, "asset request failed", failed); }
-        });
-      } catch (RuntimeException rejected) {
-        Log.w(TAG, "asset request was not scheduled", rejected);
       }
     }
   }
@@ -388,17 +358,6 @@ public final class MainActivity extends Activity {
       Log.w(TAG, "runtime asset store unavailable", error);
       return null;
     }
-  }
-
-  /** Public configuration only: the packaged file is the whole source (no build-time fallback). */
-  private AssetConfig loadAssetConfig() {
-    try {
-      String text = readPackagedText(AssetPaths.CONFIG_FILE);
-      if (text != null) return AssetConfig.from(AssetJson.object(AssetJson.parse(text)));
-    } catch (IllegalArgumentException error) {
-      Log.w(TAG, "ignoring the packaged asset configuration: " + error.getMessage());
-    }
-    return AssetConfig.disabled("no asset-config.json is packaged");
   }
 
   private String readPackagedText(String name) {

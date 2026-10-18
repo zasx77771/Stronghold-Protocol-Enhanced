@@ -59,7 +59,6 @@ import { createRequestHandler } from './http/routes.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
 import { createManifestViews } from './http/assetViews.js';
-import { createAssetTokenIssuer } from './http/assetToken.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 
@@ -143,13 +142,8 @@ export async function startServer(opts = {}) {
   buildTag();
 
   const traffic = createTrafficCounter();
-  const assetTokenIssuer = opts.assetTokenIssuer || createAssetTokenIssuer({
-    registry,
-    secret: opts.assetTokenSecret ?? process.env.SP_ASSET_TOKEN_SECRET,
-    ttlSec: 600,
-  });
   const health = { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted: trustedRuntime?.health, tcpPort: null };
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, assetToken: assetTokenIssuer }));
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
   let tcpListener = null;

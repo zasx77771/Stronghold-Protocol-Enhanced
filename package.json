@@ -31,6 +31,7 @@
     "vendor": "node tools/vendor.mjs",
     "build-data": "node tools/build-data.mjs",
     "assets": "node tools/vendor.mjs && node tools/fetch-assets.mjs",
+    "assets:check": "node tools/check-embedded-assets.mjs --strict",
     "postinstall": "node tools/vendor.mjs",
     "setup": "node tools/setup.mjs",
     "doctor": "node tools/doctor.mjs",
@@ -41,8 +42,6 @@
     "ci": "node tools/ci.mjs",
     "package": "node tools/package.mjs",
     "package:lite": "node tools/package.mjs --lite",
-    "assets:package": "node tools/assetPackages.mjs",
-    "assets:package:check": "node --test test/native/asset-packages.test.js",
     "native:check": "node tools/check-native-compat.mjs"
   },
   "engines": {

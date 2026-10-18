@@ -568,7 +568,10 @@ describe('websocket lobby', () => {
 
     await expectError(c, { t: 'hello', name: '   ' }, ERR.BAD_MSG);
     await expectError(c, { t: 'hello', name: 'x', version: 999 }, ERR.BAD_MSG);
-    await expectError(c, { t: 'hello', name: 'x'.repeat(13) }, ERR.BAD_MSG);
+    await expectError(c, { t: 'hello', name: 'x'.repeat(17) }, ERR.BAD_MSG);
+    // 16 units is the documented maximum (8 汉字), so this one is accepted
+    const widest = await c.hello('x'.repeat(16));
+    assert.equal(widest.name, 'x'.repeat(16));
     // repeated hello updates the name, keeps identity
     const again = await c.hello('Renamed');
     assert.equal(again.playerId, w.playerId);
@@ -2118,7 +2121,10 @@ describe('platform units', () => {
     assert.equal(sanitizeName(String.fromCharCode(0xd800)), null);
     assert.equal(sanitizeName(''), null);
     assert.equal(sanitizeName(42), null);
-    assert.equal([...sanitizeName('😀'.repeat(20))].length, 12);
+    // 16 display columns: a Hanzi (or an emoji) counts two, so 8 of them fit.
+    assert.equal(sanitizeName('字'.repeat(20)), '字'.repeat(8));
+    assert.equal(sanitizeName('x'.repeat(20)).length, 16);
+    assert.equal([...sanitizeName('😀'.repeat(20))].length, 8);
   });
 
   test('TokenBucket refills continuously up to burst', () => {

@@ -81,7 +81,7 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *   plugin studio (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null, assetToken = null }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null }) {
   async function handleRequest(req, res) {
     const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
@@ -97,16 +97,6 @@ export function createRequestHandler({ serveStatic, health, log, trustProxy = 'a
     if (parts.rawPath === '/healthz') {
       const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
       sendJson(req, res, 200, healthReport(health, withTraffic));
-      return;
-    }
-    // Native runtime assets (Windows Tauri / Android WebView): the page hands over only its 32-hex
-    // game session token; the server exchanges it for a short-lived Worker JWT.  No token, no asset.
-    if (parts.rawPath === '/api/assets/token') {
-      const answer = assetToken
-        ? await assetToken.issueAuthorization(req.headers.authorization)
-        : { status: 503, body: { ok: false, error: 'asset_token_unavailable' } };
-      res.setHeader('Cache-Control', 'no-store');
-      sendJson(req, res, answer.status, answer.body);
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

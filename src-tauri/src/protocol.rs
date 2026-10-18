@@ -1,5 +1,6 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{header, Method, Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
 use crate::assets::AssetStore;
@@ -17,14 +18,12 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         Some(value) => value,
         None => return response(StatusCode::NOT_FOUND, "text/plain; charset=utf-8", b"Not Found".to_vec(), "no-store"),
     };
-    // The private R2 store wins over the bundled client tree: an asset is either the applied
-    // generation (native update) or the offline floor that shipped with the executable.
+    // The private store wins over the bundled client tree: an asset is either the applied local
+    // generation (an imported pack, if one is active) or the artwork that shipped with the installer.
     if let Some(store) = app.try_state::<AssetStore>() {
         for relative in &candidates {
             if let Some(file) = store.lookup(&relative.to_string_lossy()) {
-                if let Ok(bytes) = std::fs::read(&file) {
-                    return response(StatusCode::OK, mime_for(relative), bytes, cache_for(relative));
-                }
+                if let Some(served) = serve_file(request, &file, cache_for(relative)) { return served; }
             }
         }
     }
@@ -34,16 +33,85 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     };
     for relative in candidates {
         let file = root.join(&relative);
-        if let Ok(bytes) = std::fs::read(&file) {
-            if relative == Path::new("index.html") {
-                let html = String::from_utf8_lossy(&bytes);
-                let injected = inject_bridge(&html, "windows");
-                return response(StatusCode::OK, "text/html; charset=utf-8", injected.into_bytes(), "no-store");
-            }
-            return response(StatusCode::OK, mime_for(&file), bytes, cache_for(&relative));
+        if !file.is_file() { continue; }
+        if relative == Path::new("index.html") {
+            let Ok(bytes) = std::fs::read(&file) else { continue; };
+            let html = String::from_utf8_lossy(&bytes);
+            let injected = inject_bridge(&html, "windows");
+            return response(StatusCode::OK, "text/html; charset=utf-8", injected.into_bytes(), "no-store");
         }
+        if let Some(served) = serve_file(request, &file, cache_for(&relative)) { return served; }
     }
     response(StatusCode::NOT_FOUND, "text/plain; charset=utf-8", b"Not Found".to_vec(), "no-store")
+}
+
+/// Serve one file, honouring a single byte range (a seek in an audio element) and HEAD.
+///
+/// A full-file response is the old behaviour; a `Range` request answers 206 with `Content-Range`
+/// and reads only the requested slice, and an unsatisfiable one answers 416 with `bytes */<size>`.
+/// Without ranges Chromium cannot seek inside the long battle music, and a whole-file read of a
+/// 60 MB track stalls the page.
+fn serve_file(request: &Request<Vec<u8>>, file: &Path, cache: &str) -> Option<Response<Vec<u8>>> {
+    let size = std::fs::metadata(file).ok()?.len();
+    let content_type = mime_for(file);
+    let builder = Response::builder()
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, cache)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header("x-content-type-options", "nosniff");
+    if request.method() == Method::HEAD {
+        return builder.header(header::CONTENT_LENGTH, size).body(Vec::new()).ok();
+    }
+    let range = request.headers().get(header::RANGE).and_then(|value| value.to_str().ok());
+    match range {
+        Some(raw) => match parse_range(raw, size) {
+            Some((start, end)) => {
+                let mut bytes = Vec::with_capacity(usize::try_from(end - start + 1).unwrap_or(0));
+                let mut handle = std::fs::File::open(file).ok()?;
+                handle.seek(SeekFrom::Start(start)).ok()?;
+                handle.take(end - start + 1).read_to_end(&mut bytes).ok()?;
+                builder
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
+                    .header(header::CONTENT_LENGTH, bytes.len() as u64)
+                    .body(bytes)
+                    .ok()
+            }
+            None => Response::builder()
+                .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                .header(header::CONTENT_RANGE, format!("bytes */{size}"))
+                .header(header::CONTENT_LENGTH, 0u64)
+                .body(Vec::new())
+                .ok(),
+        },
+        None => {
+            let bytes = std::fs::read(file).ok()?;
+            builder.header(header::CONTENT_LENGTH, bytes.len() as u64).body(bytes).ok()
+        }
+    }
+}
+
+/// First byte range of a `Range` header: `bytes=a-b`, `bytes=a-` or the suffix form `bytes=-n`.
+/// Multiple ranges are collapsed to the first one (the player only asks for one). `None` means the
+/// range is unsatisfiable (`a` past the end, empty file, `-0`, `b < a`).
+pub fn parse_range(header: &str, size: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?;
+    let first = spec.split(',').next()?.trim();
+    let (start, end) = first.split_once('-')?;
+    if size == 0 { return None; }
+    let start = start.trim();
+    let end = end.trim();
+    if start.is_empty() {
+        let count: u64 = end.parse().ok()?;
+        if count == 0 { return None; }
+        let count = count.min(size);
+        return Some((size - count, size - 1));
+    }
+    let first_byte: u64 = start.parse().ok()?;
+    if first_byte >= size { return None; }
+    let last_byte = if end.is_empty() { size - 1 } else { end.parse::<u64>().ok()?.min(size - 1) };
+    if last_byte < first_byte { return None; }
+    Some((first_byte, last_byte))
 }
 
 pub fn client_root(app: &AppHandle) -> Option<PathBuf> {
@@ -150,5 +218,24 @@ mod tests {
         assert_eq!(strip_hash("/fonts/~0123456789abcdef/x.woff2"), "/fonts/x.woff2");
         assert_eq!(strip_hash("/assets/char/a.png"), "/assets/char/a.png");
         assert_eq!(strip_hash("/assets/nothex/a.png"), "/assets/nothex/a.png");
+    }
+    #[test]
+    fn parses_single_byte_ranges() {
+        assert_eq!(parse_range("bytes=0-99", 1000), Some((0, 99)));
+        assert_eq!(parse_range("bytes=900-", 1000), Some((900, 999)));
+        assert_eq!(parse_range("bytes=-100", 1000), Some((900, 999)));
+        assert_eq!(parse_range("bytes=-5000", 1000), Some((0, 999)));
+        assert_eq!(parse_range("bytes=0-9999", 1000), Some((0, 999)));
+        assert_eq!(parse_range("bytes=0-0, 5-9", 1000), Some((0, 0)));
+        assert_eq!(parse_range("Bytes=10-20", 1000), None);
+    }
+    #[test]
+    fn refuses_unsatisfiable_ranges() {
+        assert_eq!(parse_range("bytes=1000-", 1000), None);
+        assert_eq!(parse_range("bytes=5-4", 1000), None);
+        assert_eq!(parse_range("bytes=-0", 1000), None);
+        assert_eq!(parse_range("bytes=0-", 0), None);
+        assert_eq!(parse_range("items=0-1", 1000), None);
+        assert_eq!(parse_range("bytes=abc-def", 1000), None);
     }
 }

@@ -27,30 +27,6 @@ pub async fn sp_tcp_close(state: State<'_, TcpState>, id: String, code: u16, rea
     state.close(&id, code, reason).await
 }
 
-/// Receives the 32-hex game session token from the page (after `welcome`), starts one asset
-/// update, and reports progress on `sp-asset-event`.  Returns whether files changed, which is
-/// when the page reloads once so the new store generation is what it renders.
-#[tauri::command]
-pub async fn sp_set_asset_session_token(app: AppHandle, token: String) -> bool {
-    let store = match app.try_state::<AssetStore>() {
-        Some(store) => store,
-        None => return false,
-    };
-    if token.len() != 32 || !token.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
-        return false;
-    }
-    let handle = app.clone();
-    let report = move |value: serde_json::Value| {
-        let _ = handle.emit("sp-asset-event", value);
-    };
-    store.update_session_report(&token, &report).await
-}
-
-#[tauri::command]
-pub fn sp_assets_ready(app: AppHandle) -> bool {
-    app.try_state::<AssetStore>().map(|store| store.is_enabled()).unwrap_or(false)
-}
-
 #[tauri::command]
 pub fn sp_client_info(app: AppHandle) -> serde_json::Value {
     let store = app.try_state::<AssetStore>();
@@ -66,14 +42,12 @@ pub fn sp_asset_status(app: AppHandle) -> serde_json::Value {
     match app.try_state::<AssetStore>() {
         Some(store) => store.status(),
         None => serde_json::json!({
-            "format": "sp-asset-update-status-v1",
+            "format": "sp-asset-status-v1",
             "platform": "windows",
+            "mode": "embedded",
             "enabled": false,
-            "disabledReason": "asset store is not mounted",
             "current": "",
             "files": 0,
-            "mirrors": [],
-            "mirrorProblems": [],
             "importAvailable": true,
         }),
     }
@@ -145,7 +119,7 @@ fn import_picked_package(handle: &AppHandle, path: &std::path::Path) {
         emit(serde_json::json!({ "state": "import-failed", "error": "asset store is not mounted" }));
         return;
     };
-    let applied = tauri::async_runtime::block_on(store.import_package_locked(path, &digest));
+    let applied = store.import_package(path, &digest);
     match applied {
         Ok(summary) => {
             let current = store.status().get("current").cloned().unwrap_or_default();

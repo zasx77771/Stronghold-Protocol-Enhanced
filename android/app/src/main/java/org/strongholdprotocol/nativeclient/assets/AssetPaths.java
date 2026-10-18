@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 /**
  * Path rules and file-name constants shared by the runtime asset store.
  *
- * <p>The rules are the mirror image of {@code tools/assetPackages.mjs}: the runtime set is exactly
+ * <p>The rules define the {@code sp-assets-package-v1} contract: the runtime set is exactly
  * {@code assets/**}, {@code fonts/**}, {@code data/assets.json} and {@code data/local-assets.json} —
  * everything else is program code and stays in the APK. The canonical inventory digest is built from
  * the raw paths, so both sides must agree byte for byte; that is why non-ASCII and control characters
@@ -23,8 +23,6 @@ public final class AssetPaths {
     public static final String ENTRY_FILE = "index.html";
     /** Asset root state stamped into the APK by the release build. */
     public static final String STATE_FILE = "asset-state.json";
-    /** Optional public configuration shipped in the APK (index URL, limits). */
-    public static final String CONFIG_FILE = "asset-config.json";
     /** Active pointer inside the writable store. */
     public static final String STORE_FILE = "asset-store.json";
     public static final String LAYER_DIR = "asset-layers";
@@ -148,7 +146,7 @@ public final class AssetPaths {
     /** Bookkeeping files and directories of the updater: never served to the client. */
     public static boolean isInternal(String rel) {
         if (rel == null) return true;
-        if (rel.equals(STATE_FILE) || rel.equals(CONFIG_FILE) || rel.equals(STORE_FILE)) return true;
+        if (rel.equals(STATE_FILE) || rel.equals(STORE_FILE)) return true;
         for (String dir : new String[] {LAYER_DIR, STAGING_DIR, RETIRED_DIR}) {
             if (rel.equals(dir) || rel.startsWith(dir + "/")) return true;
         }
