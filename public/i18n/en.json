@@ -139,7 +139,7 @@
   "收到同盟邀请": "Alliance invite received",
   "· 输入代号后将自动加入": "· You'll join automatically after entering your callsign",
   "博士代号": "Doctor Callsign",
-  "输入你的代号（最多 {NAME_MAX_LEN} 字）": "Callsign (max {NAME_MAX_LEN} chars)",
+  "输入你的代号（最多 {NAME_MAX_UNITS} 个字符，汉字算 2 个）": "Callsign (max {NAME_MAX_UNITS} columns; a Hanzi counts 2)",
   "开始": "Start",
   "非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有": "Unofficial fan remake · Game assets © Hypergryph / Yostar",
   "项目仓库": "Repository",

@@ -9,7 +9,7 @@
     } from '/js/ui/components.js';
     import { ToastHost, toast } from '/js/ui/toasts.js';
     import { data, useData, getBond } from '/js/data.js';
-    import { DIFFICULTIES, EMOTE_THEMES, EMOTES } from '/shared/constants.js';
+    import { DIFFICULTIES, EMOTE_THEMES, EMOTES, NAME_MAX_LEN } from '/shared/constants.js';
     import { EmoteWheel, EmoteBubble, EmoteArt } from '/js/ui/emotes.js';
 
     const SWATCHES = [
@@ -238,7 +238,7 @@
         <${Sec} n="11" title="输入 · 提示 · 对话框" micro="FIELD · TOOLTIP · MODAL · TOAST">
           <div class="grid2">
             <div class="stack">
-              <${TextField} label="博士代号" micro="CALLSIGN" icon="user" value=${name} onInput=${setName} maxLength=${12} />
+              <${TextField} label="博士代号" micro="CALLSIGN" icon="user" value=${name} onInput=${setName} maxLength=${NAME_MAX_LEN} />
               <${TextField} size="code" icon="key" value=${code} placeholder="输入同盟密钥" onInput=${(v) => setCode(v.toUpperCase().slice(0, 4))} />
               <${TextField} label="无效输入" value="!!" onInput=${() => {}} invalid=${true} hint="仅限字母与数字" />
             </div>
