@@ -314,7 +314,7 @@ export function TitleScreen() {
       <div class="title-side">
         <div class="title-login">
           <div class="title-connect__endpoint">
-            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" value=${address}
+            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" size="lg" value=${address}
               placeholder="192.168.1.10:3001"
               onInput=${setAddress} onEnter=${applyConnection} />
             <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
