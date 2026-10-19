@@ -1,5 +1,11 @@
 ## 未发布
 
+### 增强版客户端
+
+- 客户端名称中文化：Android 装到桌面后显示「卫戍协议：盟约」（`android/app/src/main/AndroidManifest.xml` 的
+  `android:label`），Windows 窗口标题改为「卫戍协议：盟约 · Stronghold Protocol」（`src-tauri/tauri.conf.json` 的
+  `app.windows[0].title`）。exe 文件名保持 ASCII 的 `Stronghold Protocol.exe`，避免中文名在批处理与快捷方式里出问题。
+
 ### 打包
 
 - Windows 客户端包内新增 `unblock.bat`（ASCII 名，避免 zip 内中文名在部分解压工具里乱码），README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
