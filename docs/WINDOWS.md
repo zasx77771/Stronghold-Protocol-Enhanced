@@ -225,3 +225,9 @@ WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe
 遇到「普通权限闪退、管理员能开」时，先看这个日志，再确认包是不是解压到了
 没有写权限的目录（`Program Files`、系统目录、只读盘，或在压缩包里直接双击）。
 旧安装留下的 `%LOCALAPPDATA%\Stronghold Protocol\`（3.1.0 及更早）不会再被 3.2.0 读取或写入。
+
+被 SmartScreen 拦成「Windows 已保护你的电脑 / 无法识别的应用」：exe **没有代码签名**，只要文件带「来自 Internet」
+标记（浏览器下载的 zip 解压出来的文件都会带）就会触发这个提示，不是病毒报告。处理办法按省事排序：弹窗里点
+「更多信息 → 仍要运行」；或双击包内由 `scripts/make-windows-client.mjs` 生成的 `解除锁定.bat`（对本目录所有文件
+执行 `Unblock-File`）；或解压前先对 zip 右键 → 属性 → 勾「解除锁定」。自签名证书不会被 SmartScreen 认可，
+要彻底消除提示只能给 exe 做代码签名（EV 证书立即生效，OV 证书需要累积下载信誉）。
