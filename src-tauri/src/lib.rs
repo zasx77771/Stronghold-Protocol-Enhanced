@@ -6,9 +6,163 @@ pub mod tcp;
 use tauri::{Manager, Emitter};
 use tcp::TcpState;
 
-pub fn run() -> i32 {
+/// Where the client keeps its runtime files (log, WebView2 profile).
+/// A plain per-user folder, deliberately *not* the legacy `Stronghold Protocol` folder an earlier
+/// installer may have left behind with its own ACLs, client copy and WebView2 profile: that tree is
+/// outside this app's control and has already cost a silent white-window crash.
+#[cfg(windows)]
+fn runtime_dir() -> std::path::PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Stronghold Protocol Enhanced")
+}
+
+fn append_log(path: &std::path::Path, text: &str) -> bool {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(text.as_bytes()).is_ok()
+        }
+        Err(_) => false,
+    }
+}
+
+/// Every place a launch line goes. The program folder comes first because a portable copy keeps its
+/// evidence next to the exe; a per-user folder and the temp folder are the fallbacks for a read-only
+/// install. The first writable one wins, so no single locked-down folder swallows the reason a launch
+/// failed.
+fn log_targets() -> Vec<std::path::PathBuf> {
+    let mut targets = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Some(dir) = exe_dir() {
+            targets.push(dir.join("client.log"));
+        }
+        targets.push(runtime_dir().join("client.log"));
+        targets.push(std::env::temp_dir().join("Stronghold Protocol Enhanced").join("client.log"));
+    }
+    targets
+}
+
+#[cfg(windows)]
+fn exe_dir() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
+}
+
+/// WebView2 profile folders to try, best first: an explicit override, then the portable program
+/// folder (a copy the user extracted themselves), then the per-user folder, then a unique temp
+/// folder. WebView2 refuses some per-user profiles with `0x800700AA` ("resource in use"), so a single
+/// hard-coded path can brick every later start.
+#[cfg(windows)]
+fn profile_candidates() -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(explicit) = std::env::var_os("WEBVIEW2_USER_DATA_FOLDER") {
+        if !explicit.is_empty() {
+            candidates.push(std::path::PathBuf::from(explicit));
+        }
+    }
+    if let Some(dir) = exe_dir() {
+        candidates.push(dir.join("webview2-profile"));
+    }
+    candidates.push(runtime_dir().join("WebView2"));
+    candidates.push(
+        std::env::temp_dir()
+            .join("Stronghold Protocol Enhanced")
+            .join(format!("WebView2-{}", std::process::id())),
+    );
+    candidates
+}
+
+fn append_log_any(text: &str) {
+    for path in log_targets() {
+        if append_log(&path, text) {
+            return;
+        }
+    }
+}
+
+fn log_display() -> String {
+    log_targets()
+        .first()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| String::from("(no log path)"))
+}
+
+#[cfg(windows)]
+fn message_box(text: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    // Win32 is linked already (Tauri depends on it); declare the one symbol we need so the client
+    // can show a native dialog even when the webview never came up.
+    extern "system" {
+        fn MessageBoxW(hwnd: *mut core::ffi::c_void, text: *const u16, caption: *const u16, flags: u32) -> i32;
+    }
+    let wide = |value: &str| -> Vec<u16> {
+        std::ffi::OsStr::new(value).encode_wide().chain(std::iter::once(0)).collect()
+    };
+    let body = wide(text);
+    let caption = wide("Stronghold Protocol");
+    // MB_OK | MB_ICONERROR | MB_SETFOREGROUND
+    unsafe { MessageBoxW(std::ptr::null_mut(), body.as_ptr(), caption.as_ptr(), 0x0000_0010 | 0x0000_0001 | 0x0001_0000) };
+}
+
+/// Runs before Tauri touches any window: picks the first usable WebView2 profile folder, writes launch
+/// failures to `client.log` (program folder, then the per-user folder, then the temp folder) and turns
+/// every panic into a log line. Returns the profile candidates so `run` can retry the next one.
+pub fn prepare_runtime() -> Vec<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        let candidates = profile_candidates();
+        if let Some(first) = candidates.first() {
+            if std::fs::create_dir_all(first).is_ok() {
+                std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", first);
+            }
+        }
+        append_log_any(&format!("\n[launch] starting pid={}\n", std::process::id()));
+        append_log_any(&format!(
+            "[profile] {}\n",
+            std::env::var("WEBVIEW2_USER_DATA_FOLDER").unwrap_or_else(|_| String::from("(default)"))
+        ));
+        std::panic::set_hook(Box::new(move |info| {
+            append_log_any(&format!("[panic] {info}\n"));
+        }));
+        candidates
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+fn panic_text(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(text) = payload.downcast_ref::<&str>() {
+        return (*text).to_string();
+    }
+    if let Some(text) = payload.downcast_ref::<String>() {
+        return text.clone();
+    }
+    String::from("unknown panic")
+}
+
+fn report_failure(message: &str) {
+    let line = format!("[error] {message}\n");
+    #[cfg(windows)]
+    {
+        append_log_any(&line);
+        message_box(&format!("{message}\n\n日志：{}", log_display()));
+    }
+    #[cfg(not(windows))]
+    eprintln!("native client start failed: {message}");
+}
+
+fn build_app() -> tauri::Result<tauri::App> {
     let state = TcpState::default();
-    let app = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -45,10 +199,54 @@ pub fn run() -> i32 {
             let _ = app.emit("sp-native-ready", serde_json::json!({ "platform": "windows" }));
             Ok(())
         })
-        .build(tauri::generate_context!());
+        .build(tauri::generate_context!())
+}
 
-    match app {
-        Ok(app) => { app.run(|_, _| {}); 0 }
-        Err(error) => { eprintln!("native client start failed: {error}"); 1 }
+/// Starts the client. A failed first attempt is retried with the next WebView2 profile folder in a
+/// fresh process: WebView2 can refuse a profile with `0x800700AA` and Tauri then panics inside
+/// `build` instead of returning an error, so `catch_unwind` plus a re-exec is what keeps a usable
+/// profile from turning into a silent white window.
+pub fn run(profiles: Vec<std::path::PathBuf>) -> i32 {
+    let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(build_app));
+    match built {
+        Ok(Ok(app)) => {
+            app.run(|_, _| {});
+            0
+        }
+        Ok(Err(error)) => start_failed(&format!("原生客户端启动失败：{error}"), &profiles),
+        Err(payload) => start_failed(&format!("原生客户端启动失败：{}", panic_text(payload)), &profiles),
     }
+}
+
+fn start_failed(message: &str, profiles: &[std::path::PathBuf]) -> i32 {
+    append_log_any(&format!("[error] {message}\n"));
+    #[cfg(windows)]
+    {
+        // One re-exec with the next candidate, guarded by an env marker so it cannot loop.
+        let retried = std::env::var_os("SP_NATIVE_PROFILE_RETRY").is_some();
+        if !retried {
+            if let Some(next) = profiles.iter().find(|path| {
+                std::env::var_os("WEBVIEW2_USER_DATA_FOLDER")
+                    .map(|current| std::path::PathBuf::from(current) != **path)
+                    .unwrap_or(true)
+            }) {
+                if std::fs::create_dir_all(next).is_ok() {
+                    if let Ok(exe) = std::env::current_exe() {
+                        append_log_any(&format!("[retry] re-exec with WebView2 profile {}\n", next.display()));
+                        let status = std::process::Command::new(exe)
+                            .env("WEBVIEW2_USER_DATA_FOLDER", next)
+                            .env("SP_NATIVE_PROFILE_RETRY", "1")
+                            .status();
+                        if let Ok(status) = status {
+                            if status.success() {
+                                return 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    report_failure(message);
+    1
 }

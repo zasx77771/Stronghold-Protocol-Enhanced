@@ -45,7 +45,7 @@ const NODE_CACHE_DIR = path.join(ROOT, '.cache');
  * 现去 nodejs.org 抓的，等于把「发出去的二进制是什么」交给当时的网络应答决定。换版本请改这里
  * （并在 `--node-version` 的同时用 `--sha256` 显式覆盖）。
  */
-const NODE_PIN = Object.freeze({
+export const NODE_PIN = Object.freeze({
   version: 'v22.23.3',
   file: 'node-v22.23.3-win-x64.zip',
   sha256: '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71',
@@ -58,7 +58,7 @@ const ASSET_DIRS = ['public/assets', 'public/fonts', 'public/vendor'];
 const SKIP_TRACKED = ['test/'];
 
 /** 包根要带的许可证 / 声明。 */
-const LEGAL_FILES = ['LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md'];
+export const LEGAL_FILES = ['LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md'];
 
 /**
  * 本机从游戏文件里提取出来的 3D 棋盘贴图清单（不进版本库）。
@@ -179,7 +179,7 @@ export function forceDeleteVerdict(dir) {
  * 这是 app\ 文件清单的唯一来源。用 NUL 分隔读，避免中文 / 空格文件名被 git 转义或截断。
  * @returns {string[]}
  */
-function trackedFiles() {
+export function trackedFiles() {
   const r = spawnSync('git', ['-C', ROOT, 'ls-files', '-z'], { maxBuffer: 256 * 1024 * 1024 });
   if (r.error || r.status !== 0) {
     throw new Error('git ls-files 失败：打包只收版本库里跟踪的文件，请在完整的 git 仓库里运行');
@@ -242,7 +242,7 @@ export async function copyDir(src, dst) {
   return { files, bytes };
 }
 
-async function dirSize(dir) {
+export async function dirSize(dir) {
   let bytes = 0; let files = 0;
   const walk = async (d) => {
     let entries;
@@ -263,7 +263,7 @@ async function dirSize(dir) {
  * 在临时目录里 `npm ci --omit=dev` 再搬过来：既拿到干净的生产依赖（不带 puppeteer-core 这类
  * devDependency），又不会动本仓库自己的 node_modules。
  */
-async function installProductionDeps(appDir) {
+export async function installProductionDeps(appDir) {
   const stage = path.join(appDir, '.deps-stage');
   await fsp.rm(stage, { recursive: true, force: true });
   await fsp.mkdir(stage, { recursive: true });
@@ -325,7 +325,7 @@ function extractZip(zipPath, dir) {
  * 确保官方 zip 在仓库的 .cache\ 里，且 sha256 与仓库里钉死的一致。
  * @returns {Promise<string>} zip 的绝对路径
  */
-async function ensureNodeZip(version, wantHash) {
+export async function ensureNodeZip(version, wantHash) {
   const zipName = `node-${version}-win-x64.zip`;
   const zipPath = path.join(NODE_CACHE_DIR, zipName);
 
@@ -356,7 +356,7 @@ async function ensureNodeZip(version, wantHash) {
  * @param {string} version 形如 v22.23.3
  * @param {string} zipPath 已校验 sha256 的官方 win-x64 zip
  */
-async function extractPortableNode(bundleNodeDir, version, zipPath) {
+export async function extractPortableNode(bundleNodeDir, version, zipPath) {
   const zipName = `node-${version}-win-x64.zip`;
   const rootName = zipName.replace(/\.zip$/, '');   // win-x64 zip 的固定布局：<zip 名>/node.exe
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sp-node-'));
@@ -382,7 +382,7 @@ async function extractPortableNode(bundleNodeDir, version, zipPath) {
 }
 
 /** 启动 .bat（内容保持纯 ASCII，中文只出现在文件名里）。 */
-function bat(body) {
+export function bat(body) {
   return `@echo off\r\nchcp 65001 >nul\r\nsetlocal\r\nset "HERE=%~dp0"\r\nset "NODE="\r\nif exist "%HERE%node\\node.exe" set "NODE=%HERE%node\\node.exe"\r\nif not defined NODE set "NODE=node"\r\n${body}\r\nset "CODE=%ERRORLEVEL%"\r\nif not "%CODE%"=="0" pause\r\nexit /b %CODE%\r\n`;
 }
 
