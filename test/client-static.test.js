@@ -1001,14 +1001,19 @@ describe('screen helpers', () => {
     assert.equal(sanitizeName('  凯尔希  '), '凯尔希');
     assert.equal(sanitizeName('a\u0000b\u200bc\u202ed'), 'abcd');
     assert.equal(sanitizeName('a   b'), 'a b');
-    assert.equal(sanitizeName('x'.repeat(30)).length, 12);
-    const emoji = '😀'.repeat(7); // 14 UTF-16 units
+    assert.equal(sanitizeName('x'.repeat(30)).length, 16);
+    // The limit is display width, not code points: 16 columns = 16 Latin or 8 Hanzi (one Hanzi is two).
+    assert.equal(sanitizeName('字'.repeat(20)), '字'.repeat(8));
+    assert.equal(sanitizeName('a'.repeat(10) + '字'.repeat(20)), 'a'.repeat(10) + '字'.repeat(3));
+    const emoji = '😀'.repeat(12); // 24 columns, clamped to 8 emoji (16 columns)
     const cut = sanitizeName(emoji);
-    assert.ok(cut.length <= 12 && !/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
+    assert.equal([...cut].length, 8);
+    assert.ok(!/[\ud800-\udbff]$/.test(cut), 'no dangling surrogate');
     const server = await import(pathToFileURL(path.join(ROOT, 'server/net.js')).href);
-    for (const raw of ['e\u0301', '\ud800x', '\udc00', 'a \u200b b', '\u00a0\u3000A\u3000B', 'a\u2028b', '😀'.repeat(7), ' x '.repeat(9)]) {
+    for (const raw of ['e\u0301', '\ud800x', '\udc00', 'a \u200b b', '\u00a0\u3000A\u3000B', 'a\u2028b', '😀'.repeat(7), ' x '.repeat(9), '字'.repeat(20), '😀'.repeat(12), 'a'.repeat(10) + '字'.repeat(5)]) {
       const c = sanitizeName(raw);
-      assert.ok(c.length <= 12, 'protocol limit (UTF-16 units)');
+      assert.ok(c.length <= 16, 'protocol limit (code points)');
+      assert.ok(!/[\ud800-\udbff]$/.test(c), 'no dangling surrogate');
       assert.equal(server.sanitizeName(c) ?? '', c, `server keeps the client-sanitized ${JSON.stringify(raw)} unchanged`);
     }
     assert.equal(sanitizeName(null), '');
