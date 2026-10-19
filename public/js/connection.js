@@ -12,7 +12,6 @@ export const TRANSPORT_KEY = 'sp.server.transport';
 export const ADDRESS_KEY = 'sp.server.address';
 export const TCP_ENDPOINT_KEY = 'sp.native.tcp';
 export const TRANSPORTS = Object.freeze(['websocket', 'tcp']);
-export const DEFAULT_TCP_ADDRESS = '127.0.0.1:3001';
 
 /** Parse `host:port` (also `tcp://host:port`, IPv6 in brackets) into `{host, port}`, else null. */
 export function parseEndpoint(value) {

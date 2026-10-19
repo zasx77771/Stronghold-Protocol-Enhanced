@@ -26,6 +26,15 @@ test('native bridge never lifts the game session token into the asset channel', 
   assert.doesNotMatch(bridge, /registerImportedAssetWorker/);
 });
 
+test('native bridge accepts both native event call shapes', () => {
+  // Tauri forwards `(id, payload)`; the Android shell passes one object built by
+  // `evaluateJavascript`. A payload without an id used to look up nothing, so every Android event was
+  // dropped and the client sat in "connecting" until the server's hello timeout.
+  assert.match(bridge, /function report\(idOrPayload, maybePayload\)/);
+  assert.match(bridge, /payload === undefined && idOrPayload && typeof idOrPayload === 'object'/);
+  assert.match(bridge, /id = payload\.id/);
+});
+
 test('native bridge exposes one asset-status channel per host', () => {
   assert.match(bridge, /sp-asset-event/);
   assert.match(bridge, /__strongholdAssetUpdate/);

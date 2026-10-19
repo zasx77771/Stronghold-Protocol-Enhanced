@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  ADDRESS_KEY, TCP_ENDPOINT_KEY, TRANSPORT_KEY, DEFAULT_TCP_ADDRESS,
+  ADDRESS_KEY, TCP_ENDPOINT_KEY, TRANSPORT_KEY,
   parseEndpoint, parseAddress, defaultSocketUrl, readSettings, saveSettings, inviteCode, inviteAddress, nativePlatform, transportForAddress,
 } from '../public/js/connection.js';
 
@@ -145,8 +145,4 @@ test('inviteAddress removes a room query before reconnecting, but keeps a bare k
   assert.equal(inviteAddress('room: ABCD'), null);
   assert.equal(inviteAddress('ABCD'), null);
   assert.equal(inviteAddress('https://game.example/?room=TOOLONG123'), null);
-});
-
-test('the default TCP placeholder is a valid endpoint', () => {
-  assert.ok(parseEndpoint(DEFAULT_TCP_ADDRESS));
 });

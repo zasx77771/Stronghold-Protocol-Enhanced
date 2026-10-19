@@ -32,9 +32,9 @@
   const CLOSED = 3;
   const FRAME_LIMIT = 64 * 1024;
   const ADDRESS_KEY = 'sp.native.tcp';
+  const NO_ENDPOINT = 'no_server_address';
   let nextSocketId = 0;
   let tauriListener = null;
-  let setupShown = false;
   const sockets = new Map();
 
   function endpointFrom(value) {
@@ -56,34 +56,18 @@
     return endpointFrom(saved) || endpointFrom(address) || endpointFrom(globalThis.__STRONGHOLD_NATIVE_ENDPOINT__);
   }
 
-  function showEndpointSetup() {
-    if (setupShown || !globalThis.document) return;
-    setupShown = true;
-    const mount = () => {
-      if (document.getElementById('sp-native-endpoint-setup')) return;
-      const panel = document.createElement('form');
-      panel.id = 'sp-native-endpoint-setup';
-      panel.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-content:center;gap:12px;padding:24px;background:#0c0f0ef2;color:#edf2ee;font:16px system-ui,sans-serif';
-      panel.innerHTML = '<strong>连接服务器</strong><label>TCP 地址 <input name="endpoint" autocomplete="off" placeholder="127.0.0.1:3001" style="display:block;margin-top:6px;padding:8px;min-width:260px" /></label><small>此地址仅保存在本机客户端。</small><button type="submit">连接</button><output aria-live="polite"></output>';
-      panel.addEventListener('submit', (ev) => {
-        ev.preventDefault();
-        const raw = new FormData(panel).get('endpoint');
-        if (!endpointFrom(raw)) {
-          panel.querySelector('output').textContent = '请输入主机:端口，例如 192.168.1.10:3001。';
-          return;
-        }
-        try { globalThis.localStorage?.setItem(ADDRESS_KEY, String(raw).trim().replace(/^tcp:\/\//i, '')); } catch { /* private mode */ }
-        globalThis.location.reload();
-      });
-      document.body.append(panel);
-      panel.querySelector('input')?.focus();
-    };
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
-    else mount();
-  }
-  function report(id, event) {
+  // Android calls this with one object built by `evaluateJavascript`; Tauri forwards the typed event
+  // payload plus its id. Accept both shapes: a payload without `id` used to look up nothing and drop
+  // every event, which left the Android client connected but permanently stuck before its hello.
+  function report(idOrPayload, maybePayload) {
+    let id = idOrPayload;
+    let payload = maybePayload;
+    if (payload === undefined && idOrPayload && typeof idOrPayload === 'object') {
+      payload = idOrPayload;
+      id = payload.id;
+    }
     const socket = sockets.get(String(id));
-    if (socket) socket._receive(event || {});
+    if (socket) socket._receive(payload || {});
   }
 
   // Android calls this with `evaluateJavascript`; the Tauri implementation wires the same name
@@ -141,11 +125,17 @@
       this._id = `native-tcp-${Date.now().toString(36)}-${(++nextSocketId).toString(36)}`;
       this._native = true;
       sockets.set(this._id, this);
+      // Only the address the player saved is dialled. A fresh install has none, so the socket fails
+      // immediately (the title screen then asks for one) instead of quietly connecting somewhere
+      // the player never chose.
       const endpoint = configuredEndpoint();
       if (!endpoint) {
-        showEndpointSetup();
-        queueMicrotask(() => this._receive({ type: 'error', message: '未配置原生 TCP 服务器地址' }));
-        queueMicrotask(() => this._receive({ type: 'close', code: 1006, reason: 'native endpoint unavailable' }));
+        this.readyState = CLOSED;
+        sockets.delete(this._id);
+        queueMicrotask(() => {
+          this._emit('error', { message: NO_ENDPOINT });
+          this._emit('close', { code: 1000, reason: NO_ENDPOINT, wasClean: true });
+        });
         return;
       }
       native.connect(this._id, endpoint.host, endpoint.port);
@@ -205,7 +195,9 @@
         return true;
       }
       return false;
-    }    _emit(type, fields) {
+    }
+
+    _emit(type, fields) {
       const value = event(type, fields);
       this.dispatchEvent(value);
       const handler = this[`on${type}`];
@@ -318,29 +310,10 @@
   if (hasTauri) {
     void tauri.event.listen('sp-asset-event', ({ payload }) => receiveAssetStatus(payload));
   }
-  if (hasTauri || (hasAndroid && androidAssets && typeof androidAssets.status === 'function')) {
-    if (hasAndroid && androidAssets) globalThis.__strongholdAssetUpdate = receiveAssetStatus;
-    const launch = document.createElement('button');
-    launch.type = 'button';
-    launch.textContent = '素材';
-    launch.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:2147483646;padding:8px 12px;border-radius:8px;border:1px solid #3d5447;background:#18211c;color:#dce9e0;font:13px system-ui,sans-serif;cursor:pointer';
-    launch.addEventListener('click', () => {
-      const panel = ensureAssetPanel();
-      if (panel) panel.style.display = '';
-      if (hasTauri) {
-        void tauri.core.invoke('sp_asset_status')
-          .then((status) => receiveAssetStatus(status))
-          .catch(() => { /* status is diagnostic only */ });
-        return;
-      }
-      let current = null;
-      try { current = androidAssets.status(); } catch { current = null; }
-      if (current) receiveAssetStatus(current);
-    });
-    const mountLaunch = () => document.body?.append(launch);
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountLaunch, { once: true });
-    else mountLaunch();
-  }
+  // The title screen owns 下载完整素材 / 导入素材包, so the shells only push status once an import
+  // actually runs. The 3.1.0-era fixed 素材 button sat on top of the game in both native shells and
+  // is gone; the status channel stays because the import path still reports through it.
+  if (hasAndroid && androidAssets) globalThis.__strongholdAssetUpdate = receiveAssetStatus;
 
   // Only the native page replaces its socket constructor.  The retained original is useful to
   // diagnostics and makes accidental double injection observable without changing browser code.
