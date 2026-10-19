@@ -205,7 +205,7 @@ export function readme({ version }) {
 \`\`\`
 ${PRODUCT}.exe        客户端主程序
 client\\               窗口加载的网页本体与随包素材（index.html、js、i18n、assets、fonts、vendor …）
-解除锁定.bat          被 SmartScreen 拦住时双击一次（见下）
+unblock.bat           被 SmartScreen 拦住时双击一次（见下，文件名用 ASCII 以免解压工具显示成乱码）
 README-Windows.md     本文件
 LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 \`\`\`
@@ -225,7 +225,8 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 这是**没有代码签名**的可执行文件 + 文件带有「来自 Internet」标记时的正常提示，不是病毒报告。
 
 - **最快**：弹窗里点「更多信息」→「仍要运行」。
-- **一劳永逸**：双击包内的 \`解除锁定.bat\`（会清除本目录所有文件的 Internet 标记），之后就不会再弹。
+- **一劳永逸**：双击包内的 \`unblock.bat\`（会清除本目录所有文件的 Internet 标记），之后就不会再弹。
+  脚本名用 ASCII，是因为 zip 里带中文名时部分解压工具会显示成乱码。
 - **解压前先解锁**：右键下载到的 zip → 属性 → 勾「解除锁定」→ 确定，再解压。
 - 想自己核对完整性：Release 页面公布的 SHA-256 与包内文件一致即可（\`Get-FileHash .\\Stronghold*.zip -Algorithm SHA256\`）。
 
@@ -324,7 +325,7 @@ async function main() {
     await fsp.copyFile(src, path.join(out, f));
   }
   await fsp.writeFile(path.join(out, 'README-Windows.md'), readme({ version }), 'utf8');
-  await fsp.writeFile(path.join(out, '解除锁定.bat'), UNBLOCK_BAT, 'utf8');
+  await fsp.writeFile(path.join(out, 'unblock.bat'), UNBLOCK_BAT, 'utf8');
 
   const total = await dirSize(out);
   console.log(`\n✔ 客户端已生成：${out}\n  ${total.files} 个文件 / ${MB(total.bytes)}`);
