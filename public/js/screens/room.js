@@ -33,6 +33,7 @@ import { hasScriptConsent, rememberScriptConsent } from '../content.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { difficultyInfo } from './lobby.js';
+import { readSettings, buildInviteLink } from '../connection.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 /**
@@ -98,11 +99,16 @@ export function aiLastOption(room, myId) {
   return { on: room.aiPicksLast === true, editable: room.hostId != null && room.hostId === myId };
 }
 
-/** Invite link for a room code (current page URL with ?room=CODE). */
+/**
+ * Invite text for a room code.
+ *
+ * A browser shares its own page URL (`…?room=CODE`); a native window shares the TCP endpoint it is connected to
+ * (`tcp://host:port/?room=CODE`), because the shell's page URL is not reachable by anyone else — see
+ * `buildInviteLink()` in ../connection.js.
+ */
 export function inviteLink(code) {
-  const loc = globalThis.location;
-  const base = loc ? `${loc.origin}${loc.pathname}` : '';
-  return `${base}?room=${encodeURIComponent(code)}`;
+  const settings = readSettings();
+  return buildInviteLink(code, { transport: settings.transport, address: settings.address });
 }
 
 /**

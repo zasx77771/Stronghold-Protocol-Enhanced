@@ -1,3 +1,12 @@
+## 未发布
+
+### 增强版客户端
+
+- 修复原生客户端「复制链接」复制出的是外壳自己的页面地址：Android 的 WebView 会给出
+  `https://appassets.androidplatform.net/index.html?room=XXXX`，Windows 的 Tauri 窗口给出 `sp://localhost/…`，
+  别的玩家都打不开。现在原生端复制的是玩家实际连接的 TCP 端点，形如 `tcp://192.168.1.10:3001/?room=XXXX`；
+  对方粘贴到标题页的服务器地址栏会同时读出地址与房间编码（浏览器里仍复制页面 URL）。
+
 ## 3.2.0 — 2026-10-19
 
 ### 增强版客户端

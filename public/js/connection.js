@@ -130,3 +130,28 @@ export function inviteAddress(text) {
   }
   return `${url.protocol}//${url.host}${url.pathname === '/' ? '' : url.pathname}`;
 }
+
+/**
+ * The invite text for a room code, in a shape the receiving player can actually use.
+ *
+ * In a browser that is the page URL plus `?room=CODE`. Inside the native shells the page URL is the shell's own
+ * origin — `https://appassets.androidplatform.net/index.html` on Android, `sp://localhost/` in the Tauri window —
+ * which nobody else can open, so a player on TCP shares the endpoint they are connected to instead:
+ * `tcp://host:port/?room=CODE`. The title screen reads that back with `inviteAddress()` (address) and
+ * `inviteCode()` (room), so the receiver pastes the text once and both are applied.
+ *
+ * @param {string} code room code
+ * @param {{ transport?: string, address?: string, loc?: any }} [settings] current transport, saved address, page location
+ * @returns {string} the text to copy ('' without a code)
+ */
+export function buildInviteLink(code, { transport = 'websocket', address = '', loc = globalThis.location } = {}) {
+  const key = String(code ?? '').trim();
+  if (!key) return '';
+  const endpoint = transport === 'tcp' ? parseEndpoint(address) : null;
+  if (endpoint) {
+    const host = endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host;
+    return `tcp://${host}:${endpoint.port}/?room=${encodeURIComponent(key)}`;
+  }
+  const base = loc ? `${loc.origin}${loc.pathname}` : '';
+  return `${base}?room=${encodeURIComponent(key)}`;
+}
