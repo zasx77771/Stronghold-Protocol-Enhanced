@@ -9,18 +9,18 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 上游基线 | `0.3.2`（`upstream/master` @ `c9d804f4`；上游尚未给 0.3.2 打标签） |
-| 增强版版本 | `3.2.0`（映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
+| 增强版版本 | `3.2.1`（映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
 | 版本事实来源 | `package.json`、`release-policy.json`（`upstreamMainlineVersion` / `androidVersionCode`） |
 | 集成分支 | `ds-enhanced-mode` |
-| 已发布标签 | `enhanced-v3.2.0`（merge commit `50d938b1`） |
-| GitHub Release | `Stronghold Protocol Enhanced 3.2.0`：只发布说明，**不上传安装包**（安装包留在本地成果目录） |
+| 已发布标签 | `enhanced-v3.2.1`（在 `enhanced-v3.2.0` = `50d938b1` 之后） |
+| GitHub Release | `Stronghold Protocol Enhanced 3.2.1`：只发布说明，**不上传安装包**（安装包留在本地成果目录） |
 
-版本校验：`node tools/release-policy.mjs --mainline` 必须输出
-`Release policy valid: upstream 0.3.2, local 3.2.0, Android versionCode 31.`
+版本校验：`node tools/release-policy.mjs` 必须输出
+`Release policy valid: upstream 0.3.2, local 3.2.1, Android versionCode 32.`（--mainline 只用于上游基线首次发布，3.2.1 的修订号不为 0，不加该开关）
 
 ## 产物与命名
 
-正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v3.2.0/`，目录名固定，文件名沿用旧口径：
+正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）：
 
 | 产物 | 文件名 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
@@ -32,7 +32,14 @@
   `scripts/make-server-lite.mjs`；目录名照 `--out`，压缩包写到 `--out` 同级。
 - Android 正式签名指纹 `68:9A:53:F1:DC:42:71:A5:0A:26:58:91:EE:BF:E1:AC:08:76:87:93:69:CE:5E:AA:EE:53:12:3A:42:03:31:DE`；
   发布前必须过 `apksigner verify --print-certs` 与 `zipalign -c -p 4`。
-- 3.2.0 未生成 Windows 增量包（只出完整包）。
+- 3.2.0 未生成 Windows 增量包（只出完整包）；3.2.1 未重打包。
+
+## 3.2.1 包含的修复
+
+- 原生客户端「复制链接」改为玩家实际连接的 TCP 端点（	cp://host:port/?room=CODE），不再复制 WebView/Tauri 外壳自己的页面地址。
+- 标题页登录列在手机上不再画滚动条（44px 触控热区与输入框角标画在盒子外，Android WebView 会为这几像素溢出画通栏滚动条）。
+- 标题页的服务器地址框与博士代号框统一为 .field--lg，「应用」按钮跟同一把尺子，三者严格等高。
+- 精简服务端打包改为按服务端真实 import 收缩运行时依赖（pp/node_modules 6,002 → 1,885 文件）。
 
 ## 3.2.0 包含的增强
 
