@@ -52,6 +52,7 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 把整个文件夹拷到目标电脑 —— **什么都不用安装**，双击 `启动游戏.bat` 即可（等于 `app\scripts\launch.mjs --no-setup`：
 素材已经在包里，跳过联网准备，直接起服务器并打开浏览器）。
 卸载＝删除文件夹（不写注册表、不放系统目录）。素材约 330 MB 是硬成本，包因此比较大。
+只想开服、不需要替玩家带素材？见第 7 节的**精简服务端包**。
 
 ## 3. 包里放了什么、没放什么
 
@@ -122,3 +123,90 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 * 游戏不写注册表、不装服务；`启动游戏.bat` 内容只有几行（切到 UTF-8 代码页 → 找 `node\node.exe` →
   跑 `app\scripts\launch.mjs --no-setup`）。
 * 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](DEPLOY.md)）。
+
+## 7. 精简服务端包（只给服主用，不含素材）
+
+第 2 节的便携包把素材（约 330 MB）一起发给玩家，因为它同时扮演「本机服务器」和「浏览器游戏」。如果只需要一台
+对局服务器、素材由玩家自己的客户端带，用精简服务端包：
+
+```bash
+node scripts/make-server-lite.mjs                        # 产物默认在 <仓库上一级>/Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite
+node scripts/make-server-lite.mjs --out D:\Srv\SP-Lite   # 指定目录（同样要专用目录）
+node scripts/make-server-lite.mjs --no-node              # 目标机器已装 Node 22+，不带便携 Node
+node scripts/make-server-lite.mjs --no-zip               # 只要目录，不打 zip
+```
+
+`npm run package:server:lite` 等价于第一条。`--out` / `--force` 的删除规则与第 2 节一致，只是「上一次的产物」认的是
+包根有 `README-Lite-Server.md` 和 `app\`。目录名照 `--out`，压缩包固定写在它同级、名为
+`Stronghold-Protocol-Server-v<版本>-win-x64.zip`（沿用 2.x 起服主下载的文件名）。
+
+产物内容：
+
+```
+node\node.exe            官方 Windows x64 便携版 Node（同一个 NODE_PIN，sha256 校验）
+node\LICENSE-node.txt    Node 自己的许可证（MIT）
+app\                     服务端本体：server / shared / public（无素材）/ data / packs / plugins / scripts / tools / docs
+启动轻量服务端.bat       SP_ASSET_INDEX=0、SP_STUDIO=off，默认 PORT=3000、TCP_PORT=3001
+README-Lite-Server.md    给服主看的说明
+LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
+```
+
+和玩家包相比，取舍是：
+
+* **不含素材文件**：`public/assets`、`public/fonts`、`public/vendor` 都不进包，本地素材路径返回 404，启动器把
+  `SP_ASSET_INDEX` 关掉（不去扫一棵不存在的素材树）。因此它**不是浏览器可玩客户端包** —— 要网页界面玩，用完整便携包，
+  或把这三个目录放进 `app\public\` 再启动。
+* **保留素材清单 JSON**：`data/assets.json` 照旧留在包里。客户端请求 `/data/assets.json` 仍然返回 200 和完整清单，
+  靠它判断哪些素材存在；`data/local-assets.json`、`data/local-fx.json` 描述的是本机提取出来的素材，不属于服务端发布
+  内容，所以不带 —— 缺省时服务端对这两条路径返回空清单（`{"version":1,"source":"none",...}`），不是 404。
+* **不带原生客户端工程和测试**：`android/`、`src-tauri/`、`native/`、`test/` 与服端无关。
+* 文件清单同样来自 `git ls-files`，生产依赖同样用 `npm ci --omit=dev` 重装；`--force` 的删除判定同样是反着写的。
+
+发出去之前先自己跑一遍：
+
+```
+双击 启动轻量服务端.bat（或在命令行 set PORT=3021 & set TCP_PORT=3022 后再跑）
+```
+
+然后确认：`http://127.0.0.1:3021/data/assets.json` 返回 200（内容约 1.9 MB 的 JSON）、`/assets/<任意>` 与
+`/fonts/<任意>` 返回 404、`/` 仍能打开网页骨架（缺 `public/vendor`，所以只是骨架）。端口可用 `PORT` / `TCP_PORT` /
+`HOST` 覆盖，第一次开服记得在防火墙里放行专用网络。
+
+## 8. 原生客户端（Tauri 便携包，不装安装器）
+
+第 2 节的包用便携 Node 跑服务端、用浏览器玩。原生客户端是另一条路：Tauri 外壳（WebView2）把同一份网页装进窗口，
+素材随包、启动不联网，TCP 直连服务端（不依赖浏览器 WebSocket 也能玩），发出去的是一个解压即用的目录或 zip。
+
+```bash
+node scripts/make-windows-client.mjs                    # 先 cargo tauri build，再组装 <仓库上一级>/Stronghold-Protocol-Enhanced-<版本>-Windows-Portable
+node scripts/make-windows-client.mjs --skip-build       # 复用 src-tauri/target/release 里已有的 exe
+node scripts/make-windows-client.mjs --exe D:\x\Stronghold Protocol.exe --no-zip
+```
+
+`npm run package:client:win` 等价于第一条。构建要求：Rust（MSVC 工具链）+ Visual Studio Build Tools + WebView2 Runtime，
+外加素材已 `node tools/setup.mjs`。release 构建会由 `src-tauri/build.rs` 跑 `node ../tools/check-embedded-assets.mjs --strict`，
+清单过期或素材缺失会直接构建失败。
+
+产物布局：
+
+```
+Stronghold Protocol.exe   窗口主程序（sp://localhost/ 私有协议 + TCP 桥 + 素材导入）
+client\                   窗口加载的网页：public\ 的原样内容（含 assets\ fonts\ vendor\）+ data\ + shared\ + sim\ + data.js
+README-Windows.md         玩家说明
+LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
+```
+
+`client\` 必须和 exe 放在同一层：`src-tauri/src/protocol.rs` 的 `client_root()` 在没有安装资源目录时按
+「exe 所在目录的 `client\`」找网页，找不到就 404。这里**不生成安装器**（`tauri.conf.json` 的 `bundle.targets`
+不用 `nsis`），发布产物就是这个目录或它的 zip。目录名保持 `--out` 给的名字，zip 固定叫
+`Stronghold-Protocol-Client-v<版本>-win-x64.zip`（与 `--out` 同级），沿用 2.x 起玩家下载的文件名。
+素材包与增量包见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) 第 3 节。
+
+启动失败排查：`main.rs` 先跑 `prepare_runtime()`，按「显式 `WEBVIEW2_USER_DATA_FOLDER` → 程序目录的
+`webview2-profile\` → `%LOCALAPPDATA%\Stronghold Protocol Enhanced\WebView2` → 临时目录」取第一个可写的
+WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe 同目录，写不进去时依次退到用户目录与
+临时目录）。`tauri::Builder::build` 抛错或被 Tauri 内部 panic 打断（典型是 WebView2 返回 `0x800700AA`
+「请求的资源在使用中」）时，用下一个候选目录重新拉起进程重试一次，仍失败才弹原生错误框（而不是无声退出）。
+遇到「普通权限闪退、管理员能开」时，先看这个日志，再确认包是不是解压到了
+没有写权限的目录（`Program Files`、系统目录、只读盘，或在压缩包里直接双击）。
+旧安装留下的 `%LOCALAPPDATA%\Stronghold Protocol\`（3.1.0 及更早）不会再被 3.2.0 读取或写入。

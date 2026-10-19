@@ -1,0 +1,97 @@
+plugins { id 'com.android.application' }
+
+dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+
+android {
+    namespace 'org.strongholdprotocol.nativeclient'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'org.strongholdprotocol.nativeclient'
+        minSdk 26
+        targetSdk 35
+        versionCode 31
+        versionName '3.2.0'
+    }
+
+    def releaseKeyStore = System.getenv('SP_ANDROID_KEYSTORE')
+    def releaseStorePassword = System.getenv('SP_ANDROID_KEYSTORE_PASSWORD')
+    def releaseKeyAlias = System.getenv('SP_ANDROID_KEY_ALIAS')
+    def releaseKeyPassword = System.getenv('SP_ANDROID_KEY_PASSWORD')
+    def hasReleaseSigning = [releaseKeyStore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.isBlank() }
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(releaseKeyStore)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets { main.assets.srcDir(layout.buildDirectory.dir('generated/nativeWeb')) }
+
+    def generatedWeb = layout.buildDirectory.dir('generated/nativeWeb')
+
+    // A packaged APK carries the official art `data/assets.json` lists, so a build without it
+    // fails here instead of installing a client whose images 404. The check mirrors
+    // tools/check-embedded-assets.mjs, which the Windows build runs from src-tauri/build.rs.
+    tasks.register('checkEmbeddedAssets') {
+        def manifest = file('../../data/assets.json')
+        def webRoot = file('../../public')
+        inputs.files(manifest)
+        outputs.upToDateWhen { false }
+        doLast {
+            if (!manifest.isFile()) {
+                throw new GradleException('embedded assets: data/assets.json is missing')
+            }
+            def urls = []
+            (manifest.getText('UTF-8') =~ /"\/(?:assets|fonts)\/[^"]+"/).each { urls << it.substring(1, it.length() - 1) }
+            urls = urls.unique()
+            if (urls.isEmpty()) {
+                throw new GradleException('embedded assets: data/assets.json lists no /assets/ URL')
+            }
+            def missing = urls.findAll { url -> !new File(webRoot, url.substring(1)).isFile() }
+            if (missing) {
+                throw new GradleException("embedded assets: ${missing.size()} of ${urls.size()} manifest files are missing " +
+                    "(e.g. ${missing.take(3).join(', ')}); run `npm run assets`")
+            }
+            // Same strict rule as `npm run assets:check`: a stale manifest must not hide
+            // files the client would then request and 404 on.
+            def declared = new groovy.json.JsonSlurper().parseText(manifest.getText('UTF-8'))?.stats?.files
+            def listed = urls.count { it.startsWith('/assets/') }
+            if (declared instanceof Number && declared.intValue() != listed) {
+                throw new GradleException("embedded assets: data/assets.json stats.files (${declared}) disagrees with its ${listed} /assets/ URLs")
+            }
+        }
+    }
+
+    tasks.register('syncNativeWeb', Copy) {
+        dependsOn(tasks.named('checkEmbeddedAssets'))
+        from('../../public')
+        into(generatedWeb)
+        from('../../data') { into('data') }
+        from('../../shared') { into('shared') }
+        from('../../server/sim') { into('sim'); exclude('nodeData.js') }
+        from('../../native/web/data.js') { rename { 'data.js' } }
+        from('../../native/bridge/stronghold-native-bridge.js') { into('native'); rename { 'bridge.js' } }
+    }
+
+    preBuild.dependsOn(tasks.named('syncNativeWeb'))
+
+    tasks.configureEach {
+        if (name.toLowerCase().contains('release')) {
+            doFirst {
+                if (!hasReleaseSigning) {
+                    throw new GradleException('Release APK signing requires SP_ANDROID_KEYSTORE, SP_ANDROID_KEYSTORE_PASSWORD, SP_ANDROID_KEY_ALIAS and SP_ANDROID_KEY_PASSWORD.')
+                }
+            }
+        }
+    }
+}

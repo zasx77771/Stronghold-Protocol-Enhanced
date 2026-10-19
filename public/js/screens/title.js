@@ -2,7 +2,8 @@
 // (中文 | English | every pack in public/i18n/, ui/lang.js; a title in an alphabetic script — English — is the big one and
 // the small wordmark above it hides).
 //
-// Pressing 开始 validates the nickname (1..NAME_MAX_LEN chars, no control characters), stores it,
+// Pressing 开始 validates the nickname (1..NAME_MAX_UNITS display columns — 16 Latin or 8 Hanzi,
+// shared/nameWidth.js — no control characters), stores it,
 // marks this tab as "entered" (so reloads skip the title) and hands the name to net.js, which
 // sends `hello` (now, or as soon as the socket is open). The router then shows the lobby.
 //
@@ -22,13 +23,14 @@
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { AssetDownloadButton } from '../ui/assetDownload.js';
 import { AssetImportButton } from '../ui/assetImport.js';
-import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
-import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
+import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
+import { NAME_MAX_LEN, NAME_MAX_UNITS, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { toast } from '../ui/toasts.js';
 import { net, identity } from '../net.js';
+import { readSettings, parseAddress, saveSettings, inviteCode, inviteAddress, transportForAddress } from '../connection.js';
 import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, PwaInstallButton, detectFeatures } from '../ui/device.js';
@@ -165,6 +167,12 @@ export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
+  // The title is a fixed entry surface: mark <html> so title.css can stop the global pan-x (no :has()).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('title-open');
+    return () => root.classList.remove('title-open');
+  }, []);
   const currentName = useStore((s) => s.me.name);
   const [name, setName] = useState(() => currentName || identity.loadName() || '');
   // An import may restore the current name while this screen remains behind the stats overlay.
@@ -172,6 +180,10 @@ export function TitleScreen() {
     if (currentName) setName((draft) => draft || currentName);
   }, [currentName]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A native host infers TCP from `host:port` / `tcp://`; HTTP(S) and WS(S) use WebSocket.
+  const [connection] = useState(() => readSettings());
+  const [address, setAddress] = useState(connection.address);
+  const nameRef = useRef(null);
   // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
   const [Installed, setInstalled] = useState(null);
   const openPlugins = () => {
@@ -198,8 +210,57 @@ export function TitleScreen() {
     enterSession(name);
   };
 
+  // Apply the address typed above. The native bridge decides its transport at load time, so an
+  // inferred TCP/WebSocket change is saved first and then reloads the shell.
+  const applyConnection = () => {
+    const code = inviteCode(address);
+    const linkedAddress = code ? inviteAddress(address) : null;
+    // A bare key (or a `room: KEY` paste) belongs to the currently configured server. A full
+    // invite URL additionally supplies the WebSocket/TCP address; its room query never reaches
+    // the socket endpoint.
+    if (code && !linkedAddress) { applyInvite(code); return; }
+    const requestedAddress = linkedAddress || address;
+    const transport = connection.supportsTcp
+      ? transportForAddress(requestedAddress, connection.transport)
+      : 'websocket';
+    const parsed = parseAddress(requestedAddress, { transport });
+    if (!parsed.ok) {
+      const message = parsed.error === 'invalid_endpoint' ? t('请输入 主机:端口，例如 192.168.1.10:3001')
+        : parsed.error === 'invalid_scheme' ? t('服务器地址必须以 ws:// 或 wss:// 开头') : t('服务器地址格式无效');
+      toast(message, 'warn');
+      return;
+    }
+    saveSettings({ transport: parsed.transport, address: parsed.address });
+    if (linkedAddress) setAddress(parsed.address);
+    if (parsed.transport !== connection.transport) { location.reload(); return; }
+    if (parsed.socketUrl) net.setUrl(parsed.socketUrl);
+    net.close();
+    net.connect();
+    toast(t('已应用服务器地址'));
+    if (code) applyInvite(code);
+  };
+
+  // A pasted invite (link, `room: CODE` or bare code) sets the deep-link state main.js auto-joins;
+  // without a callsign the title asks for one first instead of navigating.
+  const applyInvite = (text) => {
+    const code = inviteCode(text);
+    if (!code) { toast(t('未识别到同盟密钥'), 'warn'); return; }
+    store.patch('ui', { pendingJoin: code });
+    if (!valid) {
+      toast(t('请先输入博士代号，随后自动加入同盟'), 'warn');
+      nameRef.current?.focus();
+      return;
+    }
+    if (!store.get().session.entered) enterSession(name);
+  };
+
   const online = conn.status === 'online' || conn.status === 'connected';
   const dotClass = online ? 'is-on' : conn.status === 'reconnecting' || conn.status === 'connecting' || conn.status === 'handshaking' ? 'is-warn' : 'is-bad';
+  // A native shell dials only the saved address (no built-in default), so an empty field means
+  // nothing is attempted yet — say that instead of reporting a connection failure.
+  const needsAddress = connection.supportsTcp && !String(address || '').trim();
+  const statusText = needsAddress ? t('请先填写服务器地址')
+    : STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status;
 
   // touch screens: no autofocus (it would pop the on-screen keyboard over a landscape phone's whole view)
   const touchUi = useMemo(() => detectFeatures().coarse, []);
@@ -240,36 +301,46 @@ export function TitleScreen() {
     </div>
 
     <main class="title-main">
-      <${Emblem} />
-      ${alphabetic ? null : html`<div class="title-en">
-        <span class="title-en__a">STRONGHOLD PROTOCOL</span>
-        <span class="title-en__b">ALLIANCE</span>
-      </div>`}
-      <h1 class=${`title-cn${alphabetic ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${alphabetic ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
-      <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
-
-      <div class="title-login">
-        ${pendingJoin ? html`<div class="title-invite">
-          <${Icon} name="key" />
-          <span>${t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
-        </div>` : null}
-        <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
-          placeholder=${t('输入你的代号（最多 {NAME_MAX_LEN} 字）', { NAME_MAX_LEN })} autoFocus=${!touchUi}
-          onInput=${setName} onEnter=${start} />
-        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
-        <div class="title-conn">
-          <span class=${`status-dot ${dotClass}`}></span>
-          <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
-          ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
-          <${GuideButton} class="title-guide" label=${t('玩法说明')} />
-          <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
-            onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
-          <${FullscreenButton} class="title-fs" />
-        </div>
+      <div class="title-hero">
+        <${Emblem} />
+        ${alphabetic ? null : html`<div class="title-en">
+          <span class="title-en__a">STRONGHOLD PROTOCOL</span>
+          <span class="title-en__b">ALLIANCE</span>
+        </div>`}
+        <h1 class=${`title-cn${alphabetic ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${alphabetic ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
+        <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
       </div>
-      <div class="title-assets">
-        <${AssetDownloadButton} />
-        <${AssetImportButton} />
+
+      <div class="title-side">
+        <div class="title-login">
+          <div class="title-connect__endpoint">
+            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" value=${address}
+              placeholder="192.168.1.10:3001"
+              onInput=${setAddress} onEnter=${applyConnection} />
+            <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
+          </div>
+          ${pendingJoin ? html`<div class="title-invite">
+            <${Icon} name="key" />
+            <span>${t('收到同盟邀请')}</span><b class="num">${pendingJoin}</b><span class="t-lo">${t('· 输入代号后将自动加入')}</span>
+          </div>` : null}
+          <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
+            placeholder=${t('输入你的代号（最多 {NAME_MAX_UNITS} 个字符，汉字算 2 个）', { NAME_MAX_UNITS })} autoFocus=${!touchUi}
+            inputRef=${nameRef} onInput=${setName} onEnter=${start} />
+          <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
+          <div class="title-conn">
+            <span class=${`status-dot ${dotClass}`}></span>
+            <span>${statusText}</span>
+            ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+            <${GuideButton} class="title-guide" label=${t('玩法说明')} />
+            <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
+              onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
+            <${FullscreenButton} class="title-fs" />
+          </div>
+        </div>
+        <div class="title-assets">
+          <${AssetDownloadButton} />
+          <${AssetImportButton} />
+        </div>
       </div>
     </main>
 

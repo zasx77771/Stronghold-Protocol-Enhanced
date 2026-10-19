@@ -5,7 +5,7 @@
 // avatars, with the player's own 自选 pieces out of the shop (m.private.diyBanned) — is ui/matchInfo.js MatchInfo, the same
 // blocks the strategy draft's 本局信息 dialog shows (screens/bandDraft.js).
 
-import { useState } from '../../vendor/hooks.module.js';
+import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Button, Icon, MicroLabel } from '../ui/components.js';
 import { useGameData, Img, RichText } from '../ui/gameComponents.js';
 import { StepHeader, ExitModal } from '../ui/matchChrome.js';
@@ -18,6 +18,7 @@ import { factionTypes, sortedPlayers, phaseTotalSeconds } from '../ui/gameLogic.
 import { enemyIconUrl, factionIconUrl } from '../ui/assetUrls.js';
 import { useStore } from '../store.js';
 import { data } from '../data.js';
+import { preloadChessArt } from '../assetPreload.js';
 import { t, tParts } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -33,6 +34,12 @@ export function BriefingScreen() {
   const gd = useGameData();
   const [exit, setExit] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Warm every operator portrait of this content set while the briefing is on screen (assetPreload.js): the shop and
+  // the deploy bar use lazy thumbnails, so a cold cache shows the placeholder first and swaps the art in a frame later.
+  const setupRevision = pub?.setupRevision ?? 0;
+  useEffect(() => {
+    preloadChessArt(gd.m, gd.list('chess'));
+  }, [setupRevision, gd]);
   if (!pub) return null;
 
   const players = sortedPlayers(pub);

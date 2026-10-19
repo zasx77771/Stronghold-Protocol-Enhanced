@@ -49,6 +49,8 @@ export const ICONS = {
   robot: { d: 'M11 2h2v3h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h4zM8.5 9.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm7 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM9 15v1.6h6V15zM1 10h2v5H1zm20 0h2v5h-2z', eo: true },
   copy: { d: 'M8 3h11v13h-2V5H8zM5 7h10v14H5zm2 2v10h6V9z', eo: true },
   link: { d: 'M9 7H6.5a5 5 0 0 0 0 10H9v-2H6.5a3 3 0 0 1 0-6H9zm6 0h2.5a5 5 0 0 1 0 10H15v-2h2.5a3 3 0 0 0 0-6H15zM8 11h8v2H8z' },
+  // 服务器地址 (the address field): wireframe globe — ring + meridian + equator, stroked not filled.
+  globe: { stroke: true, width: 2, d: 'M12 1.5a10.5 10.5 0 0 1 0 21 10.5 10.5 0 0 1 0-21zM12 1.5a5.4 10.5 0 0 1 0 21 5.4 10.5 0 0 1 0-21zM1.5 12h21' },
   plus: { d: 'M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z' },
   minus: { d: 'M4 11h16v2H4z' },
   user: { d: 'M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21a8 7 0 0 1 16 0z' },
@@ -94,7 +96,7 @@ export function Icon({ name, size, class: cls, title }) {
   return html`<svg class=${cx('icon', cls)} viewBox="0 0 24 24" width=${size || '1em'} height=${size || '1em'}
     aria-hidden=${title ? undefined : 'true'} role=${title ? 'img' : undefined} focusable="false">
     ${title ? html`<title>${title}</title>` : null}
-    <path d=${ic.d} fill-rule=${ic.eo ? 'evenodd' : undefined} />
+    <path d=${ic.d} fill-rule=${ic.eo ? 'evenodd' : undefined} fill=${ic.stroke ? 'none' : undefined} stroke=${ic.stroke ? 'currentColor' : undefined} stroke-width=${ic.stroke ? (ic.width || 2) : undefined} stroke-linecap=${ic.stroke ? 'round' : undefined} stroke-linejoin=${ic.stroke ? 'round' : undefined} />
   </svg>`;
 }
 

@@ -40,6 +40,7 @@ import { html, UiHosts, Button, MicroLabel, closeAllDialogs } from './ui/compone
 import { ConnectionBanner } from './ui/connBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
+import { readSettings, parseAddress } from './connection.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
@@ -385,6 +386,10 @@ async function boot() {
   const identityReady = identity.init();
 
   const pendingJoin = parseRoomParam(location.search);
+  // A server address saved on this machine (title screen) overrides the page-derived socket URL.
+  const connection = readSettings();
+  const target = parseAddress(connection.address, { transport: connection.transport, loc: location });
+  if (target.ok && target.socketUrl) net.setUrl(target.socketUrl);
   const savedName = sanitizeName(identity.loadName());
   const entered = identity.wasEntered() && !!savedName;
   store.set((s) => ({

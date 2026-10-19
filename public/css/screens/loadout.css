@@ -653,6 +653,29 @@
 
 .diy-choice__tags { display: flex; flex-wrap: wrap; gap: .08rem; color: var(--text-lo); font-size: max(calc(.12 * var(--t)), 10px); }
 
+/* 本地配队 (enhanced, 阶段 E): named snapshots of the loadout, in the shared Modal next to `.lo` like 导出 / 导入.
+   Rows are one line on a desktop (name, operator count, 读取 / 删除) and wrap on a phone, where the buttons stay
+   reachable without a horizontal scroll. */
+.lo-lineup__hint { margin: 0 0 max(.1rem, 8px); font-size: max(calc(.18 * var(--t)), 12px); line-height: 1.55; color: var(--text-md); }
+.lo-lineup__save { display: flex; align-items: flex-end; gap: max(.08rem, 8px); margin: 0 0 max(.12rem, 10px); }
+.lo-lineup__field { flex: 1 1 auto; min-width: 0; }
+.lo-lineup__list { list-style: none; margin: 0 0 max(.1rem, 8px); padding: 0; max-height: max(3.2rem, 260px); overflow-y: auto; }
+.lo-lineup__row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: max(.06rem, 6px) max(.1rem, 8px);
+  padding: max(.08rem, 7px) max(.1rem, 8px); border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .025);
+}
+.lo-lineup__row + .lo-lineup__row { margin-top: max(.06rem, 6px); }
+.lo-lineup__name { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; font-size: max(calc(.2 * var(--t)), 13px); color: var(--text-hi); }
+.lo-lineup__meta { flex: none; font-size: max(calc(.15 * var(--t)), 11px); color: var(--text-md); white-space: nowrap; }
+.lo-lineup__acts { flex: none; display: inline-flex; gap: max(.06rem, 6px); margin-left: auto; }
+.lo-lineup__empty { margin: max(.1rem, 8px) 0; font-size: max(calc(.18 * var(--t)), 12px); }
+.lo-lineup__note { margin: max(.08rem, 6px) 0 0; font-size: max(calc(.14 * var(--t)), 10px); color: var(--text-dim); }
+@media (max-width: 520px) {
+  .lo-lineup__save { flex-wrap: wrap; }
+  .lo-lineup__field { flex-basis: 100%; }
+  .lo-lineup__acts { margin-left: 0; }
+}
 /* ---- 干员皮肤 (docs/SKINS.md, ui/skinPicker.js) -------------------------------------------------------------------
    Five tiles per row, always — `repeat(5, …)`, not `auto-fit`, so a tile is the same size for every operator and the
    operator's appearance does not change with how many skins its plugins happen to write. The 默认 tile is the first of
