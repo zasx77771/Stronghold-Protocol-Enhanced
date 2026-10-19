@@ -4,9 +4,10 @@
    ========================================================================================== */
 
 /* The title is a fixed entry surface, not a horizontally pannable canvas. This wins over
-   devices.css's global html pan-x setting while the title is mounted. */
-html:has(.title-screen) { overflow-x: hidden; touch-action: pan-y; }
-body:has(.title-screen), .app-root:has(.title-screen), .title-screen { overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; }
+   devices.css's global html pan-x setting while the title is mounted (title.js adds .title-open;
+   :has() is out — Firefox ESR 115 and Safari < 15.4). */
+html.title-open { overflow-x: hidden; touch-action: pan-y; }
+html.title-open body, html.title-open .app-root, .title-screen { overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; }
 .title-screen { align-items: center; justify-content: center; max-width: 100%; }
 
 /* ---- backdrop ----------------------------------------------------------------------------------- */
@@ -313,13 +314,13 @@ body:has(.title-screen), .app-root:has(.title-screen), .title-screen { overflow-
 .title-lang.lang-select select { height: max(.3rem, 1.4em); font-size: calc(.14 * var(--t)); }
 html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .title-conn .ping { height: max(.26rem, 1.6em); font-size: calc(.15 * var(--t)); }
-/* Connection settings lead the login card; the address itself selects TCP or WebSocket. */
-.title-connect { display: flex; flex-direction: column; align-items: stretch; gap: .1rem; width: 100%; margin-bottom: .16rem; padding-bottom: .16rem; border-bottom: 1px solid rgba(255, 255, 255, .1); }
+/* 服务器地址与博士代号是同一张登录表单：同一列、同一套字段节奏，中间不加分隔线。地址本身决定 TCP 还是 WebSocket。 */
 .title-connect__endpoint { display: flex; align-items: flex-end; justify-content: center; gap: .1rem; min-width: 0; }
 .title-connect__address { flex: 1 1 auto; min-width: 0; text-align: left; }
+/* 地址与代号是同一张表单，字段文字同一号（.field--lg 的 .26）：只放大字，不抬高输入框。 */
+.title-connect__address .field__input { font-size: calc(.26 * var(--t)); }
 .title-connect__endpoint > .btn { flex: 0 0 auto; align-self: flex-end; min-width: max(.64rem, var(--tap-min, 44px)); height: .56rem; min-height: .56rem; margin-bottom: 0; padding-inline: .12rem; border-color: rgba(255, 255, 255, .14); font-size: calc(.16 * var(--t)); letter-spacing: .12em; }
 @media (max-width: 640px) {
-  .title-connect { gap: .08rem; }
   .title-connect__endpoint { gap: .06rem; }
   .title-connect__endpoint > .btn { min-width: var(--tap-min, 44px); padding-inline: .1rem; }
 }

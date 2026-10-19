@@ -2225,5 +2225,6 @@
   "已应用服务器地址": "Server address applied.",
   "请输入 主机:端口，例如 192.168.1.10:3001": "Enter host:port, for example 192.168.1.10:3001",
   "服务器地址必须以 ws:// 或 wss:// 开头": "The server address must start with ws:// or wss://",
-  "服务器地址格式无效": "That server address is not valid."
+  "服务器地址格式无效": "That server address is not valid.",
+  "请先填写服务器地址": "Enter the server address first"
 }

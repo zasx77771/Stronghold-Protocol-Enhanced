@@ -38,7 +38,7 @@ describe('title layout: banner on the left, the whole login on the right', () =>
   test('the login box is one column: no inner identity/connection split', () => {
     const login = slice(js, '<div class="title-login">', '<div class="title-assets">');
     assert.doesNotMatch(login, /title-login__grid|title-login__col|<fieldset|<legend/);
-    const order = ['class="title-connect"', "t('博士代号')", "t('开始')", 'class="title-conn"'];
+    const order = ['class="title-connect__endpoint"', "t('博士代号')", "t('开始')", 'class="title-conn"'];
     for (let i = 1; i < order.length; i += 1) {
       assert.ok(login.indexOf(order[i - 1]) >= 0, `${order[i - 1]} exists`);
       assert.ok(login.indexOf(order[i - 1]) < login.indexOf(order[i]), `${order[i - 1]} comes before ${order[i]}`);
@@ -83,9 +83,16 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(block, /\.title-cn \{ font-size: \.46rem;/, 'the title scales down with the banner');
     assert.match(block, /\.title-side \{ width: 4\.4rem;/);
     assert.match(block, /max-height: 96vh;/);
-    assert.match(css, /html:has\(\.title-screen\) \{[^}]*overflow-x: hidden;[^}]*touch-action: pan-y;/);
-    assert.match(css, /\.app-root:has\(\.title-screen\), \.title-screen \{[^}]*overflow-x: hidden;[^}]*touch-action: pan-y;/);
-    assert.match(css, /\.title-connect \{[^}]*flex-direction: column;/);
+    // The title is not a pannable canvas: a class added by title.js replaces the old :has() selector
+    // (upstream's static check rejects `:has()`, and Firefox ESR 115 lacks it).
+    assert.match(css, /html\.title-open \{ overflow-x: hidden; touch-action: pan-y; \}/);
+    assert.match(css, /html\.title-open body, html\.title-open \.app-root, \.title-screen \{[^}]*overflow-x: hidden;[^}]*touch-action: pan-y;/);
+    assert.match(js, /root\.classList\.add\('title-open'\)/);
+    assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ''), /:has\(/);
+    // The server address lives in the login panel itself — first row, then the callsign — so it is
+    // not a second stacked panel of its own.
+    assert.doesNotMatch(js, /class="title-connect"/);
+    assert.match(js, /<div class="title-login">\s*<div class="title-connect__endpoint">/);
     assert.match(js, /class="title-connect__endpoint"[\s\S]*class="title-connect__address"[\s\S]*<\$\{Button\} variant="ghost"/);
     assert.match(css, /\.title-connect__endpoint \{[^}]*display: flex;[^}]*align-items: flex-end;[^}]*justify-content: center;/);
     assert.match(css, /\.title-connect__endpoint > \.btn \{[^}]*align-self: flex-end;[^}]*min-width: max\(\.64rem, var\(--tap-min, 44px\)\);[^}]*height: \.56rem;[^}]*border-color: rgba\(255, 255, 255, \.14\);/);

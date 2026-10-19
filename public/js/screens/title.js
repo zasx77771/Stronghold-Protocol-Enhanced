@@ -167,6 +167,12 @@ export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
+  // The title is a fixed entry surface: mark <html> so title.css can stop the global pan-x (no :has()).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('title-open');
+    return () => root.classList.remove('title-open');
+  }, []);
   const currentName = useStore((s) => s.me.name);
   const [name, setName] = useState(() => currentName || identity.loadName() || '');
   // An import may restore the current name while this screen remains behind the stats overlay.
@@ -219,9 +225,9 @@ export function TitleScreen() {
       : 'websocket';
     const parsed = parseAddress(requestedAddress, { transport });
     if (!parsed.ok) {
-      const message = parsed.error === 'invalid_endpoint' ? '请输入 主机:端口，例如 192.168.1.10:3001'
-        : parsed.error === 'invalid_scheme' ? '服务器地址必须以 ws:// 或 wss:// 开头' : '服务器地址格式无效';
-      toast(t(message), 'warn');
+      const message = parsed.error === 'invalid_endpoint' ? t('请输入 主机:端口，例如 192.168.1.10:3001')
+        : parsed.error === 'invalid_scheme' ? t('服务器地址必须以 ws:// 或 wss:// 开头') : t('服务器地址格式无效');
+      toast(message, 'warn');
       return;
     }
     saveSettings({ transport: parsed.transport, address: parsed.address });
@@ -250,6 +256,11 @@ export function TitleScreen() {
 
   const online = conn.status === 'online' || conn.status === 'connected';
   const dotClass = online ? 'is-on' : conn.status === 'reconnecting' || conn.status === 'connecting' || conn.status === 'handshaking' ? 'is-warn' : 'is-bad';
+  // A native shell dials only the saved address (no built-in default), so an empty field means
+  // nothing is attempted yet — say that instead of reporting a connection failure.
+  const needsAddress = connection.supportsTcp && !String(address || '').trim();
+  const statusText = needsAddress ? t('请先填写服务器地址')
+    : STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status;
 
   // touch screens: no autofocus (it would pop the on-screen keyboard over a landscape phone's whole view)
   const touchUi = useMemo(() => detectFeatures().coarse, []);
@@ -302,13 +313,11 @@ export function TitleScreen() {
 
       <div class="title-side">
         <div class="title-login">
-          <div class="title-connect">
-            <div class="title-connect__endpoint">
-            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" value=${address}
-              placeholder="127.0.0.1:3001 / https://server.example"
+          <div class="title-connect__endpoint">
+            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" value=${address}
+              placeholder="192.168.1.10:3001"
               onInput=${setAddress} onEnter=${applyConnection} />
             <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
-            </div>
           </div>
           ${pendingJoin ? html`<div class="title-invite">
             <${Icon} name="key" />
@@ -320,7 +329,7 @@ export function TitleScreen() {
           <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
           <div class="title-conn">
             <span class=${`status-dot ${dotClass}`}></span>
-            <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
+            <span>${statusText}</span>
             ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
             <${GuideButton} class="title-guide" label=${t('玩法说明')} />
             <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
