@@ -2,7 +2,7 @@
 
 ### 打包
 
-- Windows 客户端包内新增 `解除锁定.bat`，README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
+- Windows 客户端包内新增 `unblock.bat`（ASCII 名，避免 zip 内中文名在部分解压工具里乱码），README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
   「来自 Internet」标记就会被 SmartScreen 拦成「无法识别的应用」。双击包内的解锁脚本（或解压前对 zip 右键解除锁定）
   即可，不需要关 Defender、也不需要管理员权限。生成脚本 `scripts/make-windows-client.mjs` 同步产出该文件。
 
