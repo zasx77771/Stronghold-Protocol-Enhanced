@@ -197,8 +197,9 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 
 `client\` 必须和 exe 放在同一层：`src-tauri/src/protocol.rs` 的 `client_root()` 在没有安装资源目录时按
 「exe 所在目录的 `client\`」找网页，找不到就 404。这里**不生成安装器**（`tauri.conf.json` 的 `bundle.targets`
-不用 `nsis`），发布产物就是这个目录或它的 zip。素材包与增量包见
-[NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) 第 3 节。
+不用 `nsis`），发布产物就是这个目录或它的 zip。目录名保持 `--out` 给的名字，zip 固定叫
+`Stronghold-Protocol-Client-v<版本>-win-x64.zip`（与 `--out` 同级），沿用 2.x 起玩家下载的文件名。
+素材包与增量包见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) 第 3 节。
 
 启动失败排查：`main.rs` 先跑 `prepare_runtime()`，按「显式 `WEBVIEW2_USER_DATA_FOLDER` → 程序目录的
 `webview2-profile\` → `%LOCALAPPDATA%\Stronghold Protocol Enhanced\WebView2` → 临时目录」取第一个可写的

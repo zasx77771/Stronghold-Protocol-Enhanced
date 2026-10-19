@@ -56,6 +56,9 @@ const HELP = `node scripts/make-windows-client.mjs — 打 Windows 原生客户�
   --skip-build    不构建，直接用 src-tauri\\target\\release 里已有的 exe
   --no-zip        只留目录，不打 .zip
   --force         目录已存在时先删掉（只肯删空目录或上一次打的客户端包）
+
+压缩包写到 --out 的同级目录，文件名固定为 Stronghold-Protocol-Client-v<版本>-win-x64.zip
+（目录名不变，方便脚本和文档指向同一个位置）。
 `;
 
 function parseArgs(argv) {
@@ -238,6 +241,12 @@ function makeZip(srcDir, zipPath) {
   throw new Error('打 zip 失败（需要 tar -a 或 zip）');
 }
 
+function zipName(version) {
+  // The release artifact keeps the name players have always downloaded (2.x used the same pattern),
+  // while the folder next to it stays the plain `windows-client` the build scripts point at.
+  return `Stronghold-Protocol-Client-v${version}-win-x64.zip`;
+}
+
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) { console.log(HELP); return 0; }
@@ -294,7 +303,7 @@ async function main() {
   console.log(`\n✔ 客户端已生成：${out}\n  ${total.files} 个文件 / ${MB(total.bytes)}`);
 
   if (o.zip) {
-    const zipPath = `${out}.zip`;
+    const zipPath = path.join(path.dirname(out), zipName(version));
     const tool = makeZip(out, zipPath);
     console.log(`✔ 压缩包：${zipPath}（${MB((await fsp.stat(zipPath)).size)}，${tool}）`);
     if (os.tmpdir && !zipPath.startsWith(os.tmpdir())) { /* 只是读一下 tmpdir，保持跨平台路径都正常 */ }
