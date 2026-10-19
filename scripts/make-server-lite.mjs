@@ -24,7 +24,10 @@
 //
 // 硬规则（和玩家包一致）：
 //   1. app\ 的文件清单来自 `git ls-files`，不是手写的跳过表 —— 本机文件（.env 等）天然进不了包。
-//   2. node_modules 用 `npm ci --omit=dev` 重新装，不带 devDependency。
+//   2. node_modules 用 `npm ci --omit=dev` 重新装，不带 devDependency；装完再按**服务端真实 import** 裁剪
+//      （见 pruneServerDeps）：dependencies 里混着 pixi.js / three / preact / htm 这些只有浏览器用的库，
+//      整套搬进包里会给服主多出 5,800 多个没用的小文件，解压慢得肉眼可见。@pixi-spine 例外 ——
+//      插件解析 Spine 骨架时真的要用，保留。
 //   3. node.exe 每次从校验过的官方 zip 重新解压，绝不复用旧解压结果。
 
 import fs from 'node:fs';
@@ -57,6 +60,20 @@ const REQUIRED_FILES = ['data/assets.json'];
 /** 上一次打的精简包长这样（`--force` 只肯删这种目录或空目录）。 */
 const LITE_MARKERS = ['README-Lite-Server.md', 'app'];
 
+/**
+ * 服务端运行时真正会 import 的代码目录。`public/` 不在这里：那是浏览器代码，bare specifier 由 import map
+ * 指到 `/vendor/*`，Node 从不解析它们（精简包连 public/vendor 都不带）。
+ */
+const SERVER_CODE_DIRS = ['server', 'shared', 'tools', 'scripts'];
+
+/**
+ * 裁完 node_modules 的硬上限。当前真实闭包约 1,885 个文件 / 14.7 MB：
+ * `ws` / `acorn` / `ses` / `@endo/*`，加上插件包解析 Spine 骨架要用的 `@pixi-spine` 与它 peer 依赖的
+ * `@pixi/*`（`@pixi-spine/runtime-3.8` 把 `@pixi/core` 声明成 peer，`server/plugins/pack.js` 会用到）。
+ * 纯浏览器库 pixi.js / three / preact / htm 一个都不留。谁再往 dependencies 加浏览器库，这里会先炸。
+ */
+const DEP_LIMITS = { files: 2300, bytes: 18 * 1024 * 1024 };
+
 const HELP = `node scripts/make-server-lite.mjs — 生成 Windows 精简服务端包（不含素材文件，保留素材清单 JSON）
 
   --out <dir>        产物目录（默认 <仓库上一级>/Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite）
@@ -65,6 +82,7 @@ const HELP = `node scripts/make-server-lite.mjs — 生成 Windows 精简服务�
   --force            目录已存在时先删掉（只肯删空目录，或上一次打的精简包；其余情况拒绝）
 
   app\\ 里只放 git 跟踪的文件（去掉 test/、android/、src-tauri/、native/、.github/）+ 生产依赖；
+  生产依赖装完会按服务端真实 import 裁剪，只留 ws / acorn / ses 及其依赖（约 130 个文件）；
   public/assets、public/fonts、public/vendor 不进包，data/assets.json 这类清单留在包里。
   压缩包固定写到 --out 同级，名为 Stronghold-Protocol-Server-v<版本>-win-x64.zip（目录名照 --out）。
 `;
@@ -94,7 +112,10 @@ function liteDeleteVerdict(dir) {
   }
   if (entries.length === 0) return 'empty';
   const app = entries.find((e) => e.name === 'app');
-  const looksLike = LITE_MARKERS.every((n) => entries.some((e) => e.name === n)) && !!app && (app.isDirectory() || app.isSymbolicLink());
+  const isDir = (e) => e.isDirectory() || e.isSymbolicLink();
+  // 上一次跑到一半失败（只留下 app\，说明还没写 README）：也算自己人，允许 --force 清掉。
+  if (entries.length === 1 && app && isDir(app)) return 'partial';
+  const looksLike = LITE_MARKERS.every((n) => entries.some((e) => e.name === n)) && !!app && isDir(app);
   return looksLike ? 'bundle' : 'refuse';
 }
 
@@ -138,6 +159,17 @@ ${tree}
 \`\`\`
 
 ## 怎么开服
+
+先把压缩包**解出来**，再双击启动器。解压方式会实质影响耗时（包里小文件多）：
+
+- 用 \`tar.exe\`（Windows 10 1803 起自带）：\`tar -xf Stronghold-Protocol-Server-v${version}-win-x64.zip\`。
+  同一个包，本机实测 \`tar.exe\` 约 23 秒，资源管理器右键「全部解压」要 66 秒。装了 7-Zip 的话右键「7-Zip → 提取到此处」也很快。
+- **不要解到** 网络盘（SMB / NFS / rclone / 映射驱动器）或会被实时同步、实时扫描的目录：
+  大量小文件会被网络往返和同步器拖慢。
+- 建议把这个目录加进杀软排除（管理员 PowerShell，路径换成你自己的）：
+  \`Add-MpPreference -ExclusionPath 'D:\\sp-server'\`。
+- \`app\\node_modules\` 已经是**裁剪过**的运行时依赖（只有 \`ws\` / \`acorn\` / \`ses\` 及其 \`@endo/*\` 依赖，约 130 个文件）：
+  不要在包内跑 \`npm install\`，也不要指望包里的 \`tools\` 构建脚本能跑 —— 那些需要浏览器库，属于源码仓库的事。
 
 \`\`\`
 双击 启动轻量服务端.bat
@@ -192,6 +224,108 @@ function makeZip(srcDir, zipPath) {
   throw new Error('打 zip 失败（需要 tar -a 或 zip）');
 }
 
+/** 抓出源码里的模块说明符：`from 'x'`、`import 'x'`、`import('x')`、`require('x')` 都算。 */
+const SPECIFIER_RE = /\b(?:from|import|require)\s*\(?\s*(['"])([^'"\n]+)\1/g;
+
+/** 裸包名（`ws`、`@endo/cache-map/sub.js` → `@endo/cache-map`）；相对路径、URL、内置模块返回 null。 */
+function packageNameOf(specifier) {
+  if (!specifier || specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('#')) return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier)) return null;
+  const parts = specifier.split('/');
+  const name = specifier.startsWith('@') ? (parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null) : parts[0];
+  // 正则同样会命中字符串里的 `from '…'`（PNG 块名、i18n 片段之类），这里只认长得像包名的。
+  if (!name || !/^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(name)) return null;
+  return name;
+}
+
+/** 服务端包内所有**由 Node 执行**的代码引用的裸包名。 */
+async function scanServerImports(appDir) {
+  const names = new Set();
+  const walk = async (dir) => {
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walk(full); continue; }
+      if (!/\.(?:mjs|cjs|js)$/.test(entry.name)) continue;
+      const text = await fsp.readFile(full, 'utf8');
+      for (const m of text.matchAll(SPECIFIER_RE)) {
+        const name = packageNameOf(m[2]);
+        if (name) names.add(name);
+      }
+    }
+  };
+  for (const dir of SERVER_CODE_DIRS) await walk(path.join(appDir, dir));
+  return names;
+}
+
+/**
+ * 从这些包出发，按 package.json 的 dependencies + peerDependencies 求传递闭包；只收真实装到盘上的包。
+ * peer 也要跟：`@pixi-spine/runtime-3.8` 把 `@pixi/core` 声明成 peer（由 pixi.js 提供），漏掉它插件包解析
+ * Spine 骨架时会 `Cannot find module '@pixi/core'`。
+ */
+function depClosure(nodeModules, roots) {
+  const keep = new Set();
+  const queue = [...roots];
+  while (queue.length) {
+    const name = queue.pop();
+    if (!name || keep.has(name)) continue;
+    let pkg;
+    try {
+      pkg = JSON.parse(fs.readFileSync(path.join(nodeModules, name, 'package.json'), 'utf8'));
+    } catch { continue; /* 没装到（扫描误报或可选依赖）：忽略 */ }
+    keep.add(name);
+    for (const field of ['dependencies', 'peerDependencies']) {
+      for (const dep of Object.keys(pkg[field] || {})) queue.push(dep);
+    }
+  }
+  return keep;
+}
+
+/**
+ * 只留服务端真正会加载的运行时依赖，其余（pixi / three / preact / htm 这些浏览器库及其依赖树）删掉。
+ * 返回裁剪结果，并在超过 DEP_LIMITS 时直接抛错——防止以后又往 dependencies 里加浏览器库。
+ */
+async function pruneServerDeps(appDir) {
+  const nodeModules = path.join(appDir, 'node_modules');
+  const roots = await scanServerImports(appDir);
+  roots.add('ses'); // 沙箱是 `import('ses')` 动态加载的，静态扫描能抓到，这里再兜一层
+  const keep = depClosure(nodeModules, roots);
+  const removed = [];
+
+  for (const entry of await fsp.readdir(nodeModules, { withFileTypes: true })) {
+    const name = entry.name;
+    if (name === '.package-lock.json') continue;
+    if (name === '.bin') {
+      await fsp.rm(path.join(nodeModules, name), { recursive: true, force: true });
+      continue;
+    }
+    if (name.startsWith('@')) {
+      const scopeDir = path.join(nodeModules, name);
+      for (const child of await fsp.readdir(scopeDir)) {
+        const full = `${name}/${child}`;
+        if (keep.has(full)) continue;
+        await fsp.rm(path.join(scopeDir, child), { recursive: true, force: true });
+        removed.push(full);
+      }
+      if ((await fsp.readdir(scopeDir)).length === 0) await fsp.rm(scopeDir, { recursive: true, force: true });
+      continue;
+    }
+    if (keep.has(name)) continue;
+    await fsp.rm(path.join(nodeModules, name), { recursive: true, force: true });
+    removed.push(name);
+  }
+
+  const size = await dirSize(nodeModules);
+  for (const required of ['ws', 'acorn', 'ses']) {
+    if (!keep.has(required)) throw new Error(`✖ 依赖闭包里没有 ${required}：服务端启动会直接失败，检查扫描结果`);
+  }
+  if (size.files > DEP_LIMITS.files || size.bytes > DEP_LIMITS.bytes) {
+    throw new Error(`✖ 裁剪后的 app/node_modules 仍有 ${size.files} 个文件 / ${MB(size.bytes)}，超过上限 ${DEP_LIMITS.files} / ${MB(DEP_LIMITS.bytes)}：dependencies 里大概又混进了只在浏览器里用的库`);
+  }
+  return { keep: [...keep].sort(), removed, size };
+}
+
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) { console.log(HELP); return 0; }
@@ -219,7 +353,7 @@ async function main() {
       return 1;
     }
     await fsp.rm(out, { recursive: true, force: true });
-    console.log(`  · 清掉 ${out}（${verdict === 'empty' ? '空目录' : '上一次的精简包'}）`);
+    console.log(`  · 清掉 ${out}（${{ empty: '空目录', partial: '上一次没打完的目录', bundle: '上一次的精简包' }[verdict]}）`);
   }
   await fsp.mkdir(out, { recursive: true });
 
@@ -239,10 +373,12 @@ async function main() {
   }
   console.log(`  · 已确认不含素材文件，且保留 ${REQUIRED_FILES.join('、')}`);
 
-  // 3) 生产依赖
+  // 3) 运行时依赖：先按锁文件装生产依赖，再按服务端真实 import 裁剪掉浏览器库
   await installProductionDeps(appDir);
-  const deps = await dirSize(path.join(appDir, 'node_modules'));
-  console.log(`    完成：${deps.files} 个文件 / ${MB(deps.bytes)}（只含生产依赖）`);
+  const installed = await dirSize(path.join(appDir, 'node_modules'));
+  const deps = await pruneServerDeps(appDir);
+  console.log(`    完成：${deps.size.files} 个文件 / ${MB(deps.size.bytes)}`);
+  console.log(`    裁剪：装好 ${installed.files} 个 → 留 ${deps.keep.join('、')}（去掉 ${deps.removed.length} 个包）`);
 
   // 4) 便携版 Node
   const nodeVersion = NODE_PIN.version;
