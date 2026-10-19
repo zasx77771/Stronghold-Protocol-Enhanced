@@ -66,6 +66,18 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(css, /\.title-login \{[^}]*width: 4\.9rem;/);
   });
 
+  test('css: the login column never paints a scrollbar', () => {
+    // Android WebView draws a scrollbar for even a few pixels of overflow, and the login column always has some:
+    // the 44px touch target behind the ghost buttons and the field corner brackets reach past the column box.
+    const side = css.match(/\.title-side \{[^}]*\}/)[0];
+    assert.match(side, /scrollbar-width: none;/);
+    assert.match(side, /-ms-overflow-style: none;/);
+    assert.match(css, /\.title-side::-webkit-scrollbar \{[^}]*width: 0;[^}]*height: 0;/);
+    // The login box top accent used to be drawn 1px outside the box, which added to that overflow.
+    const accent = css.match(/\.title-login::before \{[^}]*\}/)[0];
+    assert.doesNotMatch(accent, /left: -1px|right: -1px/);
+  });
+
   test('css: narrow screens shrink the banner share and spacing, never the touch targets', () => {
     const start = css.indexOf('@media (max-width: 640px)');
     let depth = 0;
@@ -95,7 +107,11 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(js, /<div class="title-login">\s*<div class="title-connect__endpoint">/);
     assert.match(js, /class="title-connect__endpoint"[\s\S]*class="title-connect__address"[\s\S]*<\$\{Button\} variant="ghost"/);
     assert.match(css, /\.title-connect__endpoint \{[^}]*display: flex;[^}]*align-items: flex-end;[^}]*justify-content: center;/);
-    assert.match(css, /\.title-connect__endpoint > \.btn \{[^}]*align-self: flex-end;[^}]*min-width: max\(\.64rem, var\(--tap-min, 44px\)\);[^}]*height: \.56rem;[^}]*border-color: rgba\(255, 255, 255, \.14\);/);
+    assert.match(css, /\.title-connect__endpoint > \.btn \{[^}]*align-self: flex-end;[^}]*min-width: max\(\.64rem, var\(--tap-min, 44px\)\);[^}]*height: \.68rem;[^}]*border-color: rgba\(255, 255, 255, \.14\);/);
+    // 地址框与代号框是同一张表单的两行：都走 .field--lg（.68rem 高、.26 号字），不再各写一套字号。
+    assert.match(js, /<div class="title-connect__endpoint">\s*<\$\{TextField\} class="title-connect__address"[^>]*size="lg"/);
+    assert.match(js, /<\$\{TextField\} label=\$\{t\('博士代号'\)\} micro="CALLSIGN" size="lg"/);
+    assert.doesNotMatch(css, /\.title-connect__address \.field__input \{/);
     assert.doesNotMatch(js, /title-connect__modes|title-connect__mode|setTransport/);
   });
 
