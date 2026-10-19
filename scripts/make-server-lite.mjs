@@ -66,6 +66,7 @@ const HELP = `node scripts/make-server-lite.mjs — 生成 Windows 精简服务�
 
   app\\ 里只放 git 跟踪的文件（去掉 test/、android/、src-tauri/、native/、.github/）+ 生产依赖；
   public/assets、public/fonts、public/vendor 不进包，data/assets.json 这类清单留在包里。
+  压缩包固定写到 --out 同级，名为 Stronghold-Protocol-Server-v<版本>-win-x64.zip（目录名照 --out）。
 `;
 
 function parseArgs(argv) {
@@ -275,7 +276,8 @@ async function main() {
   console.log(`\n✔ 精简服务端已生成：${out}\n  ${total.files} 个文件 / ${MB(total.bytes)}`);
 
   if (o.zip) {
-    const zipPath = `${out}.zip`;
+    // The archive name is fixed (the old release line used the same shape); only the directory keeps --out's name.
+    const zipPath = path.join(path.dirname(out), `Stronghold-Protocol-Server-v${version}-win-x64.zip`);
     const tool = makeZip(out, zipPath);
     const zipBytes = (await fsp.stat(zipPath)).size;
     console.log(`✔ 压缩包：${zipPath}（${MB(zipBytes)}，${tool}）`);

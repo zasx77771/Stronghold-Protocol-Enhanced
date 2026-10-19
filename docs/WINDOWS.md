@@ -137,7 +137,8 @@ node scripts/make-server-lite.mjs --no-zip               # 只要目录，不打
 ```
 
 `npm run package:server:lite` 等价于第一条。`--out` / `--force` 的删除规则与第 2 节一致，只是「上一次的产物」认的是
-包根有 `README-Lite-Server.md` 和 `app\`。
+包根有 `README-Lite-Server.md` 和 `app\`。目录名照 `--out`，压缩包固定写在它同级、名为
+`Stronghold-Protocol-Server-v<版本>-win-x64.zip`（沿用 2.x 起服主下载的文件名）。
 
 产物内容：
 
