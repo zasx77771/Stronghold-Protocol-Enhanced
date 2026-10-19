@@ -11,6 +11,13 @@
 - Windows 客户端包内新增 `unblock.bat`（ASCII 名，避免 zip 内中文名在部分解压工具里乱码），README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
   「来自 Internet」标记就会被 SmartScreen 拦成「无法识别的应用」。双击包内的解锁脚本（或解压前对 zip 右键解除锁定）
   即可，不需要关 Defender、也不需要管理员权限。生成脚本 `scripts/make-windows-client.mjs` 同步产出该文件。
+- 精简服务端包新增增量升级包：`node scripts/make-server-lite.mjs --update --from <旧服务端包 zip 或解压目录>[,<…>]`
+  （`npm run package:server:update -- --from …`）先按完整包打一份当前版本，再和每个旧包逐文件比较（大小 + sha256），
+  只把改动过的 `app\` 文件、包根被改的文件和新版本的 `app\MANIFEST.json`、`app\UPDATE.json` 打成
+  `Stronghold-Protocol-Server-v<版本>-win-x64-update.zip`（一个 zip、没有顶层文件夹，服主解压到服务端包根即可）。
+  启动时 `server/update.js` 用玩家更新包那套机制复核清单、删掉旧版本不再使用的文件，核对不上就拒绝启动并提示改用完整包。
+  完整包因此多带一份 `app\MANIFEST.json`；zip 由 `tools/server-update.mjs` 内置的写入器生成，不依赖 `zip` / `tar`。
+  Node 运行时换版本（`NODE_PIN`）时只能发完整包，脚本会直接报错。
 
 ## 3.2.1 — 2026-10-19
 

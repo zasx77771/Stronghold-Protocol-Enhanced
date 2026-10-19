@@ -33,6 +33,9 @@
 - Android 正式签名指纹 `68:9A:53:F1:DC:42:71:A5:0A:26:58:91:EE:BF:E1:AC:08:76:87:93:69:CE:5E:AA:EE:53:12:3A:42:03:31:DE`；
   发布前必须过 `apksigner verify --print-certs` 与 `zipalign -c -p 4`。
 - 3.2.0 未生成 Windows 增量包（只出完整包）；3.2.1 未重打包。
+- 下一次发布的精简服务端包起另行携带 `app\MANIFEST.json`，并额外出
+  `Stronghold-Protocol-Server-v<版本>-win-x64-update.zip`（服务端增量包，见 [WINDOWS.md](WINDOWS.md) §7.1）。
+  已发布的 3.2.0 / 3.2.1 完整包没有这份清单，仍可充当增量包的基线：服务器核对的是升级后的状态，不看基线包有没有清单。
 
 ## 3.2.1 包含的修复
 

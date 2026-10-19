@@ -33,6 +33,17 @@ const SIG = { eocd: 0x06054b50, loc64: 0x07064b50, eocd64: 0x06064b50, central: 
 const U32 = 0xffffffff;
 
 /**
+ * A name that is UTF-8 when its bytes are UTF-8, else the Chinese Windows code page: an Info-ZIP `zip` run on a Chinese
+ * Windows stores a non-ASCII name (启动轻量服务端.bat) in CP936 without the UTF-8 flag and without a Unicode Path field,
+ * which read as UTF-8 becomes 13 replacement characters.
+ */
+function nameOf(raw) {
+  const utf8 = raw.toString('utf8');
+  if (Buffer.from(utf8, 'utf8').equals(raw)) return utf8;
+  try { return new TextDecoder('gbk').decode(raw); } catch { return utf8; }
+}
+
+/**
  * The name of the central-directory entry at `p`: the header bytes when flag bit 11 marks them UTF-8; otherwise the
  * Info-ZIP Unicode Path extra field (0x7075, APPNOTE 4.6.9) when its CRC matches the header name — Info-ZIP's zip on
  * Windows stores a non-ASCII name in the system code page and the UTF-8 name only there; without that field the header
@@ -51,7 +62,7 @@ function entryName(cd, p, flags, nameLen, extraLen) {
       q += 4 + len;
     }
   }
-  return raw.toString('utf8');
+  return nameOf(raw);
 }
 
 /**
@@ -152,7 +163,7 @@ export function compareVersions(a, b) {
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 /** Files under `dir` (following symlinks) as posix paths relative to it. */
-function walk(dir, rel = '', out = []) {
+export function walk(dir, rel = '', out = []) {
   for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
     const child = rel ? `${rel}/${e.name}` : e.name;
     let st;

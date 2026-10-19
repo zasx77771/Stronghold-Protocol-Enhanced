@@ -43,6 +43,7 @@
     "package": "node tools/package.mjs",
     "package:lite": "node tools/package.mjs --lite",
     "package:server:lite": "node scripts/make-server-lite.mjs",
+    "package:server:update": "node scripts/make-server-lite.mjs --update",
     "package:client:win": "node scripts/make-windows-client.mjs",
     "package:client:android": "node scripts/make-android-client.mjs",
     "native:check": "node tools/check-native-compat.mjs",

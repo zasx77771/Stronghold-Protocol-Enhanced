@@ -2,14 +2,21 @@
 // scripts/make-server-lite.mjs — 打一份「精简服务端」Windows 包：**不含素材文件，但保留素材清单 JSON**。
 //
 //   node scripts/make-server-lite.mjs [--out <dir>] [--no-node] [--force] [--no-zip]
+//   node scripts/make-server-lite.mjs --update --from <旧服务端包 zip 或解压目录>[,<…>] [--out <dir>] [--force]
 //
-// 产物目录（默认 <仓库上一级>\Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite）：
+// 完整包产物目录（默认 <仓库上一级>\Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite）：
 //   node\node.exe                官方 Windows x64 便携版 Node（版本与 sha256 钉在 make-windows-bundle.mjs 的 NODE_PIN）
 //   node\LICENSE-node.txt        Node 自己的许可证
 //   app\                         服务端本体：server / shared / public（无 assets、fonts、vendor）/ data / packs / plugins / scripts / tools / docs
+//   app\MANIFEST.json            包里每个文件的大小与 sha256（更新包启动时的核对依据，server/update.js）
 //   启动轻量服务端.bat           SP_ASSET_INDEX=0、SP_STUDIO=off，跑 app\server\index.js
 //   README-Lite-Server.md        给服主看的说明
 //   LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
+//
+// 增量包（--update --from，docs/WINDOWS.md §7）：给解压好的服务端包覆盖 app\ 的更新包，只含比列出的旧版本改动过的
+// 文件，通常几百 KB 到几 MB —— 服主不必为重下 52 MB 完整包、重解压近 3,000 个小文件等上十几秒。比对 / 暂存 / zip 在
+// tools/server-update.mjs；服务器侧的核对与删旧文件是 server/update.js（启动第一件事跑 applyPendingUpdate，
+// 与玩家更新包同一套机制）。
 //
 // 与 make-windows-bundle.mjs（玩家便携包）的区别，以及为什么这么切：
 //   * 玩家包是「本机开服 + 浏览器游戏」，素材是硬成本（约 330 MB），所以精简包不重复发一份素材；
@@ -39,6 +46,10 @@ import {
   NODE_PIN, ensureNodeZip, extractPortableNode, installProductionDeps,
   trackedFiles, dirSize, bat, LEGAL_FILES, outDirIsUnsafe, copyFiles,
 } from './make-windows-bundle.mjs';
+import { compareVersions, walk } from '../tools/package-update.mjs';
+import {
+  listZip, readServerBase, stageUpdate, updateName, updateWorkVerdict, writeServerManifest, zipContents,
+} from '../tools/server-update.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MB = (n) => `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -76,19 +87,24 @@ const DEP_LIMITS = { files: 2300, bytes: 18 * 1024 * 1024 };
 
 const HELP = `node scripts/make-server-lite.mjs — 生成 Windows 精简服务端包（不含素材文件，保留素材清单 JSON）
 
-  --out <dir>        产物目录（默认 <仓库上一级>/Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite）
-  --no-node          不下载便携版 Node（目标机器需自备 Node 22+）
-  --no-zip           只留目录，不打 .zip
-  --force            目录已存在时先删掉（只肯删空目录，或上一次打的精简包；其余情况拒绝）
+  --out <dir>        完整包：产物目录（默认 <仓库上一级>/Stronghold-Protocol-Enhanced-<版本>-Windows-Server-Lite）
+                     增量包：把 zip 写进这个目录（默认 <仓库上一级>/Stronghold-Protocol-Server-v<版本>-win-x64-update）
+  --no-node          不下载便携版 Node（目标机器需自备 Node 22+；增量包不许用）
+  --no-zip           只留目录，不打 .zip（只用于完整包）
+  --force            目标已存在时先删掉（只肯删空目录，或上一次打出的同类产物；其余情况拒绝）
+  --update           打增量包：与 --from 给的旧服务端包逐文件比对，只含改动过的文件
+  --from <包…>       旧服务端包的 zip（Releases 上的完整包）或它解压出来的文件夹，逗号分隔或写多次
+  --keep-stage       增量包：不删工作目录（里面有完整的 app\\ 与增量包内容，供检查）
 
   app\\ 里只放 git 跟踪的文件（去掉 test/、android/、src-tauri/、native/、.github/）+ 生产依赖；
   生产依赖装完会按服务端真实 import 裁剪，只留 ws / acorn / ses 及其依赖（约 130 个文件）；
   public/assets、public/fonts、public/vendor 不进包，data/assets.json 这类清单留在包里。
-  压缩包固定写到 --out 同级，名为 Stronghold-Protocol-Server-v<版本>-win-x64.zip（目录名照 --out）。
+  完整包的压缩包固定写到 --out 同级，名为 Stronghold-Protocol-Server-v<版本>-win-x64.zip（目录名照 --out）；
+  增量包名为 Stronghold-Protocol-Server-v<版本>-win-x64-update.zip，解压到服务端包根覆盖 app\\，启动时自动核对。
 `;
 
 function parseArgs(argv) {
-  const o = { out: '', node: true, zip: true, force: false, help: false };
+  const o = { out: '', node: true, zip: true, force: false, update: false, from: [], keepStage: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const [k, v] = a.split('=');
@@ -97,9 +113,30 @@ function parseArgs(argv) {
     else if (a === '--no-node') o.node = false;
     else if (a === '--no-zip') o.zip = false;
     else if (a === '--force') o.force = true;
-    else if (a === '-h' || a === '--help') o.help = true;
+    else if (a === '--update') o.update = true;
+    else if (a === '--keep-stage') o.keepStage = true;
+    else if (k === '--from') {
+      const one = String(val() || '');
+      if (!one || one.startsWith('--')) throw new Error('--from 需要一个旧服务端包的 zip 或解压目录');
+      o.from.push(...one.split(',').map((s) => s.trim()).filter(Boolean));
+    } else if (a === '-h' || a === '--help') o.help = true;
   }
   return o;
+}
+
+/** `--from` 的每个基包：读过一遍、版本比当前旧、每个版本一次，按版本排序。 */
+function readUpdateBases(sources, version) {
+  const byVersion = new Map();
+  for (const src of sources) {
+    const base = readServerBase(src);
+    if (compareVersions(base.version, version) >= 0) {
+      throw new Error(`基包 v${base.version}（${src}）不比当前版本 v${version} 旧：增量包只能向前升级`);
+    }
+    if (byVersion.has(base.version)) throw new Error(`基包 v${base.version} 给了两次`);
+    byVersion.set(base.version, base);
+  }
+  if (!byVersion.size) throw new Error('没有可用的基包：--from 至少要给一个旧服务端包');
+  return [...byVersion.values()].sort((a, b) => compareVersions(a.version, b.version));
 }
 
 /** `--force` 允不允许删这个目录？只认「不存在 / 空目录 / 上一次的精简包」，其余一律拒绝。 */
@@ -186,6 +223,29 @@ ${tree}
 | \`SP_STUDIO\` | 启动器设成 \`off\` | 插件工作台（\`/studio/\`）；精简包默认不对外提供 |
 
 第一次开服时 Windows 防火墙可能弹窗，勾选**允许专用网络**（否则局域网里的朋友连不上）。
+
+## 升级到新版本
+
+同一个版本的发布页上除了完整包，还有一个**增量包** \`Stronghold-Protocol-Server-v<版本>-win-x64-update.zip\`：
+它只含比说明里列出的旧版本改动过的文件，通常几百 KB 到几 MB（解压一秒左右）—— 不必重新下载 52 MB 完整包，也不用
+让这台机器再解压近 3,000 个小文件。
+
+1. **停服**：在服务端窗口里 Ctrl+C；装了开机自启的先停掉计划任务 / 服务。
+2. 把增量包**解压到这个文件夹的根目录** —— 有 \`app\\\` 和 \`启动轻量服务端.bat\` 的那一层，覆盖同名文件：
+
+   \`\`\`
+   tar -xf %USERPROFILE%\\Downloads\\Stronghold-Protocol-Server-v${version}-win-x64-update.zip -C .
+   \`\`\`
+
+   装了 7-Zip 就右键「7-Zip → 提取到此处」。增量包**没有**外层文件夹，别解到 \`app\\\` 里面（那会多出一层 \`app\\app\\\`）。
+3. **启动**。服务器会先按 \`app\\MANIFEST.json\` 核对这次带来的文件、删掉新版本不再使用的旧文件，再照常开服，
+   控制台里有一行「已更新到 v<版本>」。
+4. 提示「这个更新包只能覆盖在 v… 的整合包安装上（检测到 N 个文件与 v… 不一致或缺失）」：这台的 \`app\\\` 不是列出的
+   那些旧版本，或者增量包没完整覆盖。**服务器不会启动**（新旧文件混着跑更容易出怪问题）—— 下载同一版本的完整包，
+   按下一节先备份再覆盖 \`app\\\`；或者把增量包重新完整解压一遍再启动。
+
+\`app\\MANIFEST.json\` 是包里每个文件的大小与 sha256 清单，升级核对与 \`npm run doctor\`（源码目录）都靠它：
+不要手改、不要删。\`node\\\` 不在增量包的范围内 —— 换 Node 版本（\`NODE_PIN\`）只能发完整包，打包脚本会直接拒绝。
 
 ## 数据与备份
 
@@ -326,35 +386,19 @@ async function pruneServerDeps(appDir) {
   return { keep: [...keep].sort(), removed, size };
 }
 
-async function main() {
-  const o = parseArgs(process.argv.slice(2));
-  if (o.help) { console.log(HELP); return 0; }
-
-  const pkg = JSON.parse(await fsp.readFile(path.join(ROOT, 'package.json'), 'utf8'));
-  const version = pkg.version;
-  const out = path.resolve(o.out || path.join(path.dirname(ROOT), `Stronghold-Protocol-Enhanced-${version}-Windows-Server-Lite`));
+/**
+ * 打一份完整的精简服务端到 `out`：服务端本体、裁剪过的生产依赖、app\MANIFEST.json、便携 Node、法律文件、
+ * 启动器与说明。返回目录大小。打 zip 是调用方的事 —— 完整包是一个带顶层目录的 zip（解压得到产物目录），
+ * 增量包则是把 `app\` 里的改动放到包根（解压进服务端包根），两者的形状不同。
+ */
+async function makeFullPack({ out, version, withNode }) {
   const appDir = path.join(out, 'app');
   const nodeDir = path.join(out, 'node');
 
-  console.log(`\n卫戍协议 · 精简版服务端 ${version}（Windows）\n  源仓库：${ROOT}\n  产物：  ${out}\n`);
-
   if (outDirIsUnsafe(out)) {
-    console.error(`✖ --out 指向仓库本身或它的上级目录：${out}\n  加 --force 会把仓库删掉，请换一个仓库之外的目录。`);
-    return 1;
+    throw new Error(`--out 指向仓库本身或它的上级目录：${out}（会删掉仓库，请换一个仓库之外的目录）`);
   }
-  const verdict = liteDeleteVerdict(out);
-  if (verdict !== 'missing') {
-    if (!o.force) {
-      console.error(`✖ ${out} 已存在。要覆盖请加 --force —— 它只会删空目录或上一次打的精简包，其余情况一律拒绝。`);
-      return 1;
-    }
-    if (verdict === 'refuse') {
-      console.error(`✖ ${out} 已存在，但它既不是空目录，也不像上一次打的精简包（包根要有 README-Lite-Server.md 和 app\\）。`);
-      return 1;
-    }
-    await fsp.rm(out, { recursive: true, force: true });
-    console.log(`  · 清掉 ${out}（${{ empty: '空目录', partial: '上一次没打完的目录', bundle: '上一次的精简包' }[verdict]}）`);
-  }
+  await fsp.rm(out, { recursive: true, force: true });
   await fsp.mkdir(out, { recursive: true });
 
   // 1) 服务端代码：git 跟踪的文件，去掉与服端无关的目录
@@ -380,9 +424,13 @@ async function main() {
   console.log(`    完成：${deps.size.files} 个文件 / ${MB(deps.size.bytes)}`);
   console.log(`    裁剪：装好 ${installed.files} 个 → 留 ${deps.keep.join('、')}（去掉 ${deps.removed.length} 个包）`);
 
-  // 4) 便携版 Node
+  // 4) 文件清单：app\ 下每个文件的大小与 sha256。服务器启动时会按它核对安装，升级包带的就是这一份
+  const manifest = writeServerManifest(appDir, version);
+  console.log(`  · 文件清单 app\\MANIFEST.json：${manifest.files.size} 个文件`);
+
+  // 5) 便携版 Node
   const nodeVersion = NODE_PIN.version;
-  if (o.node) {
+  if (withNode) {
     console.log(`  · 准备便携版 Node ${nodeVersion}…`);
     await fsp.mkdir(nodeDir, { recursive: true });
     const zipPath = await ensureNodeZip(nodeVersion, NODE_PIN.sha256);
@@ -390,7 +438,7 @@ async function main() {
     console.log(`    完成：Node ${info.version} / ${MB(info.bytes)} + LICENSE`);
   }
 
-  // 5) 法律文件
+  // 6) 法律文件
   for (const f of LEGAL_FILES) {
     const src = path.join(ROOT, f);
     if (!fs.existsSync(src)) { console.log(`    ! 版本库里没有 ${f}，包根将缺少这份声明`); continue; }
@@ -406,7 +454,36 @@ async function main() {
     '"%NODE%" "%HERE%app\\server\\index.js" %*',
   ].join('\r\n'));
   await fsp.writeFile(path.join(out, '启动轻量服务端.bat'), launcher, 'latin1');
-  await fsp.writeFile(path.join(out, 'README-Lite-Server.md'), liteReadme({ version, withNode: !!o.node, nodeVersion }), 'utf8');
+  await fsp.writeFile(path.join(out, 'README-Lite-Server.md'), liteReadme({ version, withNode: !!withNode, nodeVersion }), 'utf8');
+
+  const total = await dirSize(out);
+  console.log(`  · 目录：${total.files} 个文件 / ${MB(total.bytes)}`);
+  return total;
+}
+
+/** 完整包：产物是一个目录 + 同级的固定名 zip。 */
+async function fullMain(o, version) {
+  const out = path.resolve(o.out || path.join(path.dirname(ROOT), `Stronghold-Protocol-Enhanced-${version}-Windows-Server-Lite`));
+  console.log(`\n卫戍协议 · 精简版服务端 ${version}（Windows）\n  源仓库：${ROOT}\n  产物：  ${out}\n`);
+
+  if (outDirIsUnsafe(out)) {
+    console.error(`✖ --out 指向仓库本身或它的上级目录：${out}\n  加 --force 会把仓库删掉，请换一个仓库之外的目录。`);
+    return 1;
+  }
+  const verdict = liteDeleteVerdict(out);
+  if (verdict !== 'missing') {
+    if (!o.force) {
+      console.error(`✖ ${out} 已存在。要覆盖请加 --force —— 它只会删空目录或上一次打的精简包，其余情况一律拒绝。`);
+      return 1;
+    }
+    if (verdict === 'refuse') {
+      console.error(`✖ ${out} 已存在，但它既不是空目录，也不像上一次打的精简包（包根要有 README-Lite-Server.md 和 app\\）。`);
+      return 1;
+    }
+    console.log(`  · 清掉 ${out}（${{ empty: '空目录', partial: '上一次没打完的目录', bundle: '上一次的精简包' }[verdict]}）`);
+  }
+
+  await makeFullPack({ out, version, withNode: o.node });
 
   const total = await dirSize(out);
   console.log(`\n✔ 精简服务端已生成：${out}\n  ${total.files} 个文件 / ${MB(total.bytes)}`);
@@ -420,6 +497,108 @@ async function main() {
   }
   console.log('  双击「启动轻量服务端.bat」即可开服（默认 3000 / TCP 3001）。');
   return 0;
+}
+
+/** 一行概览：增量包与每个基包差在哪。 */
+function updateSummaryLines(appDiff) {
+  const lines = [];
+  for (const b of appDiff.perBase) {
+    lines.push(`    v${b.version} → 新增 ${b.added}，改动 ${b.changed}，未变 ${b.unchanged}，删掉 ${b.removed}`);
+  }
+  return lines;
+}
+
+/**
+ * 增量包：先完整打一份当前版本（`work/full`），与 `--from` 的旧包逐文件比，只把改动过的 app\ 文件与
+ * app\MANIFEST.json、app\UPDATE.json 放进 `work/update`，再打一个**没有顶层目录**的 zip —— 服主解压到服务端
+ * 包根即可覆盖。zip 里不带 node\：Node 不在 server/update.js 的更新范围内，换 Node 版本只能发完整包。
+ */
+async function updateMain(o, version) {
+  if (!o.node) throw new Error('增量包必须带 node\\ 参与比对（用来确认 Node 运行时没换过）：不要加 --no-node');
+  if (!o.zip) throw new Error('增量包必须打成 zip：不要加 --no-zip');
+  const bases = readUpdateBases(o.from, version);
+
+  const out = path.resolve(o.out || path.join(path.dirname(ROOT), updateName(version).replace(/\.zip$/, '')));
+  const zipPath = path.join(out, updateName(version));
+  const work = path.join(out, `.server-update-${version}`);
+  const full = path.join(work, 'full');
+  const stage = path.join(work, 'update');
+  console.log(`\n卫戍协议 · 服务端增量包 ${version}（Windows）\n  源仓库：${ROOT}\n  产物：  ${zipPath}\n  基包：  ${bases.map((b) => `v${b.version}`).join('、')}\n`);
+
+  if (outDirIsUnsafe(out)) {
+    console.error(`✖ --out 指向仓库本身或它的上级目录：${out}\n  请换一个仓库之外的目录。`);
+    return 1;
+  }
+  await fsp.mkdir(out, { recursive: true });
+  if (fs.existsSync(zipPath) && !o.force) {
+    console.error(`✖ ${zipPath} 已存在。要覆盖请加 --force。`);
+    return 1;
+  }
+  const verdict = updateWorkVerdict(work);
+  if (verdict !== 'missing') {
+    if (!o.force) {
+      console.error(`✖ ${work} 是上一次留下的增量包工作目录。要覆盖请加 --force。`);
+      return 1;
+    }
+    if (verdict === 'refuse') {
+      console.error(`✖ ${work} 已存在，但不像增量包的工作目录（里面要有 full\\ 或 update\\）。`);
+      return 1;
+    }
+    console.log(`  · 清掉 ${work}（${{ empty: '空目录', bundle: '上一次的增量包工作目录' }[verdict] ?? verdict}）`);
+  }
+
+  console.log(`  · 先按完整包打一份当前版本的 app\\（逐文件比对的基准）…`);
+  await makeFullPack({ out: full, version, withNode: true });
+
+  console.log(`  · 与 ${bases.map((b) => `v${b.version}`).join('、')} 比对…`);
+  const { diff, bytes, files } = stageUpdate({ full, stage, version, bases, log: (m) => console.log(`    ${m}`) });
+  console.log(updateSummaryLines(diff.app).join('\n'));
+  if (diff.app.ship.length === 0) {
+    console.warn('    ! 与所有基包一致：没有 app 文件需要更新，只会带 MANIFEST.json / UPDATE.json（内容变化仍会被接受）');
+  }
+  for (const b of diff.app.perBase) {
+    if (b.added + b.changed + b.removed === 0) console.warn(`    ! v${b.version} 与 v${version} 只差包根文件（node\\ / 法律文件 / 启动器），它装不上这个增量包`);
+  }
+  if (diff.root.ship.length) {
+    console.log(`    包根改动 ${diff.root.ship.length} 个（不在更新范围内，只做完整包一致性核对）：${diff.root.ship.join('、')}`);
+  }
+  if (diff.root.removed.length) {
+    console.warn(`    ! 旧版本的包根文件不再发布，增量包删不掉它们（app\\ 之外）：${diff.root.removed.map((r) => r.path).join('、')}`);
+  }
+  if (diff.app.left.length) {
+    console.warn(`    ! 这些旧文件删不掉（本机文件，或更新机制自己的文件）：${diff.app.left.join('、')}`);
+  }
+  if (diff.app.caseOnly.length) {
+    console.warn(`    ! 只差大小写的改名不删：${diff.app.caseOnly.join('、')}`);
+  }
+  if (diff.app.removed.some((r) => r.sha256.length === 0)) {
+    console.warn('    ! 有旧文件在所有基包里都没被读到，删不掉（server/update.js 只删 sha256 对得上的）');
+  }
+
+  const tool = zipContents(stage, zipPath);
+  const planned = walk(stage).sort();
+  const got = listZip(zipPath);
+  if (got.length !== planned.length || got.some((n, i) => n !== planned[i])) {
+    throw new Error(`✖ 增量包里的文件与暂存目录不一致（${got.length} vs ${planned.length}）：${got.filter((n) => !planned.includes(n)).slice(0, 5).join('、')}`);
+  }
+  const zipBytes = (await fsp.stat(zipPath)).size;
+  console.log(`\n✔ 增量包：${zipPath}\n  ${files.length} 个文件 / 未压缩 ${MB(bytes)} / zip ${MB(zipBytes)}（${tool}）`);
+  console.log('  服主：停服 → 解压到服务端包根（含 app\\ 的那一层）→ 启动，服务器会自己核对并删旧文件。');
+
+  if (o.keepStage) console.log(`  · 保留工作目录：${work}（full\\ 完整包，update\\ 增量包内容）`);
+  else await fsp.rm(work, { recursive: true, force: true });
+  return 0;
+}
+
+async function main() {
+  const o = parseArgs(process.argv.slice(2));
+  if (o.help) { console.log(HELP); return 0; }
+  if (o.update && !o.from.length) throw new Error(`--update 需要 --from <旧服务端包 zip 或解压目录>[,<…>]\n\n${HELP}`);
+  if (!o.update && o.from.length) throw new Error(`--from 只跟 --update 一起用\n\n${HELP}`);
+
+  const pkg = JSON.parse(await fsp.readFile(path.join(ROOT, 'package.json'), 'utf8'));
+  const version = pkg.version;
+  return o.update ? updateMain(o, version) : fullMain(o, version);
 }
 
 function isMain() {

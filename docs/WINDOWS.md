@@ -134,9 +134,14 @@ node scripts/make-server-lite.mjs                        # 产物默认在 <仓�
 node scripts/make-server-lite.mjs --out D:\Srv\SP-Lite   # 指定目录（同样要专用目录）
 node scripts/make-server-lite.mjs --no-node              # 目标机器已装 Node 22+，不带便携 Node
 node scripts/make-server-lite.mjs --no-zip               # 只要目录，不打 zip
+node scripts/make-server-lite.mjs --update --from D:\rel\Stronghold-Protocol-Server-v3.2.1-win-x64.zip
+                                                        # 增量包：只含比这个旧包改动过的文件（见本节末）
+node scripts/make-server-lite.mjs --update --from <旧包1>,<旧包2> --out D:\rel
+                                                        # 一个增量包覆盖多个旧版本；--out 是 zip 写进哪个目录
 ```
 
-`npm run package:server:lite` 等价于第一条。`--out` / `--force` 的删除规则与第 2 节一致，只是「上一次的产物」认的是
+`npm run package:server:lite` 等价于第一条，`npm run package:server:update -- --from <旧包…>` 等价于增量包那条。
+`--out` / `--force` 的删除规则与第 2 节一致，只是「上一次的产物」认的是
 包根有 `README-Lite-Server.md` 和 `app\`。目录名照 `--out`，压缩包固定写在它同级、名为
 `Stronghold-Protocol-Server-v<版本>-win-x64.zip`（沿用 2.x 起服主下载的文件名）。
 
@@ -146,6 +151,7 @@ node scripts/make-server-lite.mjs --no-zip               # 只要目录，不打
 node\node.exe            官方 Windows x64 便携版 Node（同一个 NODE_PIN，sha256 校验）
 node\LICENSE-node.txt    Node 自己的许可证（MIT）
 app\                     服务端本体：server / shared / public（无素材）/ data / packs / plugins / scripts / tools / docs
+app\MANIFEST.json        包里 app\ 每个文件的大小与 sha256（更新包启动时的核对依据，server/update.js）
 启动轻量服务端.bat       SP_ASSET_INDEX=0、SP_STUDIO=off，默认 PORT=3000、TCP_PORT=3001
 README-Lite-Server.md    给服主看的说明
 LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
@@ -186,6 +192,38 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 然后确认：`http://127.0.0.1:3021/data/assets.json` 返回 200（内容约 1.9 MB 的 JSON）、`/assets/<任意>` 与
 `/fonts/<任意>` 返回 404、`/` 仍能打开网页骨架（缺 `public/vendor`，所以只是骨架）。端口可用 `PORT` / `TCP_PORT` /
 `HOST` 覆盖，第一次开服记得在防火墙里放行专用网络。
+
+### 7.1 服务端增量包（升级不用重下 52 MB）
+
+完整包 52 MB / 近 3,000 个文件，便宜的服务器解压一次要十几秒，重下一遍也慢。所以和 Windows 客户端一样，正式发布
+时额外出一个**服务端增量包**：
+
+```
+Stronghold-Protocol-Server-v3.2.2-win-x64-update.zip   只有一个 zip，没有外层文件夹
+  app\server\…  app\shared\…  app\data\…               这次改动 / 新增的 app 文件（version bump 的 app\package.json 也在内）
+  app\MANIFEST.json                                    新版本 app\ 的完整清单（大小 + sha256）
+  app\UPDATE.json                                      从哪些旧版本可升（from）、带了什么（files）、要删什么（removed）
+```
+
+它和玩家更新包用的是同一套机制：`server/http/boot.js` 启动第一件事跑 `applyPendingUpdate(ROOT)`，按 `MANIFEST.json`
+核对结果、删掉 `UPDATE.json` 里 `removed` 且哈希对得上的旧文件（`plugins/`、`.env`、`logs/` 这类本机文件不碰），
+然后把 `UPDATE.json` 改名 `.update-applied.json`。核对不上（另外拷了文件、上一版没覆盖全）就 `exit 1` 不启动，
+打印「这个更新包只能覆盖在 v… 的整合包安装上」。
+
+* 服主：停服 → 把增量包解压到包根（有 `app\` 和 `启动轻量服务端.bat` 的那一层）→ 启动。
+* 只升 app：`node\`、启动器和包根的几个声明文件不在更新范围内，所以它们变了也会进 zip，但不会出现在 `removed` 里。
+* `--from` 给的是**旧版完整包**（Releases 里的 zip）或它解压出来的文件夹，可以给多个；基包必须比当前版本旧，
+  且一个版本只能给一次。给 1–3 个最近版本就够，别把所有历史都列上（`removed` 会随基包数量变长）。
+* Node 运行时换版本（`make-windows-bundle.mjs` 的 `NODE_PIN`）时脚本直接报错：`node\node.exe` 83 MB 在 `app\` 外，
+  增量包覆盖不到，这种情况只能发完整包。
+* 增量包同样兼容「用完整包安装」的服主：任何基包里都没有的多余文件不会让核对失败（它们既不匹配清单也不在 `removed`）。
+* 首次安装仍然要用完整包；跨多个大版本、或增量包拒绝启动时，用同版本的完整包覆盖 `app\`（先备份 `data\`、`packs\`、
+  `plugins\`）。
+* 发出去之前自己验一遍：解压一个旧完整包到临时目录，把增量包解压进去，启动看控制台有没有「已更新到 v<版本>」，
+  再确认旧版本删掉的文件真的没了。`--keep-stage` 会保留工作目录（`full\` 是完整包，`update\` 是增量包内容）。
+
+实测（v3.2.0 → v3.2.1）：真正有内容变化的只有 **15 个文件 / 0.47 MB**，另有 4,117 个文件是打包裁剪一次性移除的，
+不会出现在普通升级里。所以常态下增量包是几百 KB 到几 MB、解压一两秒，而不是 52 MB / 十几秒。
 
 ## 8. 原生客户端（Tauri 便携包，不装安装器）
 
