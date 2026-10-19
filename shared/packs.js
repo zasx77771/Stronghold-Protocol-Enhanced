@@ -33,7 +33,7 @@
 // license?, files (role → URL on this server) and the type's fields; a language entry: lang, base?, fallback,
 // complete?, machineTranslated?, numberUnits?, strings (how many translations its UI file holds).
 
-import { APP_VERSION } from './constants.js';
+import { UPSTREAM_APP_VERSION } from './constants.js';
 import { SOURCE_LANG, isLangCode, languageName, langFields } from './i18nPacks.js';
 import { PACK_TYPES, PACK_MANIFEST, isPackId, isPackPath, isVersionRange, appVersionMatches, readPackManifest } from './plugins/manifest.js';
 
@@ -103,7 +103,7 @@ export function packIndexEntry(manifest, extra) {
  * @param {Record<string, unknown>[]} entries
  * @param {{ app?: string }} [opts]
  */
-export function buildPackIndex(entries, { app = APP_VERSION } = {}) {
+export function buildPackIndex(entries, { app = UPSTREAM_APP_VERSION } = {}) {
   const key = (e) => `${e.type}\u0000${e.id}`;
   return { version: PACK_INDEX_VERSION, app, packs: [...entries].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)) };
 }

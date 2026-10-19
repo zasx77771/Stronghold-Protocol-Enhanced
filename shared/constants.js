@@ -5,10 +5,16 @@ import { N_ } from './i18n.js';
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '3.1.0';
+export const APP_VERSION = '3.2.0';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
+/**
+ * The upstream release this build tracks, written the upstream way (`0.M.N`): an enhanced release `M.N.R` maps to it
+ * (3.2.0 → 0.3.2). Plugin and pack manifests state their `app` range against the official game, so every compatibility
+ * check compares against this number; using the enhanced release number would reject every pack made for 0.3.x.
+ */
+export const UPSTREAM_APP_VERSION = `0.${APP_VERSION.split("-")[0].split(".").slice(0, 2).join(".")}`;
 /**
  * The plugin API levels this build supports (DESIGN §32, shared/plugins/manifest.js): a manifest 2 states the level it
  * is written for (`api`); a level outside min…current keeps the plugin out. The level rises when the data shapes, the

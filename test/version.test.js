@@ -29,8 +29,8 @@ test('one release version: package.json, package-lock.json and APP_VERSION', () 
 test('the native Windows and Android shells use the same governed release version', () => {
   assert.deepEqual(validateReleasePolicy({ mainline: true }), {
     localVersion: pkg.version,
-    upstreamMainlineVersion: '0.3.1',
-    androidVersionCode: 30,
+    upstreamMainlineVersion: '0.3.2',
+    androidVersionCode: 31,
   });
 });
 
