@@ -9,18 +9,18 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 上游基线 | `0.3.2`（`upstream/master` @ `c9d804f4`；上游尚未给 0.3.2 打标签） |
-| 增强版版本 | `3.2.1`（映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
+| 增强版版本 | `3.2.2`（映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
 | 版本事实来源 | `package.json`、`release-policy.json`（`upstreamMainlineVersion` / `androidVersionCode`） |
 | 集成分支 | `ds-enhanced-mode` |
-| 已发布标签 | `enhanced-v3.2.1`（在 `enhanced-v3.2.0` = `50d938b1` 之后） |
-| GitHub Release | `Stronghold Protocol Enhanced 3.2.1`：只发布说明，**不上传安装包**（安装包留在本地成果目录） |
+| 已发布标签 | `enhanced-v3.2.2`（在 `enhanced-v3.2.1` 之后） |
+| GitHub Release | `Stronghold Protocol Enhanced 3.2.2`：只发服务端包与说明，客户端/APK 维持 3.2.1，安装包留在本地成果目录 |
 
 版本校验：`node tools/release-policy.mjs` 必须输出
-`Release policy valid: upstream 0.3.2, local 3.2.1, Android versionCode 32.`（--mainline 只用于上游基线首次发布，3.2.1 的修订号不为 0，不加该开关）
+`Release policy valid: upstream 0.3.2, local 3.2.2, Android versionCode 33.`（--mainline 只用于上游基线首次发布，3.2.2 的修订号不为 0，不加该开关）
 
 ## 产物与命名
 
-正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）：
+正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 客户端产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）；`3.2.2` 只发服务端包，客户端与 APK 未重打：
 
 | 产物 | 文件名 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
@@ -33,7 +33,7 @@
 - Android 正式签名指纹 `68:9A:53:F1:DC:42:71:A5:0A:26:58:91:EE:BF:E1:AC:08:76:87:93:69:CE:5E:AA:EE:53:12:3A:42:03:31:DE`；
   发布前必须过 `apksigner verify --print-certs` 与 `zipalign -c -p 4`。
 - 3.2.0 未生成 Windows 增量包（只出完整包）；3.2.1 未重打包。
-- 下一次发布的精简服务端包起另行携带 `app\MANIFEST.json`，并额外出
+- `3.2.2` 起的精简服务端包另行携带 `app\MANIFEST.json`，并额外出
   `Stronghold-Protocol-Server-v<版本>-win-x64-update.zip`（服务端增量包，见 [WINDOWS.md](WINDOWS.md) §7.1）。
   已发布的 3.2.0 / 3.2.1 完整包没有这份清单，仍可充当增量包的基线：服务器核对的是升级后的状态，不看基线包有没有清单。
 
