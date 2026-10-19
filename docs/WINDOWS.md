@@ -161,6 +161,21 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
   内容，所以不带 —— 缺省时服务端对这两条路径返回空清单（`{"version":1,"source":"none",...}`），不是 404。
 * **不带原生客户端工程和测试**：`android/`、`src-tauri/`、`native/`、`test/` 与服端无关。
 * 文件清单同样来自 `git ls-files`，生产依赖同样用 `npm ci --omit=dev` 重装；`--force` 的删除判定同样是反着写的。
+* **生产依赖装完还会裁剪**：`dependencies` 里混着只有浏览器用的 `pixi.js` / `three` / `preact` / `htm`，整套搬进包里
+  会让服主多出五千多个没用的小文件。脚本按包内**由 Node 执行的源码**（`server/`、`shared/`、`tools/`、`scripts/`）里的
+  裸 import 求依赖闭包（含 `peerDependencies`），只留 `ws` / `acorn` / `ses` / `@endo/*`，以及插件包解析 Spine 骨架要用
+  的 `@pixi-spine` 和它 peer 依赖的 `@pixi/*`。实测 `app\node_modules` 6,002 个文件 / 68.9 MB → 1,885 个 / 14.7 MB；
+  整包 7,097 个文件 / 203.8 MB → 2,981 个 / 149.6 MB。裁剪后若仍超过 2,300 个文件或 18 MB，脚本直接报错退出 ——
+  防止以后又有人往 `dependencies` 里加浏览器库。代价：包内 `tools/` 里那些构建脚本（它们本来就要浏览器库）在精简包
+  里跑不了，服主侧用不到。
+
+服主解压方式也会明显影响开服耗时（包里小文件多）：
+
+* 用 `tar.exe -xf Stronghold-Protocol-Server-v<版本>-win-x64.zip`（Windows 10 1803 起自带）。同一台机器实测：裁剪后
+  `tar.exe` 约 6 秒（裁剪前是 23 秒），资源管理器右键「全部解压」要几十秒（裁剪前 66 秒）。
+* 不要解到 SMB / NFS / rclone / 映射驱动器，也不要解到被实时同步或实时扫描的目录。
+* 建议把目录加进杀软排除：`Add-MpPreference -ExclusionPath 'D:\sp-server'`（管理员 PowerShell）。
+* 包内 `app\node_modules` 已经是裁剪过的运行时依赖，不要在包内跑 `npm install`。
 
 发出去之前先自己跑一遍：
 

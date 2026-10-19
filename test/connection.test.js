@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   ADDRESS_KEY, TCP_ENDPOINT_KEY, TRANSPORT_KEY,
   parseEndpoint, parseAddress, defaultSocketUrl, readSettings, saveSettings, inviteCode, inviteAddress, nativePlatform, transportForAddress,
+  buildInviteLink,
 } from '../public/js/connection.js';
 
 /** Minimal localStorage stand-in. */
@@ -145,4 +146,37 @@ test('inviteAddress removes a room query before reconnecting, but keeps a bare k
   assert.equal(inviteAddress('room: ABCD'), null);
   assert.equal(inviteAddress('ABCD'), null);
   assert.equal(inviteAddress('https://game.example/?room=TOOLONG123'), null);
+});
+
+test('buildInviteLink shares the page URL in a browser', () => {
+  const loc = { origin: 'https://game.example', pathname: '/play/index.html' };
+  assert.equal(buildInviteLink('ABCD', { loc }), 'https://game.example/play/index.html?room=ABCD');
+  // an empty address/key has nothing to share
+  assert.equal(buildInviteLink('', { loc }), '');
+});
+
+test('buildInviteLink shares the TCP endpoint in the native shells, never the shell origin', () => {
+  // Android WebView: location.origin is the asset loader, so the link has to name the TCP endpoint instead
+  const androidLoc = { origin: 'https://appassets.androidplatform.net', pathname: '/index.html' };
+  assert.equal(
+    buildInviteLink('PAAP', { transport: 'tcp', address: '10.0.2.2:3001', loc: androidLoc }),
+    'tcp://10.0.2.2:3001/?room=PAAP',
+  );
+  // Tauri window: sp://localhost is just as unreachable for the other player
+  assert.equal(
+    buildInviteLink('PAAP', { transport: 'tcp', address: '[::1]:3001', loc: { origin: 'sp://localhost', pathname: '/' } }),
+    'tcp://[::1]:3001/?room=PAAP',
+  );
+  // tcp transport without a usable endpoint keeps the page URL rather than inventing one
+  assert.equal(
+    buildInviteLink('PAAP', { transport: 'tcp', address: '', loc: androidLoc }),
+    'https://appassets.androidplatform.net/index.html?room=PAAP',
+  );
+});
+
+test('a shared TCP invite round-trips into address and room code', () => {
+  const text = buildInviteLink('PAAP', { transport: 'tcp', address: '192.168.1.10:3001' });
+  assert.equal(text, 'tcp://192.168.1.10:3001/?room=PAAP');
+  assert.equal(inviteAddress(text), '192.168.1.10:3001');
+  assert.equal(inviteCode(text), 'PAAP');
 });
