@@ -102,4 +102,20 @@ npm run package:client:android # 收集已签名的 release APK
 npm run package:server:lite    # 精简服务端（不含素材）
 ```
 
+## 前端截图自检（不打包）
+
+改 CSS 或布局时不必走「打包 → 装机 → 截图」：
+
+```bash
+npm start                                                    # 另开一个终端，本地服务端在 3000
+node scripts/shots.mjs --name title --url http://127.0.0.1:3000/
+node scripts/shots.mjs --name title --url http://127.0.0.1:3000/ --compare test/e2e/out/shots
+```
+
+- 输出 `test/e2e/out/shots/<名字>.png`，同时报 HTTP 状态、页面标题、控制台/请求错误和横向溢出（`scrollWidth > clientWidth`）。
+- `--compare <目录>` 与上一版逐像素比，给出不同像素数与 `<名字>.diff.png`（差异标红、其余压暗）；与 `--out` 指向同一目录时，比的是「上一次 vs 这一次」。
+- 有控制台错误、横向溢出或与基线有差异时退出码为 1，可以直接当门禁。
+- 其它选项：`--size 1280x720`、`--wait 4000`（多等动画/素材）、`--full-page`、`--json`。
+- 它自己以 `--headless=new` 起本机 Chrome，再用 CDP 连它的调试端口（不用管道），所以需要 Chrome 或 `CHROME_PATH`。**在 DSH 沙箱里 Chrome 要建 Mojo 命名管道，会启动失败**，需对该条命令放宽权限或在沙箱外运行。
+
 改动历史见 `CHANGELOG.md`。

@@ -47,6 +47,7 @@
     "package:client:win": "node scripts/make-windows-client.mjs",
     "package:client:android": "node scripts/make-android-client.mjs",
     "native:check": "node tools/check-native-compat.mjs",
+    "shots": "node scripts/shots.mjs",
     "release:check": "node tools/release-policy.mjs --mainline"
   },
   "engines": {
