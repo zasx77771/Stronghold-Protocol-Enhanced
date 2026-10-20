@@ -46,10 +46,15 @@ rooms) and a deterministic battle sim shared by the server and the browser. It a
 Run the tests of what you touched first, then everything before opening the PR:
 
 ```bash
+node tools/affected.mjs                     # the tests your change actually needs (see docs/PROJECT-STATE.md)
 node --test test/<area>/<file>.test.js      # targeted
 npm run ci                                  # the CI checks locally (tools/ci.mjs): npm test, smoke, lint, imports, types
 npm run golden                              # golden results
 ```
+
+In a restricted sandbox `node --test <file>` fails with `spawn EPERM`; run `node test/<file>.test.js` instead.
+`node tools/affected.mjs` reads the git diff (default base `origin/ds-enhanced-mode`, `--uncommitted` for the working
+tree, `--run` to run them) and escalates to the full suite when shared code, `package.json` or an unknown file changed.
 
 Browser suites are off by default and need Chrome: `SP_E2E=1` (UI), `SP_REAL_E2E=1` (real match, needs assets),
 `RENDER_E2E=1`, `SIM_E2E=1` — see CONTRIBUTING.md §2. Battle tests are easiest with the helpers described in

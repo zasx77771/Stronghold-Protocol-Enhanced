@@ -118,4 +118,23 @@ node scripts/shots.mjs --name title --url http://127.0.0.1:3000/ --compare test/
 - 其它选项：`--size 1280x720`、`--wait 4000`（多等动画/素材）、`--full-page`、`--json`。
 - 它自己以 `--headless=new` 起本机 Chrome，再用 CDP 连它的调试端口（不用管道），所以需要 Chrome 或 `CHROME_PATH`。**在 DSH 沙箱里 Chrome 要建 Mojo 命名管道，会启动失败**，需对该条命令放宽权限或在沙箱外运行。
 
+## 按改动挑测试
+
+测试有 870 个文件，全量跑很慢。改完代码先让工具按改动挑：
+
+```bash
+node tools/affected.mjs                 # 相对 origin/ds-enhanced-mode 的全部改动
+node tools/affected.mjs --uncommitted   # 只看工作区（对比 HEAD）
+node tools/affected.mjs --staged        # 只看已暂存
+node tools/affected.mjs --run           # 挑出来顺手跑掉
+node tools/affected.mjs --json          # 给脚本用
+```
+
+- 判定方式：扫全部 `test/**/*.test.js` 的 import，建「文件 → 引用它的测试」反向表；改到哪个源文件，就跑引用了它的测试。
+- Rust（`src-tauri/`）、文档（`docs/`、`*.md`）、界面（`public/css`、`ui/`、`*.css`）分别提示对应的门禁命令，不混进 Node 测试清单。
+- **会自动升级为全量**：改了 `package.json` 等根配置；改了 `shared/`、`server/`、`public/js/` 却没有测试引用（可能是测试按路径读文件，索引看不到）；有文件无法归类；挑出的测试超过总量一半。
+- 宁可多跑不可漏跑；它只影响「本地先跑哪些」，合入前的 `npm run ci` 仍是全量。
+
+跑单个测试请用 `node test/<文件>`，不要用 `node --test <文件>`——后者要 spawn 子进程，受限沙箱里报 `spawn EPERM`。
+
 改动历史见 `CHANGELOG.md`。
