@@ -272,22 +272,7 @@ WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe
 执行 `Unblock-File`，文件名用 ASCII 是为了避免 zip 内中文名在部分解压工具里变成乱码）；或解压前先对 zip 右键 → 属性 → 勾「解除锁定」。自签名证书不会被 SmartScreen 认可，
 要彻底消除提示只能给 exe 做代码签名（EV 证书立即生效，OV 证书需要累积下载信誉）。
 
-### 8.1 改名不用重编（运行期标题）
-
-窗口标题默认取 `tauri.conf.json` 的 `app.windows[].title`，但可以在运行时覆盖，不必重新打包：
-
-- 环境变量 `SP_WINDOW_TITLE`，优先级最高；
-- `%LOCALAPPDATA%\Stronghold Protocol Enhanced\client.json` 里的 `windowTitle`：
-
-```json
-{ "windowTitle": "卫戍协议：盟约" }
-```
-
-两者都没有、值为空、或 `client.json` 不是合法 JSON 时，退回编译进包的标题；文件里的其他键留给后续配置复用。
-由 `src-tauri/src/lib.rs` 的 `window_title_override()` 在启动时应用，改名只影响窗口标题，exe 文件名与安装目录名仍由
-`tauri.conf.json` 的 `productName` 决定——改那一个仍然要重新构建。
-
-### 8.2 改 Rust 先用 debug 检查
+### 8.1 改 Rust 先用 debug 检查
 
 `cargo check` 默认是 debug profile，**改 Rust 时不要习惯性加 `--release`**：debug 不开优化、只做类型检查，实测快三成左右；产物在 `target/debug`，与打包用的 `target/release` 互不干扰，出包缓存不会被冲掉。
 
@@ -310,7 +295,7 @@ node scripts/rust-check.mjs --time    # 只报耗时，不刷编译细节
 
 结论：**迭代一律 debug**，只有「改完要出包」或「怀疑 profile 相关差异」时才跑 `--release`。debug 首次要把依赖编一遍，之后复用；切回 `--release` 时 release 缓存仍在，打包不会因此变慢。
 
-### 8.3 拷客户端别用资源管理器
+### 8.2 拷客户端别用资源管理器
 
 便携客户端是三万多个小文件（1.1 GB），用资源管理器或 `Copy-Item` 拷要两分半，`robocopy /MT` 只要二十秒——同样一棵树、同一块硬盘，实测：
 
