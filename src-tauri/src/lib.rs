@@ -329,4 +329,37 @@ mod title_tests {
         assert_eq!(pick_window_title(None, Some(r#"{"windowTitle":42}"#)), None);
         assert_eq!(pick_window_title(None, Some(r#"{"other":"x"}"#)), None);
     }
+
+    /// 端到端走一遍真实取值：环境变量 → `%LOCALAPPDATA%\Stronghold Protocol Enhanced\client.json`。
+    /// 改的是进程级环境变量，所以这个用例自己建临时目录、结束时还原，不与其他用例共享状态。
+    #[cfg(windows)]
+    #[test]
+    fn the_runtime_file_is_found_where_the_installer_puts_it() {
+        use super::window_title_override;
+
+        let sandbox = std::env::temp_dir().join(format!("sp-title-{}", std::process::id()));
+        let runtime = sandbox.join("Stronghold Protocol Enhanced");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let previous_local = std::env::var_os("LOCALAPPDATA");
+        std::env::set_var("LOCALAPPDATA", &sandbox);
+
+        // 没有环境变量、也没有文件：返回 None，窗口保持 tauri.conf.json 的编译标题
+        std::env::remove_var("SP_WINDOW_TITLE");
+        assert_eq!(window_title_override(), None);
+
+        // 文件存在：用文件里的标题
+        std::fs::write(runtime.join("client.json"), r#"{"windowTitle":"文件标题"}"#).unwrap();
+        assert_eq!(window_title_override().as_deref(), Some("文件标题"));
+
+        // 环境变量优先
+        std::env::set_var("SP_WINDOW_TITLE", "环境标题");
+        assert_eq!(window_title_override().as_deref(), Some("环境标题"));
+        std::env::remove_var("SP_WINDOW_TITLE");
+
+        match previous_local {
+            Some(value) => std::env::set_var("LOCALAPPDATA", value),
+            None => std::env::remove_var("LOCALAPPDATA"),
+        }
+        std::fs::remove_dir_all(&sandbox).ok();
+    }
 }
