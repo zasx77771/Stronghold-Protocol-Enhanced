@@ -269,3 +269,18 @@ WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe
 「更多信息 → 仍要运行」；或双击包内由 `scripts/make-windows-client.mjs` 生成的 `unblock.bat`（对本目录所有文件
 执行 `Unblock-File`，文件名用 ASCII 是为了避免 zip 内中文名在部分解压工具里变成乱码）；或解压前先对 zip 右键 → 属性 → 勾「解除锁定」。自签名证书不会被 SmartScreen 认可，
 要彻底消除提示只能给 exe 做代码签名（EV 证书立即生效，OV 证书需要累积下载信誉）。
+
+### 8.1 改名不用重编（运行期标题）
+
+窗口标题默认取 `tauri.conf.json` 的 `app.windows[].title`，但可以在运行时覆盖，不必重新打包：
+
+- 环境变量 `SP_WINDOW_TITLE`，优先级最高；
+- `%LOCALAPPDATA%\Stronghold Protocol Enhanced\client.json` 里的 `windowTitle`：
+
+```json
+{ "windowTitle": "卫戍协议：盟约" }
+```
+
+两者都没有、值为空、或 `client.json` 不是合法 JSON 时，退回编译进包的标题；文件里的其他键留给后续配置复用。
+由 `src-tauri/src/lib.rs` 的 `window_title_override()` 在启动时应用，改名只影响窗口标题，exe 文件名与安装目录名仍由
+`tauri.conf.json` 的 `productName` 决定——改那一个仍然要重新构建。

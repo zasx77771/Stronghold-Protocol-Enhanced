@@ -18,6 +18,12 @@
 版本校验：`node tools/release-policy.mjs` 必须输出
 `Release policy valid: upstream 0.3.2, local 3.2.2, Android versionCode 33.`（--mainline 只用于上游基线首次发布，3.2.2 的修订号不为 0，不加该开关）
 
+版本写入：`node tools/release-policy.mjs --sync 3.2.3 [--code 34]` 从一处写入 `package.json`、`package-lock.json`、
+`shared/constants.js`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、
+`android/app/build.gradle` 的 `versionName` 与 `release-policy.json` 的 `androidVersionCode`（不给 `--code` 时不动
+versionCode），写完后按上面同一套规则复校验。不带版本参数的 `--sync` 只把 `package.json` 的当前版本补齐到其余副本。
+`src-tauri/Cargo.lock` 里本包的那一行也纳入校验（3.2.2 曾出现 lock 仍写 3.2.1，下一次 `cargo build` 才被改写）。
+
 ## 产物与命名
 
 正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 客户端产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）；`3.2.2` 只发服务端包，客户端与 APK 未重打：

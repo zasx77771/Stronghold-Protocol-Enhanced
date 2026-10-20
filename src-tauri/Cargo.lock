@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "stronghold-protocol-native"
-version = "3.2.1"
+version = "3.2.2"
 dependencies = [
  "hex",
  "serde",
