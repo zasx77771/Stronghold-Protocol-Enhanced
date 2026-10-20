@@ -52,7 +52,8 @@
     "native:rust:check:release": "node scripts/rust-check.mjs --release",
     "win:copy": "node scripts/win-copy.mjs",
     "shots": "node scripts/shots.mjs",
-    "release:check": "node tools/release-policy.mjs --mainline"
+    "release:check": "node tools/release-policy.mjs",
+    "release:sync": "node tools/release-policy.mjs --sync"
   },
   "engines": {
     "node": ">=22"
