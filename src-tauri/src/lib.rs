@@ -18,6 +18,41 @@ fn runtime_dir() -> std::path::PathBuf {
         .join("Stronghold Protocol Enhanced")
 }
 
+/// Where an operator renames the client without a rebuild: `client.json` next to the runtime folder
+/// the installer already owns.
+#[cfg(windows)]
+fn client_config_path() -> std::path::PathBuf {
+    runtime_dir().join("client.json")
+}
+
+/// Decides the window title from the runtime sources, in order: `SP_WINDOW_TITLE`, then
+/// `windowTitle` in `client.json`. A blank or unparseable value is not a title, so the caller keeps
+/// the one compiled into `tauri.conf.json`.
+///
+/// The name used to be a build input — renaming the client meant repacking and reinstalling both
+/// clients for one string. The compiled value stays as the default; this is the override.
+fn pick_window_title(env_value: Option<&str>, config_text: Option<&str>) -> Option<String> {
+    if let Some(raw) = env_value {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let parsed: serde_json::Value = serde_json::from_str(config_text?.trim()).ok()?;
+    let title = parsed.get("windowTitle")?.as_str()?.trim();
+    if title.is_empty() { None } else { Some(title.to_string()) }
+}
+
+/// The runtime override, if any: environment first, then the client config file.
+fn window_title_override() -> Option<String> {
+    let env_value = std::env::var("SP_WINDOW_TITLE").ok();
+    #[cfg(windows)]
+    let config_text = std::fs::read_to_string(client_config_path()).ok();
+    #[cfg(not(windows))]
+    let config_text: Option<String> = None;
+    pick_window_title(env_value.as_deref(), config_text.as_deref())
+}
+
 fn append_log(path: &std::path::Path, text: &str) -> bool {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -196,6 +231,13 @@ fn build_app() -> tauri::Result<tauri::App> {
             let client_root = protocol::client_root(app.handle())
                 .unwrap_or_else(|| std::path::PathBuf::from("client"));
             app.manage(assets::AssetStore::open(store_root, &client_root));
+            // A title from `SP_WINDOW_TITLE` or `client.json` wins over the compiled one; see
+            // `window_title_override`. The window exists by the time setup runs.
+            if let Some(title) = window_title_override() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title(&title);
+                }
+            }
             let _ = app.emit("sp-native-ready", serde_json::json!({ "platform": "windows" }));
             Ok(())
         })
@@ -249,4 +291,75 @@ fn start_failed(message: &str, profiles: &[std::path::PathBuf]) -> i32 {
     }
     report_failure(message);
     1
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::pick_window_title;
+
+    #[test]
+    fn environment_wins_over_the_config_file() {
+        assert_eq!(
+            pick_window_title(Some("卫戍协议：盟约"), Some(r#"{"windowTitle":"Other"}"#)).as_deref(),
+            Some("卫戍协议：盟约")
+        );
+    }
+
+    #[test]
+    fn a_blank_environment_value_falls_through_to_the_file() {
+        assert_eq!(
+            pick_window_title(Some("   "), Some(r#"{"windowTitle":"From file"}"#)).as_deref(),
+            Some("From file")
+        );
+    }
+
+    #[test]
+    fn the_file_supplies_the_title_when_the_environment_is_unset() {
+        assert_eq!(
+            pick_window_title(None, Some(r#"{"windowTitle":"  卫戍协议  "}"#)).as_deref(),
+            Some("卫戍协议")
+        );
+    }
+
+    #[test]
+    fn a_missing_or_broken_file_keeps_the_compiled_title() {
+        assert_eq!(pick_window_title(None, None), None);
+        assert_eq!(pick_window_title(None, Some("not json")), None);
+        assert_eq!(pick_window_title(None, Some(r#"{"windowTitle":""}"#)), None);
+        assert_eq!(pick_window_title(None, Some(r#"{"windowTitle":42}"#)), None);
+        assert_eq!(pick_window_title(None, Some(r#"{"other":"x"}"#)), None);
+    }
+
+    /// 端到端走一遍真实取值：环境变量 → `%LOCALAPPDATA%\Stronghold Protocol Enhanced\client.json`。
+    /// 改的是进程级环境变量，所以这个用例自己建临时目录、结束时还原，不与其他用例共享状态。
+    #[cfg(windows)]
+    #[test]
+    fn the_runtime_file_is_found_where_the_installer_puts_it() {
+        use super::window_title_override;
+
+        let sandbox = std::env::temp_dir().join(format!("sp-title-{}", std::process::id()));
+        let runtime = sandbox.join("Stronghold Protocol Enhanced");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let previous_local = std::env::var_os("LOCALAPPDATA");
+        std::env::set_var("LOCALAPPDATA", &sandbox);
+
+        // 没有环境变量、也没有文件：返回 None，窗口保持 tauri.conf.json 的编译标题
+        std::env::remove_var("SP_WINDOW_TITLE");
+        assert_eq!(window_title_override(), None);
+
+        // 文件存在：用文件里的标题
+        std::fs::write(runtime.join("client.json"), r#"{"windowTitle":"文件标题"}"#).unwrap();
+        assert_eq!(window_title_override().as_deref(), Some("文件标题"));
+
+        // 环境变量优先
+        std::env::set_var("SP_WINDOW_TITLE", "环境标题");
+        assert_eq!(window_title_override().as_deref(), Some("环境标题"));
+        std::env::remove_var("SP_WINDOW_TITLE");
+
+        match previous_local {
+            Some(value) => std::env::set_var("LOCALAPPDATA", value),
+            None => std::env::remove_var("LOCALAPPDATA"),
+        }
+        std::fs::remove_dir_all(&sandbox).ok();
+    }
 }

@@ -271,3 +271,58 @@ WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe
 「更多信息 → 仍要运行」；或双击包内由 `scripts/make-windows-client.mjs` 生成的 `unblock.bat`（对本目录所有文件
 执行 `Unblock-File`，文件名用 ASCII 是为了避免 zip 内中文名在部分解压工具里变成乱码）；或解压前先对 zip 右键 → 属性 → 勾「解除锁定」。自签名证书不会被 SmartScreen 认可，
 要彻底消除提示只能给 exe 做代码签名（EV 证书立即生效，OV 证书需要累积下载信誉）。
+
+### 8.1 改名不用重编（运行期标题）
+
+窗口标题默认取 `tauri.conf.json` 的 `app.windows[].title`，但可以在运行时覆盖，不必重新打包：
+
+- 环境变量 `SP_WINDOW_TITLE`，优先级最高；
+- `%LOCALAPPDATA%\Stronghold Protocol Enhanced\client.json` 里的 `windowTitle`：
+
+```json
+{ "windowTitle": "卫戍协议：盟约" }
+```
+
+两者都没有、值为空、或 `client.json` 不是合法 JSON 时，退回编译进包的标题；文件里的其他键留给后续配置复用。
+由 `src-tauri/src/lib.rs` 的 `window_title_override()` 在启动时应用，改名只影响窗口标题，exe 文件名与安装目录名仍由
+`tauri.conf.json` 的 `productName` 决定——改那一个仍然要重新构建。
+
+### 8.2 改 Rust 先用 debug 检查
+
+`cargo check` 默认是 debug profile，**改 Rust 时不要习惯性加 `--release`**：debug 不开优化、只做类型检查，实测快三成左右；产物在 `target/debug`，与打包用的 `target/release` 互不干扰，出包缓存不会被冲掉。
+
+```bash
+npm run native:rust:check             # cargo check（debug），日常改 Rust 用这个
+npm run native:rust:check:release     # 和打包同 profile，只在提交前对齐
+node scripts/rust-check.mjs --tests   # 连测试一起检查
+node scripts/rust-check.mjs --time    # 只报耗时，不刷编译细节
+```
+
+实测（本机 Windows，`src-tauri`，2026-10-20）：
+
+| 场景 | debug | release |
+| --- | --- | --- |
+| 改一行 `src/lib.rs` 后 `cargo check` | 3 分 17 秒 | 4 分 59 秒 |
+| 冷启动 `cargo check`（依赖全没编过） | 10 分 48 秒 | 上一轮多次合计约 15 分钟 |
+| 首次 `cargo test --lib`（含依赖 codegen） | 11 分 03 秒 | 16 分 28 秒 |
+| 改一行后再 `cargo test --lib` | 4 分 00 秒 | — |
+| 用例本身（18 个） | 0.07–0.08 秒 | 同 |
+
+结论：**迭代一律 debug**，只有「改完要出包」或「怀疑 profile 相关差异」时才跑 `--release`。debug 首次要把依赖编一遍，之后复用；切回 `--release` 时 release 缓存仍在，打包不会因此变慢。
+
+### 8.3 拷客户端别用资源管理器
+
+便携客户端是三万多个小文件（1.1 GB），用资源管理器或 `Copy-Item` 拷要两分半，`robocopy /MT` 只要二十秒——同样一棵树、同一块硬盘，实测：
+
+| 方式 | 命令 | 用时 |
+| --- | --- | --- |
+| 资源管理器 / `Copy-Item` | `Copy-Item src dst -Recurse` | 2 分 25 秒 |
+| robocopy 16 线程 | `npm run win:copy -- src dst` | 20.2 秒 |
+
+```bash
+npm run win:copy -- "<源目录>" "<目标目录>"          # 默认 16 线程
+node scripts/win-copy.mjs src dst --threads 32       # 小文件多时加线程
+node scripts/win-copy.mjs src dst --dry-run          # 先看要拷什么
+```
+
+脚本只是包了 `robocopy /E /MT`（退出码 0-7 算成功，8 以上报错），找不到 robocopy 时退回普通递归复制。另外：**测试不要往桌面拷**，直接从 `enhanced-client-servers` 的输出目录启动 exe，桌面只留快捷方式。

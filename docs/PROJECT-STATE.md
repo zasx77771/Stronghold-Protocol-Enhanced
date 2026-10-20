@@ -18,6 +18,12 @@
 版本校验：`node tools/release-policy.mjs` 必须输出
 `Release policy valid: upstream 0.3.2, local 3.2.2, Android versionCode 33.`（--mainline 只用于上游基线首次发布，3.2.2 的修订号不为 0，不加该开关）
 
+版本写入：`node tools/release-policy.mjs --sync 3.2.3 [--code 34]` 从一处写入 `package.json`、`package-lock.json`、
+`shared/constants.js`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、
+`android/app/build.gradle` 的 `versionName` 与 `release-policy.json` 的 `androidVersionCode`（不给 `--code` 时不动
+versionCode），写完后按上面同一套规则复校验。不带版本参数的 `--sync` 只把 `package.json` 的当前版本补齐到其余副本。
+`src-tauri/Cargo.lock` 里本包的那一行也纳入校验（3.2.2 曾出现 lock 仍写 3.2.1，下一次 `cargo build` 才被改写）。
+
 ## 产物与命名
 
 正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 客户端产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）；`3.2.2` 只发服务端包，客户端与 APK 未重打：
@@ -95,5 +101,40 @@ npm run package:client:win     # Windows 便携客户端（需 Rust MSVC + 已�
 npm run package:client:android # 收集已签名的 release APK
 npm run package:server:lite    # 精简服务端（不含素材）
 ```
+
+## 前端截图自检（不打包）
+
+改 CSS 或布局时不必走「打包 → 装机 → 截图」：
+
+```bash
+npm start                                                    # 另开一个终端，本地服务端在 3000
+node scripts/shots.mjs --name title --url http://127.0.0.1:3000/
+node scripts/shots.mjs --name title --url http://127.0.0.1:3000/ --compare test/e2e/out/shots
+```
+
+- 输出 `test/e2e/out/shots/<名字>.png`，同时报 HTTP 状态、页面标题、控制台/请求错误和横向溢出（`scrollWidth > clientWidth`）。
+- `--compare <目录>` 与上一版逐像素比，给出不同像素数与 `<名字>.diff.png`（差异标红、其余压暗）；与 `--out` 指向同一目录时，比的是「上一次 vs 这一次」。
+- 有控制台错误、横向溢出或与基线有差异时退出码为 1，可以直接当门禁。
+- 其它选项：`--size 1280x720`、`--wait 4000`（多等动画/素材）、`--full-page`、`--json`。
+- 它自己以 `--headless=new` 起本机 Chrome，再用 CDP 连它的调试端口（不用管道），所以需要 Chrome 或 `CHROME_PATH`。**在 DSH 沙箱里 Chrome 要建 Mojo 命名管道，会启动失败**，需对该条命令放宽权限或在沙箱外运行。
+
+## 按改动挑测试
+
+测试有 870 个文件，全量跑很慢。改完代码先让工具按改动挑：
+
+```bash
+node tools/affected.mjs                 # 相对 origin/ds-enhanced-mode 的全部改动
+node tools/affected.mjs --uncommitted   # 只看工作区（对比 HEAD）
+node tools/affected.mjs --staged        # 只看已暂存
+node tools/affected.mjs --run           # 挑出来顺手跑掉
+node tools/affected.mjs --json          # 给脚本用
+```
+
+- 判定方式：扫全部 `test/**/*.test.js` 的 import，建「文件 → 引用它的测试」反向表；改到哪个源文件，就跑引用了它的测试。
+- Rust（`src-tauri/`）、文档（`docs/`、`*.md`）、界面（`public/css`、`ui/`、`*.css`）分别提示对应的门禁命令，不混进 Node 测试清单。
+- **会自动升级为全量**：改了 `package.json` 等根配置；改了 `shared/`、`server/`、`public/js/` 却没有测试引用（可能是测试按路径读文件，索引看不到）；有文件无法归类；挑出的测试超过总量一半。
+- 宁可多跑不可漏跑；它只影响「本地先跑哪些」，合入前的 `npm run ci` 仍是全量。
+
+跑单个测试请用 `node test/<文件>`，不要用 `node --test <文件>`——后者要 spawn 子进程，受限沙箱里报 `spawn EPERM`。
 
 改动历史见 `CHANGELOG.md`。
