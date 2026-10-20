@@ -42,6 +42,11 @@ versionCode），写完后按上面同一套规则复校验。不带版本参数
 - `3.2.2` 起的精简服务端包另行携带 `app\MANIFEST.json`，并额外出
   `Stronghold-Protocol-Server-v<版本>-win-x64-update.zip`（服务端增量包，见 [WINDOWS.md](WINDOWS.md) §7.1）。
   已发布的 3.2.0 / 3.2.1 完整包没有这份清单，仍可充当增量包的基线：服务器核对的是升级后的状态，不看基线包有没有清单。
+- 3.2.2 只发服务端：完整包 `Stronghold-Protocol-Server-v3.2.2-win-x64.zip`（52,862,385 B，2,983 个文件 / 解压后
+  150.0 MB）与增量包 `Stronghold-Protocol-Server-v3.2.2-win-x64-update.zip`（559,424 B，18 个文件，同时支持 3.2.0 与
+  3.2.1 两个基线）。哈希与端到端验证记录只留在本地
+  `enhanced-client-servers/02-增强版正式发布/v3.2.2/release-validation/v3.2.2-server.md`，不入 Git。
+- 服务端增量包保留最近 2 个基线，已发布的完整包与增量包全部保留、不清理（客户端增量包才按主线验证后清理中间小版本）。
 
 ## 3.2.1 包含的修复
 
@@ -86,6 +91,8 @@ versionCode），写完后按上面同一套规则复校验。不带版本参数
 
 - 完整 `npm run ci` 未跑完：本机缺少 `SeCreateSymbolicLink` 特权，依赖符号链接的用例报 `EPERM`，
   另有并行构建下的超时；相关用例已单独复跑通过，但完整套件结论仍按「未通过」记录。
+- 3.2.2 的完整 `npm test` 没有在放开限制的环境重跑（8,621 个用例里 89 个失败，均判断为本机 symlink/子进程/超时/
+  性能阈值）：下一次生成完整包时按 `RELEASE-POLICY.md` 验证清单补跑，全过则把 3.2.2 的结论记为正常，未过照实报告。
 - 上游 `0.3.2` 尚未打标签，增强版 `3.2.0` 的「上游基线」指 `upstream/master` 的 `c9d804f4`。
 - Windows 增量包（`--update`）本轮未生成。
 
@@ -93,13 +100,15 @@ versionCode），写完后按上面同一套规则复校验。不带版本参数
 
 ```bash
 node tools/doctor.mjs          # 环境与素材自检
-node tools/release-policy.mjs --mainline
+npm run release:check          # 版本一致性（上游基线首次发布用 node tools/release-policy.mjs --mainline）
+npm run release:sync -- 3.2.3 --code 34   # 一处写 7 个文件版本号与 androidVersionCode
 node tools/check-native-compat.mjs
 node tools/i18n.mjs check --all --strict
 node --test test/docs-consistency.test.js test/docs-paths.test.js
 npm run package:client:win     # Windows 便携客户端（需 Rust MSVC + 已构建的 release exe）
 npm run package:client:android # 收集已签名的 release APK
 npm run package:server:lite    # 精简服务端（不含素材）
+npm run package:server:update -- --from <旧包>,<旧包>   # 服务端增量包（覆盖最近 2 个基线）
 ```
 
 ## 前端截图自检（不打包）
