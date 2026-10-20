@@ -144,6 +144,7 @@ node scripts/make-server-lite.mjs --update --from <旧包1>,<旧包2> --out D:\r
 `--out` / `--force` 的删除规则与第 2 节一致，只是「上一次的产物」认的是
 包根有 `README-Lite-Server.md` 和 `app\`。目录名照 `--out`，压缩包固定写在它同级、名为
 `Stronghold-Protocol-Server-v<版本>-win-x64.zip`（沿用 2.x 起服主下载的文件名）。
+四个产物的固定文件名与上传前检查集中写在 [../scripts/CLIENT-UPDATES.md](../scripts/CLIENT-UPDATES.md)。
 
 产物内容：
 
@@ -253,6 +254,7 @@ LICENSE / NOTICE.md / THIRD-PARTY-NOTICES.md
 「exe 所在目录的 `client\`」找网页，找不到就 404。这里**不生成安装器**（`tauri.conf.json` 的 `bundle.targets`
 不用 `nsis`），发布产物就是这个目录或它的 zip。目录名保持 `--out` 给的名字，zip 固定叫
 `Stronghold-Protocol-Client-v<版本>-win-x64.zip`（与 `--out` 同级），沿用 2.x 起玩家下载的文件名。
+四个产物的固定文件名与上传前检查集中写在 [../scripts/CLIENT-UPDATES.md](../scripts/CLIENT-UPDATES.md)。
 素材包与增量包见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) 第 3 节。
 
 启动失败排查：`main.rs` 先跑 `prepare_runtime()`，按「显式 `WEBVIEW2_USER_DATA_FOLDER` → 程序目录的
