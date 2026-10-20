@@ -307,3 +307,20 @@ node scripts/rust-check.mjs --time    # 只报耗时，不刷编译细节
 | 用例本身（18 个） | 0.07–0.08 秒 | 同 |
 
 结论：**迭代一律 debug**，只有「改完要出包」或「怀疑 profile 相关差异」时才跑 `--release`。debug 首次要把依赖编一遍，之后复用；切回 `--release` 时 release 缓存仍在，打包不会因此变慢。
+
+### 8.3 拷客户端别用资源管理器
+
+便携客户端是三万多个小文件（1.1 GB），用资源管理器或 `Copy-Item` 拷要两分半，`robocopy /MT` 只要二十秒——同样一棵树、同一块硬盘，实测：
+
+| 方式 | 命令 | 用时 |
+| --- | --- | --- |
+| 资源管理器 / `Copy-Item` | `Copy-Item src dst -Recurse` | 2 分 25 秒 |
+| robocopy 16 线程 | `npm run win:copy -- src dst` | 20.2 秒 |
+
+```bash
+npm run win:copy -- "<源目录>" "<目标目录>"          # 默认 16 线程
+node scripts/win-copy.mjs src dst --threads 32       # 小文件多时加线程
+node scripts/win-copy.mjs src dst --dry-run          # 先看要拷什么
+```
+
+脚本只是包了 `robocopy /E /MT`（退出码 0-7 算成功，8 以上报错），找不到 robocopy 时退回普通递归复制。另外：**测试不要往桌面拷**，直接从 `enhanced-client-servers` 的输出目录启动 exe，桌面只留快捷方式。

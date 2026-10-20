@@ -50,6 +50,7 @@
     "native:check": "node tools/check-native-compat.mjs",
     "native:rust:check": "node scripts/rust-check.mjs",
     "native:rust:check:release": "node scripts/rust-check.mjs --release",
+    "win:copy": "node scripts/win-copy.mjs",
     "shots": "node scripts/shots.mjs",
     "release:check": "node tools/release-policy.mjs --mainline"
   },
