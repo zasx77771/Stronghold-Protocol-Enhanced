@@ -284,3 +284,26 @@ WebView2 数据目录，并把启动记录与错误写进 `client.log`（先 exe
 两者都没有、值为空、或 `client.json` 不是合法 JSON 时，退回编译进包的标题；文件里的其他键留给后续配置复用。
 由 `src-tauri/src/lib.rs` 的 `window_title_override()` 在启动时应用，改名只影响窗口标题，exe 文件名与安装目录名仍由
 `tauri.conf.json` 的 `productName` 决定——改那一个仍然要重新构建。
+
+### 8.2 改 Rust 先用 debug 检查
+
+`cargo check` 默认是 debug profile，**改 Rust 时不要习惯性加 `--release`**：debug 不开优化、只做类型检查，实测快三成左右；产物在 `target/debug`，与打包用的 `target/release` 互不干扰，出包缓存不会被冲掉。
+
+```bash
+npm run native:rust:check             # cargo check（debug），日常改 Rust 用这个
+npm run native:rust:check:release     # 和打包同 profile，只在提交前对齐
+node scripts/rust-check.mjs --tests   # 连测试一起检查
+node scripts/rust-check.mjs --time    # 只报耗时，不刷编译细节
+```
+
+实测（本机 Windows，`src-tauri`，2026-10-20）：
+
+| 场景 | debug | release |
+| --- | --- | --- |
+| 改一行 `src/lib.rs` 后 `cargo check` | 3 分 17 秒 | 4 分 59 秒 |
+| 冷启动 `cargo check`（依赖全没编过） | 10 分 48 秒 | 上一轮多次合计约 15 分钟 |
+| 首次 `cargo test --lib`（含依赖 codegen） | 11 分 03 秒 | 16 分 28 秒 |
+| 改一行后再 `cargo test --lib` | 4 分 00 秒 | — |
+| 用例本身（18 个） | 0.07–0.08 秒 | 同 |
+
+结论：**迭代一律 debug**，只有「改完要出包」或「怀疑 profile 相关差异」时才跑 `--release`。debug 首次要把依赖编一遍，之后复用；切回 `--release` 时 release 缓存仍在，打包不会因此变慢。
