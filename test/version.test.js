@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, PROTOCOL_VERSION, DEV_BUILD } from '../shared/constants.js';
@@ -26,12 +27,30 @@ test('one release version: package.json, package-lock.json and APP_VERSION', () 
   assert.equal(pkg.private, true, 'never published to npm');
 });
 
-test('the native Windows and Android shells use the same governed release version', () => {
-  assert.deepEqual(validateReleasePolicy(), {
-    localVersion: pkg.version,
-    upstreamMainlineVersion: '0.3.2',
-    androidVersionCode: 34,
-  });
+test('the native Windows and Android shells use the same governed release version', (t) => {
+  // The expectations live in release-policy.json, not here: a hardcoded androidVersionCode made every release
+  // fail this test until someone edited the number by hand (3.2.2 → 3.2.3 moved 33 → 34 in the same commit).
+  const policy = JSON.parse(read('release-policy.json'));
+  const state = validateReleasePolicy();
+  assert.equal(state.localVersion, APP_VERSION, 'every shell carries APP_VERSION');
+  assert.equal(state.localVersion, pkg.version);
+  assert.equal(state.upstreamMainlineVersion, policy.upstreamMainlineVersion);
+  assert.equal(state.androidVersionCode, policy.androidVersionCode, 'the shells carry release-policy.json');
+  assert.ok(Number.isInteger(policy.androidVersionCode) && policy.androidVersionCode > 0, 'a positive integer');
+
+  // The versionCode only ever grows: compare it with the newest release tag. Skipped when git or tags are absent.
+  const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  let previous;
+  try {
+    const newest = git('tag', '--list', 'enhanced-v*', '--sort=-v:refname').split('\n')[0];
+    if (newest) previous = { tag: newest, code: JSON.parse(git('show', `${newest}:release-policy.json`)).androidVersionCode };
+  } catch { previous = undefined; }
+  if (!previous) return t.diagnostic('no enhanced-v* tag reachable, skipped the monotonic versionCode check');
+  const sameRelease = previous.tag === `enhanced-v${pkg.version}`;
+  assert.ok(
+    sameRelease ? policy.androidVersionCode === previous.code : policy.androidVersionCode > previous.code,
+    `androidVersionCode must ${sameRelease ? 'stay' : 'grow'} from ${previous.code} (${previous.tag}), received ${policy.androidVersionCode}`,
+  );
 });
 
 test('CHANGELOG.md opens with the release version, and the README links it', () => {
