@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebMessage;
+import android.webkit.WebMessagePort;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -43,6 +45,7 @@ public final class MainActivity extends Activity {
   private final ExecutorService io = Executors.newCachedThreadPool();
   private final Map<String, NativeSocket> sockets = new ConcurrentHashMap<>();
   private WebView webView;
+  private volatile WebMessagePort nativePort;
   private AssetStore assetStore;
   private ExecutorService assetExecutor;
   private volatile boolean importBusy;
@@ -76,6 +79,9 @@ public final class MainActivity extends Activity {
   }
 
   @Override protected void onDestroy() {
+    WebMessagePort port = nativePort;
+    nativePort = null;
+    if (port != null) { try { port.close(); } catch (RuntimeException ignored) { } }
     if (assetExecutor != null) assetExecutor.shutdownNow();
     for (NativeSocket socket : sockets.values()) socket.close(1000, "activity destroyed");
     sockets.clear();
@@ -274,6 +280,24 @@ public final class MainActivity extends Activity {
   }
 
   private final class TcpBridge {
+    /**
+     * The page asks for the inbound channel once per document.  Frames then travel over a
+     * WebMessagePort instead of one {@code evaluateJavascript} call per frame, which ran inside a
+     * render frame and cost a phone about three frames (~50 ms) between the socket reader and the
+     * client's pong bookkeeping.
+     */
+    @JavascriptInterface public void channelReady() {
+      runOnUiThread(() -> {
+        WebView view = webView;
+        if (view == null) return;
+        WebMessagePort stale = nativePort;
+        nativePort = null;
+        if (stale != null) { try { stale.close(); } catch (RuntimeException ignored) { } }
+        WebMessagePort[] channel = view.createWebMessageChannel();
+        nativePort = channel[0];
+        view.postWebMessage(new WebMessage("stronghold-tcp", new WebMessagePort[] { channel[1] }), Uri.parse(ORIGIN));
+      });
+    }
     @JavascriptInterface public void connect(String id, String host, int port) {
       if (id == null || host == null || port < 1 || port > 65535) { emit(id, "error", "invalid TCP endpoint", 0); return; }
       NativeSocket prior = sockets.remove(id);
@@ -384,6 +408,9 @@ public final class MainActivity extends Activity {
     void run() {
       try (Socket opened = new Socket(host, port)) {
         socket = opened;
+        // Every frame leaves in one write, so there is nothing for Nagle to coalesce; keeping it on
+        // would only add the peer's delayed-ACK window to small control frames.
+        try { opened.setTcpNoDelay(true); } catch (IOException ignored) { }
         emit(id, "open", "", 0);
         while (!opened.isClosed()) {
           byte[] length = readFully(opened.getInputStream(), 4);
@@ -402,9 +429,15 @@ public final class MainActivity extends Activity {
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
         if (bytes.length == 0 || bytes.length > 65536) throw new IOException("invalid TCP frame");
         if (socket == null) throw new IOException("TCP socket not open");
-        socket.getOutputStream().write(new byte[] {(byte)(bytes.length >>> 24), (byte)(bytes.length >>> 16), (byte)(bytes.length >>> 8), (byte)bytes.length});
-        socket.getOutputStream().write(bytes);
-        socket.getOutputStream().flush();
+        byte[] frame = new byte[4 + bytes.length];
+        frame[0] = (byte) (bytes.length >>> 24);
+        frame[1] = (byte) (bytes.length >>> 16);
+        frame[2] = (byte) (bytes.length >>> 8);
+        frame[3] = (byte) bytes.length;
+        System.arraycopy(bytes, 0, frame, 4, bytes.length);
+        OutputStream out = socket.getOutputStream();
+        out.write(frame);
+        out.flush();
       } catch (IOException error) { emit(id, "error", error.getMessage(), 0); }
     }
     void close(int code, String reason) {
@@ -417,7 +450,23 @@ public final class MainActivity extends Activity {
         + ("message".equals(type) ? ",\"data\":" + quoted(text) : "")
         + ("error".equals(type) ? ",\"message\":" + quoted(text) : "")
         + ("close".equals(type) ? ",\"code\":" + code + ",\"reason\":" + quoted(text) : "") + "}";
-    runOnUiThread(() -> webView.evaluateJavascript("window.__strongholdNativeTcpEvent && window.__strongholdNativeTcpEvent(" + json + ")", null));
+    // A port message is parsed on the page's own JavaScript thread; the evaluateJavascript fallback
+    // waits for a render frame, which is the ~50 ms per inbound frame this channel removes.
+    WebMessagePort port = nativePort;
+    if (port != null) {
+      runOnUiThread(() -> {
+        try { port.postMessage(new WebMessage(json)); }
+        catch (RuntimeException stale) { nativePort = null; deliver(json); }
+      });
+      return;
+    }
+    deliver(json);
+  }
+
+  private void deliver(String json) {
+    WebView view = webView;
+    if (view == null) return;
+    view.evaluateJavascript("window.__strongholdNativeTcpEvent && window.__strongholdNativeTcpEvent(" + json + ")", null);
   }
 
   private InputStream openAsset(String clean) throws IOException {
