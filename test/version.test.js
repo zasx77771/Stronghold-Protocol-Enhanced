@@ -30,7 +30,7 @@ test('the native Windows and Android shells use the same governed release versio
   assert.deepEqual(validateReleasePolicy(), {
     localVersion: pkg.version,
     upstreamMainlineVersion: '0.3.2',
-    androidVersionCode: 33,
+    androidVersionCode: 34,
   });
 });
 
