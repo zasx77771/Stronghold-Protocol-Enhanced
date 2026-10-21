@@ -1,3 +1,18 @@
+## 3.2.3 — 2026-10-21
+
+### Android 客户端
+
+- 修复客户端显示延迟约为网络 RTT 两倍的问题（手机实测约 160 ms，而同一网络下裸 ping 服务端 60–80 ms、PC 客户端 45–50 ms）。
+  壳内原先每条入站帧都走 `runOnUiThread(webView.evaluateJavascript(...))`，一次投递要等一个渲染帧（手机上约 50 ms），
+  一次 ping 往返叠两次。现在页面调用 `StrongholdAndroidTcp.channelReady()` 换取 WebMessagePort，帧直达页面 JS 线程；
+  `evaluateJavascript` 保留为旧壳或端口失效时的回退（PR #65）。
+- 顺带修正发送路径：`setTcpNoDelay(true)`，长度头与正文合成一次 `write`。
+- 需要安装本版 APK 才生效。
+
+### 其他平台
+
+- Windows 客户端与服务端本版无功能改动，仅随版本号重打包；服务端未改动，因此本版不生成服务端包与增量包。
+
 ## 3.2.2 — 2026-10-19
 
 ### 服务端
