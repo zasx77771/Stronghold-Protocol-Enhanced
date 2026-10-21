@@ -74,6 +74,24 @@
   // to its typed event.  It is intentionally the only event entrypoint exposed to native code.
   globalThis.__strongholdNativeTcpEvent = report;
 
+  // Android hands inbound frames over a WebMessagePort when the shell offers one.  The alternative,
+  // one `evaluateJavascript` per frame, waits for a render frame; a phone needed about three frames
+  // (~50 ms) per inbound frame, which showed up as a ping roughly twice the network RTT.  The page
+  // asks for the channel once per document and keeps the evaluateJavascript path as the fallback.
+  if (hasAndroid && typeof android.channelReady === 'function' && typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('message', (event) => {
+      const port = event.ports && event.ports[0];
+      if (!port) return;
+      try {
+        port.onmessage = (message) => {
+          try { report(JSON.parse(String(message?.data ?? ''))); } catch { /* malformed frame */ }
+        };
+        port.start();
+      } catch { /* a stale port after a reload */ }
+    });
+    try { android.channelReady(); } catch { /* older shell without the channel */ }
+  }
+
   function platform() {
     if (hasTauri) {
       return {

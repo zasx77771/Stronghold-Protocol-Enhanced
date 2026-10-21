@@ -189,6 +189,7 @@
 | R-003 | 体验 | 原生运行没有已配置 TCP 地址时不能依赖上游网页地址，也不能替玩家猜一个。 | 地址只在标题页的「服务器地址」填写并写入本机存储（`sp.server.address` 与 `sp.native.tcp`）；bridge 不另弹设置面板，也**没有任何内置默认地址**：没存过地址时不发起 TCP 连接，标题页状态改为「请先填写服务器地址」。浏览器不写这两个键。 | 已实施（2026-10-19 改：先删掉首次启动的本机地址设置面板，再删掉 `127.0.0.1:3001` 兜底，按用户要求以填写内容为准）。 |
 | R-004 | 契约 | 安卓壳与 Tauri 壳向 bridge 推送 TCP 事件的方式不同。 | 安卓壳用一次性的 `evaluateJavascript` 调用 `__strongholdNativeTcpEvent(<对象>)`；Tauri 壳带 `id` 与 `payload` 两个参数。bridge 同时接受两种形状，否则安卓端所有事件（含 `open`）都会被丢掉，连接停在「正在连接服务器」直到服务端 `hello timeout`。 | 已实施（2026-10-19 修 Android 卡在连接中），受 `test/native/bridge-contract.test.js` 保护。 |
 | R-005 | 体验 | 原生客户端左下角曾有常驻「素材」浮动按钮。 | 素材自 0.3.1 起随包内嵌，标题页已有「下载完整素材 / 导入素材包」，浮动按钮遮挡战场且无入口价值，已移除；原生素材状态通道（`__strongholdAssetUpdate`）保留给导入流程。 | 已实施（2026-10-19）。 |
+| R-006 | 性能 | 安卓客户端显示约 160 ms 延迟，而同一网络下 PC 客户端 45–50 ms、手机裸 ping 服务端 min 60 / avg 72 / max 80 ms。 | 根因在壳内而非网络：每条入站帧都走 `runOnUiThread(webView.evaluateJavascript(...))`，手机上一次投递约 50 ms（2–3 个渲染帧），一次 ping 往返叠两次。改为页面调用 `StrongholdAndroidTcp.channelReady()` 换取 WebMessagePort，帧经 `postWebMessage` 直达页面 JS 线程，`evaluateJavascript` 只作旧壳回退。顺带 `setTcpNoDelay(true)`，长度头与正文合成一次 `write`。 | 已实施（2026-10-20），受 `test/native/bridge-channel.test.js` 保护；手机实测延迟待用户复测。 |
 | I-001 | 环境 | 当前工作机没有 `cargo`、Java 或 Android Gradle 环境。 | 已运行静态兼容检查和 Node 契约测试；Windows 编译、Android APK 构建与实机 TCP 联调均标记为未运行，待具备工具链后执行。 | 未解决，不阻塞源码继续重构。 |
 | I-002 | 素材 | 原生 AssetStore、R2 校验与进度已接入两端；离线导入、镜像和正式打包仍属后续阶段。 | 阶段 B 已实施：同一 `sp-assets-*` 数据模型、原子提交、token 端点、进度状态与原生面板；Rust/Java 未编译验证。 | 已实施，待工具链验证。 |
 
