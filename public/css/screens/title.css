@@ -329,6 +329,8 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .title-connect__mode { padding: .08rem .14rem; border: 0; background: transparent; color: var(--text-lo); font: inherit; font-size: calc(.13 * var(--t)); letter-spacing: .08em; cursor: pointer; transition: color var(--t-fast), background var(--t-fast); }
 .title-connect__mode + .title-connect__mode { border-left: 1px solid rgba(255, 255, 255, .18); }
 .title-connect__mode.is-on { background: var(--mint-500); color: var(--text-on-mint); }
+/* 未选中的那一格也给 hover 反馈，和 .tabs__tab 同一套配色；选中格本身就是实底，不再叠色 */
+.title-connect__mode:not(.is-on):hover { color: var(--text-hi); background: rgba(78, 216, 175, .04); }
 .title-connect__endpoint { display: flex; align-items: flex-end; justify-content: center; gap: .1rem; min-width: 0; }
 .title-connect__address { flex: 1 1 auto; min-width: 0; text-align: left; }
 /* 地址与代号是同一张表单：两块都走 .field--lg（.68rem 高、.26 号字），输入框与「应用」同高。 */
