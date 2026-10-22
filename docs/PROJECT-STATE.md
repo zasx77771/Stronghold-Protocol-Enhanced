@@ -24,6 +24,14 @@
 versionCode），写完后按上面同一套规则复校验。不带版本参数的 `--sync` 只把 `package.json` 的当前版本补齐到其余副本。
 `src-tauri/Cargo.lock` 里本包的那一行也纳入校验（3.2.2 曾出现 lock 仍写 3.2.1，下一次 `cargo build` 才被改写）。
 
+## 待发布：连接方式切换与 TCP 地址（2026-10-22）
+
+本改动在 `feat/tcp-http-address` 分支，尚未打包、未升级版本号：
+
+- 标题卡在地址框上方恢复 `WebSocket / TCP` 分段切换（仅原生外壳显示；浏览器没有 TCP 桥，仍固定 WebSocket）。切换后点「应用」保存，传输方式变化时页面重新载入。
+- TCP 模式接受 `主机:端口`、`tcp://主机:端口`、`http://主机:端口`；`https://` 被拒绝（原生套接字没有 TLS），缺端口也被拒绝（端口 80 是 HTTP 服务，不是帧端点）。保存值统一规范化为 `主机:端口` 写入 `sp.server.address` 与 `sp.native.tcp`。
+- 粘贴的邀请链接若自带 `tcp://`，其传输方式覆盖切换按钮的选择。完整规则见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) R-008。
+
 ## 产物与命名
 
 正式产物只放工作区的 `enhanced-client-servers/02-增强版正式发布/v<版本>/`，目录名固定，文件名沿用旧口径。`3.2.1` 只升版本并发 Release，**未重打安装包**；下表是最后一次实际打出的 `3.2.0` 客户端产物（3.2.1 的界面修复已在 `04-测试与验证/v3.2.0-post-merge/` 的测试包里验证过）；`3.2.2` 只发服务端包，客户端与 APK 未重打：

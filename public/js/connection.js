@@ -45,11 +45,31 @@ export function defaultSocketUrl(loc = globalThis.location) {
 /**
  * Normalise what the player typed for the chosen transport.
  * Returns `{ok: true, transport, address, socketUrl?, endpoint?}` or `{ok: false, error}` where
- * `error` is a code the screen translates (`invalid_endpoint` / `invalid_address` / `invalid_scheme`).
+ * `error` is a code the screen translates (`invalid_endpoint` / `invalid_address` /
+ * `invalid_scheme` / `tls_unsupported`).
+ *
+ * The TCP branch also takes an `http://host:port` spelling: a player copies the web address of the
+ * game (a link, an invite, a bookmark) and wants that same host as the frame endpoint. The native
+ * TCP socket has no TLS, so `https://` is refused (`tls_unsupported`) instead of being silently
+ * downgraded to cleartext, and a spelled-out default port (`http://host`, port 80) is refused
+ * because port 80 serves HTTP, not this protocol.
  */
 export function parseAddress(text, { transport = 'websocket', loc = globalThis.location } = {}) {
   const raw = String(text ?? '').trim();
   if (transport === 'tcp') {
+    if (/^https:\/\//i.test(raw)) return { ok: false, error: 'tls_unsupported' };
+    if (/^wss?:\/\//i.test(raw)) return { ok: false, error: 'invalid_scheme' };
+    if (/^http:\/\//i.test(raw)) {
+      let url;
+      try { url = new URL(raw); } catch { return { ok: false, error: 'invalid_endpoint' }; }
+      if (!url.port) return { ok: false, error: 'invalid_endpoint' };
+      const host = url.hostname.replace(/^\[|\]$/g, '');
+      const port = Number(url.port);
+      if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+        return { ok: false, error: 'invalid_endpoint' };
+      }
+      return { ok: true, transport, address: `${host}:${port}`, endpoint: { host, port } };
+    }
     const endpoint = parseEndpoint(raw);
     if (!endpoint) return { ok: false, error: 'invalid_endpoint' };
     return { ok: true, transport, address: `${endpoint.host}:${endpoint.port}`, endpoint };

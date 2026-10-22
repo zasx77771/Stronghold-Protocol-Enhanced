@@ -102,9 +102,15 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(js, /root\.classList\.add\('title-open'\)/);
     assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ''), /:has\(/);
     // The server address lives in the login panel itself — first row, then the callsign — so it is
-    // not a second stacked panel of its own.
-    assert.doesNotMatch(js, /class="title-connect"/);
-    assert.match(js, /<div class="title-login">\s*<div class="title-connect__endpoint">/);
+    // not a second stacked panel of its own. Native shells show the WebSocket/TCP switch above that
+    // row (2026-10-22), the browser page has no TCP bridge and renders only the row.
+    assert.match(js, /<div class="title-login">\s*<div class="title-connect">/);
+    assert.match(js, /connection\.supportsTcp \? html`<div class="title-connect__modes" role="group" aria-label=\$\{t\('连接方式'\)\}/);
+    assert.match(js, /title-connect__mode\$\{transport === 'websocket' \? ' is-on' : ''\}/);
+    assert.match(js, /title-connect__mode\$\{transport === 'tcp' \? ' is-on' : ''\}/);
+    assert.match(js, /onClick=\$\{\(\) => setTransport\('tcp'\)\}/);
+    assert.match(js, /const \[transport, setTransport\] = useState\(connection\.transport\)/);
+    assert.match(js, /<div class="title-connect__endpoint">/);
     assert.match(js, /class="title-connect__endpoint"[\s\S]*class="title-connect__address"[\s\S]*<\$\{Button\} variant="ghost"/);
     assert.match(css, /\.title-connect__endpoint \{[^}]*display: flex;[^}]*align-items: flex-end;[^}]*justify-content: center;/);
     assert.match(css, /\.title-connect__endpoint > \.btn \{[^}]*align-self: flex-end;[^}]*min-width: max\(\.64rem, var\(--tap-min, 44px\)\);[^}]*height: \.68rem;[^}]*border-color: rgba\(255, 255, 255, \.14\);/);
@@ -112,7 +118,6 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(js, /<div class="title-connect__endpoint">\s*<\$\{TextField\} class="title-connect__address"[^>]*size="lg"/);
     assert.match(js, /<\$\{TextField\} label=\$\{t\('博士代号'\)\} micro="CALLSIGN" size="lg"/);
     assert.doesNotMatch(css, /\.title-connect__address \.field__input \{/);
-    assert.doesNotMatch(js, /title-connect__modes|title-connect__mode|setTransport/);
   });
 
   test('the withdrawn two-column legend strings are gone from every locale pack', () => {
