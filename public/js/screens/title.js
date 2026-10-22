@@ -180,8 +180,11 @@ export function TitleScreen() {
     if (currentName) setName((draft) => draft || currentName);
   }, [currentName]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // A native host infers TCP from `host:port` / `tcp://`; HTTP(S) and WS(S) use WebSocket.
+  // Server address and transport for this machine (connection.js): a browser page is always
+  // WebSocket; a native shell can pick TCP in the switch above the field. A pasted invite may
+  // carry its own transport (`tcp://host:port`), which wins over the switch.
   const [connection] = useState(() => readSettings());
+  const [transport, setTransport] = useState(connection.transport);
   const [address, setAddress] = useState(connection.address);
   const nameRef = useRef(null);
   // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
@@ -210,8 +213,8 @@ export function TitleScreen() {
     enterSession(name);
   };
 
-  // Apply the address typed above. The native bridge decides its transport at load time, so an
-  // inferred TCP/WebSocket change is saved first and then reloads the shell.
+  // Apply the address typed above. The native bridge decides its transport at load time, so a
+  // switch between TCP and WebSocket is saved first and then reloads the shell.
   const applyConnection = () => {
     const code = inviteCode(address);
     const linkedAddress = code ? inviteAddress(address) : null;
@@ -220,13 +223,17 @@ export function TitleScreen() {
     // the socket endpoint.
     if (code && !linkedAddress) { applyInvite(code); return; }
     const requestedAddress = linkedAddress || address;
-    const transport = connection.supportsTcp
-      ? transportForAddress(requestedAddress, connection.transport)
-      : 'websocket';
-    const parsed = parseAddress(requestedAddress, { transport });
+    // The switch decides unless the pasted invite names its own transport.
+    const chosen = connection.supportsTcp ? transport : 'websocket';
+    const effective = linkedAddress ? transportForAddress(linkedAddress, chosen) : chosen;
+    const parsed = parseAddress(requestedAddress, { transport: effective });
     if (!parsed.ok) {
-      const message = parsed.error === 'invalid_endpoint' ? t('请输入 主机:端口，例如 192.168.1.10:3001')
-        : parsed.error === 'invalid_scheme' ? t('服务器地址必须以 ws:// 或 wss:// 开头') : t('服务器地址格式无效');
+      const message = parsed.error === 'invalid_endpoint'
+        ? t('请输入 主机:端口，例如 192.168.1.10:3001')
+        : parsed.error === 'tls_unsupported' ? t('TCP 直连没有 TLS，请改用 http:// 地址')
+          : parsed.error === 'invalid_scheme'
+            ? (effective === 'tcp' ? t('TCP 直连只接受 主机:端口 或 http:// 地址') : t('服务器地址必须以 ws:// 或 wss:// 开头'))
+            : t('服务器地址格式无效');
       toast(message, 'warn');
       return;
     }
@@ -313,11 +320,19 @@ export function TitleScreen() {
 
       <div class="title-side">
         <div class="title-login">
-          <div class="title-connect__endpoint">
-            <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" size="lg" value=${address}
-              placeholder="192.168.1.10:3001"
-              onInput=${setAddress} onEnter=${applyConnection} />
-            <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
+          <div class="title-connect">
+            ${connection.supportsTcp ? html`<div class="title-connect__modes" role="group" aria-label=${t('连接方式')}>
+              <button type="button" class=${`title-connect__mode${transport === 'websocket' ? ' is-on' : ''}`}
+                aria-pressed=${transport === 'websocket'} onClick=${() => setTransport('websocket')}>WebSocket</button>
+              <button type="button" class=${`title-connect__mode${transport === 'tcp' ? ' is-on' : ''}`}
+                aria-pressed=${transport === 'tcp'} onClick=${() => setTransport('tcp')}>TCP</button>
+            </div>` : null}
+            <div class="title-connect__endpoint">
+              <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" size="lg" value=${address}
+                placeholder=${transport === 'tcp' ? '192.168.1.10:3001' : '192.168.1.10:3000'}
+                onInput=${setAddress} onEnter=${applyConnection} />
+              <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
+            </div>
           </div>
           ${pendingJoin ? html`<div class="title-invite">
             <${Icon} name="key" />

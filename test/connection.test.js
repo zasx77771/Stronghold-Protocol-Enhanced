@@ -55,6 +55,29 @@ test('parseAddress: TCP needs a host:port', () => {
   assert.equal(bad.error, 'invalid_endpoint');
 });
 
+test('parseAddress: TCP also takes the http:// spelling of the same host:port', () => {
+  const ok = parseAddress('http://39.98.53.210:3001', { transport: 'tcp' });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.transport, 'tcp');
+  assert.equal(ok.address, '39.98.53.210:3001');
+  assert.deepEqual(ok.endpoint, { host: '39.98.53.210', port: 3001 });
+  assert.equal(ok.socketUrl, undefined);
+
+  // a path or query in the web address never reaches the frame endpoint
+  const path = parseAddress('http://game.example:3001/ws?room=ABCD', { transport: 'tcp' });
+  assert.deepEqual(path.endpoint, { host: 'game.example', port: 3001 });
+
+  const v6 = parseAddress('http://[::1]:3001', { transport: 'tcp' });
+  assert.deepEqual(v6.endpoint, { host: '::1', port: 3001 });
+
+  // no TLS on the native socket, and port 80 is the HTTP server, not the frame endpoint
+  assert.equal(parseAddress('https://game.example:3001', { transport: 'tcp' }).error, 'tls_unsupported');
+  assert.equal(parseAddress('http://game.example', { transport: 'tcp' }).error, 'invalid_endpoint');
+  assert.equal(parseAddress('http://game.example:0', { transport: 'tcp' }).ok, false);
+  // ws:// is not a TCP spelling
+  assert.equal(parseAddress('ws://game.example:3001', { transport: 'tcp' }).error, 'invalid_scheme');
+});
+
 test('parseAddress: WebSocket URLs keep their path, default to /ws', () => {
   const bare = parseAddress('wss://game.example', {});
   assert.equal(bare.ok, true);

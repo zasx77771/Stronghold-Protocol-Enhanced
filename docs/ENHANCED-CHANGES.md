@@ -39,7 +39,7 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 
 | 文件 | 改动量 | 增强目的 | 上游频次 | 同步注意 |
 | --- | --- | --- | --- | --- |
-| `public/js/screens/title.js` | 102 / 31 | 服务器地址并入登录区、代号框与地址框等高、连接方式切换 | 21 | **最大单点**：上游改标题页时逐段核对 |
+| `public/js/screens/title.js` | 102 / 31 | 服务器地址并入登录区、代号框与地址框等高、连接方式切换（TCP 也收 `http://` 地址） | 21 | **最大单点**：上游改标题页时逐段核对 |
 | `public/css/screens/title.css` | 51 / 4 | 同上，窄屏滚动与分栏 | 15 | 与 title.js 一起看 |
 | `public/js/ui/components.js` | 3 / 1 | 登录区组件复用 | — | 小改 |
 | `public/js/ui/playerName.js` | 10 / 10 | 代号上限放宽到 16 字符（8 汉字） | — | 与 `shared/constants.js` 联动 |

@@ -2224,6 +2224,8 @@
   "应用": "Apply",
   "已应用服务器地址": "Server address applied.",
   "请输入 主机:端口，例如 192.168.1.10:3001": "Enter host:port, for example 192.168.1.10:3001",
+  "TCP 直连没有 TLS，请改用 http:// 地址": "A direct TCP connection has no TLS — use an http:// address",
+  "TCP 直连只接受 主机:端口 或 http:// 地址": "A direct TCP connection takes host:port or an http:// address",
   "服务器地址必须以 ws:// 或 wss:// 开头": "The server address must start with ws:// or wss://",
   "服务器地址格式无效": "That server address is not valid.",
   "请先填写服务器地址": "Enter the server address first"

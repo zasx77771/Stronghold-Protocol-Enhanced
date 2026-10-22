@@ -322,7 +322,13 @@ html.title-open body, html.title-open .app-root, .title-screen { overflow-x: hid
 .title-lang.lang-select select { height: max(.3rem, 1.4em); font-size: calc(.14 * var(--t)); }
 html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .title-conn .ping { height: max(.26rem, 1.6em); font-size: calc(.15 * var(--t)); }
-/* 服务器地址与博士代号是同一张登录表单：同一列、同一套字段节奏，中间不加分隔线。地址本身决定 TCP 还是 WebSocket。 */
+/* 服务器地址与博士代号是同一张登录表单：同一列、同一套字段节奏，中间不加分隔线。原生壳在地址上方
+   多一行 WebSocket/TCP 分段切换；浏览器页面没有 TCP 桥，不显示这一行。 */
+.title-connect { display: flex; flex-direction: column; gap: .1rem; width: 100%; }
+.title-connect__modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid rgba(255, 255, 255, .18); }
+.title-connect__mode { padding: .08rem .14rem; border: 0; background: transparent; color: var(--text-lo); font: inherit; font-size: calc(.13 * var(--t)); letter-spacing: .08em; cursor: pointer; transition: color var(--t-fast), background var(--t-fast); }
+.title-connect__mode + .title-connect__mode { border-left: 1px solid rgba(255, 255, 255, .18); }
+.title-connect__mode.is-on { background: var(--mint-500); color: var(--text-on-mint); }
 .title-connect__endpoint { display: flex; align-items: flex-end; justify-content: center; gap: .1rem; min-width: 0; }
 .title-connect__address { flex: 1 1 auto; min-width: 0; text-align: left; }
 /* 地址与代号是同一张表单：两块都走 .field--lg（.68rem 高、.26 号字），输入框与「应用」同高。 */
