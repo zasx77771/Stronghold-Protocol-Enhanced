@@ -110,6 +110,10 @@ describe('title layout: banner on the left, the whole login on the right', () =>
     assert.match(js, /title-connect__mode\$\{transport === 'tcp' \? ' is-on' : ''\}/);
     assert.match(js, /onClick=\$\{\(\) => setTransport\('tcp'\)\}/);
     assert.match(js, /const \[transport, setTransport\] = useState\(connection\.transport\)/);
+    // Switching reconnects through the installed native facade (which picks TCP or WebSocket from the URL);
+    // it must not reload the shell any more.
+    assert.doesNotMatch(js, /location\.reload\(\)/);
+    assert.match(js, /if \(parsed\.socketUrl\) net\.setUrl\(parsed\.socketUrl\);\s*net\.close\(\);\s*net\.connect\(\);/);
     assert.match(js, /<div class="title-connect__endpoint">/);
     assert.match(js, /class="title-connect__endpoint"[\s\S]*class="title-connect__address"[\s\S]*<\$\{Button\} variant="ghost"/);
     assert.match(css, /\.title-connect__endpoint \{[^}]*display: flex;[^}]*align-items: flex-end;[^}]*justify-content: center;/);

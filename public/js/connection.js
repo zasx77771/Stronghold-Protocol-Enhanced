@@ -36,6 +36,11 @@ export function transportForAddress(value, fallback = 'websocket') {
   return parseEndpoint(raw) ? 'tcp' : 'websocket';
 }
 
+/** A host as a URL authority spells it: an IPv6 literal keeps its brackets. */
+function tcpHost(host) {
+  return String(host).includes(':') ? `[${host}]` : String(host);
+}
+
 /** The WebSocket URL for this page (`ws(s)://host/ws`), the same rule as net.js defaultWsUrl. */
 export function defaultSocketUrl(loc = globalThis.location) {
   if (!loc || !loc.host) return 'ws://localhost:3000/ws';
@@ -68,11 +73,14 @@ export function parseAddress(text, { transport = 'websocket', loc = globalThis.l
       if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
         return { ok: false, error: 'invalid_endpoint' };
       }
-      return { ok: true, transport, address: `${host}:${port}`, endpoint: { host, port } };
+      return { ok: true, transport, address: `${host}:${port}`, endpoint: { host, port }, socketUrl: `tcp://${tcpHost(host)}:${port}` };
     }
     const endpoint = parseEndpoint(raw);
     if (!endpoint) return { ok: false, error: 'invalid_endpoint' };
-    return { ok: true, transport, address: `${endpoint.host}:${endpoint.port}`, endpoint };
+    return {
+      ok: true, transport, address: `${endpoint.host}:${endpoint.port}`, endpoint,
+      socketUrl: `tcp://${tcpHost(endpoint.host)}:${endpoint.port}`,
+    };
   }
   if (!raw) return { ok: true, transport, address: '', socketUrl: defaultSocketUrl(loc) };
   let url;
@@ -155,23 +163,76 @@ export function inviteAddress(text) {
  * The invite text for a room code, in a shape the receiving player can actually use.
  *
  * In a browser that is the page URL plus `?room=CODE`. Inside the native shells the page URL is the shell's own
- * origin — `https://appassets.androidplatform.net/index.html` on Android, `sp://localhost/` in the Tauri window —
- * which nobody else can open, so a player on TCP shares the endpoint they are connected to instead:
- * `tcp://host:port/?room=CODE`. The title screen reads that back with `inviteAddress()` (address) and
- * `inviteCode()` (room), so the receiver pastes the text once and both are applied.
+ * origin, which nobody else can open — `https://appassets.androidplatform.net/index.html` on Android and
+ * `sp://localhost/` (serialised as `http://sp.localhost`) in the Tauri window — so the link names the server the
+ * player is connected to instead: `tcp://host:port/?room=CODE` over TCP, and the server's web address
+ * (`http://host:port/?room=CODE`, the same page a browser would open) over WebSocket. The title screen reads that
+ * back with `inviteAddress()` (address) and `inviteCode()` (room), so the receiver pastes the text once and both
+ * are applied.
  *
  * @param {string} code room code
- * @param {{ transport?: string, address?: string, loc?: any }} [settings] current transport, saved address, page location
- * @returns {string} the text to copy ('' without a code)
+ * @param {{ transport?: string, address?: string, loc?: any, native?: boolean }} [settings] current transport,
+ *   saved address, page location, and whether this page runs in a native shell (detected from `loc` by default)
+ * @returns {string} the text to copy ('' without a code, or in a shell that has no shareable server address yet)
  */
-export function buildInviteLink(code, { transport = 'websocket', address = '', loc = globalThis.location } = {}) {
+export function buildInviteLink(code, { transport = 'websocket', address = '', loc = globalThis.location, native } = {}) {
   const key = String(code ?? '').trim();
   if (!key) return '';
-  const endpoint = transport === 'tcp' ? parseEndpoint(address) : null;
-  if (endpoint) {
-    const host = endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host;
-    return `tcp://${host}:${endpoint.port}/?room=${encodeURIComponent(key)}`;
+  const shell = native === undefined ? isShellOrigin(loc) : Boolean(native);
+  const shared = shareableServerUrl(transport, address, loc);
+  if (shell) {
+    // A shell can never hand out its own origin (nobody else resolves `sp.localhost`): share the server it
+    // dials, or nothing at all so the room screen can ask for an address first.
+    return shared ? `${shared}?room=${encodeURIComponent(key)}` : '';
   }
-  const base = loc ? `${loc.origin}${loc.pathname}` : '';
-  return `${base}?room=${encodeURIComponent(key)}`;
+  if (!loc) return shared ? `${shared}?room=${encodeURIComponent(key)}` : '';
+  const page = `${loc.origin}${loc.pathname}`;
+  // A browser shares its own page unless the player pointed this client at another server: then that
+  // server's web address is the only one the receiver could open.
+  const elsewhere = shared && !sameOrigin(shared, loc);
+  return `${elsewhere ? shared : page}?room=${encodeURIComponent(key)}`;
+}
+
+/** Same scheme, host and port as the page (`http://host:3000/` vs the page it is served from). */
+function sameOrigin(url, loc) {
+  try {
+    const target = new URL(url);
+    const origin = loc?.origin ? String(loc.origin) : '';
+    return !!origin && origin === `${target.protocol}//${target.host}`;
+  } catch { return false; }
+}
+
+/** True when this page lives on a native shell's private origin, which no other player can open. */
+export function isShellOrigin(loc = globalThis.location) {
+  if (!loc) return false;
+  const origin = String(loc.origin || '');
+  const protocol = String(loc.protocol || origin.slice(0, origin.indexOf(':') + 1));
+  if (protocol === 'sp:' || protocol === 'tauri:' || protocol === 'asset:') return true;
+  let host = String(loc.hostname || loc.host || '');
+  if (!host && origin) {
+    try { host = new URL(origin).hostname; } catch { /* not a URL */ }
+  }
+  return /^(?:sp\.localhost|appassets\.androidplatform\.net)$/i.test(host.replace(/:\d+$/, ''));
+}
+
+/**
+ * The address a receiver can dial, spelled as a URL, for the room's invite text: the TCP endpoint, or the web
+ * address the WebSocket URL points at. Null when the player has no server address of their own (a fresh shell).
+ */
+export function shareableServerUrl(transport, address, loc = globalThis.location) {
+  // No address typed yet means no server of the player's own; deriving one from the page would hand out
+  // either the page origin or a guessed `localhost:3000`, neither of which the receiver asked for.
+  if (!String(address ?? '').trim()) return null;
+  if (transport === 'tcp') {
+    const endpoint = parseEndpoint(address);
+    return endpoint ? `tcp://${tcpHost(endpoint.host)}:${endpoint.port}/` : null;
+  }
+  const target = parseAddress(address, { transport: 'websocket', loc });
+  if (!target.ok || !target.socketUrl) return null;
+  let url;
+  try { url = new URL(target.socketUrl); } catch { return null; }
+  const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  // `/ws` is the socket endpoint the receiver's own parseAddress adds back; any other path is part of the site.
+  const path = !url.pathname || url.pathname === '/' || url.pathname === '/ws' ? '/' : url.pathname;
+  return `${protocol}//${url.host}${path}`;
 }

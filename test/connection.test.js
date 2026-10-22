@@ -48,7 +48,9 @@ test('parseAddress: TCP needs a host:port', () => {
   assert.equal(ok.transport, 'tcp');
   assert.equal(ok.address, '192.168.1.10:3001');
   assert.deepEqual(ok.endpoint, { host: '192.168.1.10', port: 3001 });
-  assert.equal(ok.socketUrl, undefined);
+  // The socket URL names the transport, so the native facade can pick TCP from the URL alone (the title
+  // screen swaps TCP/WebSocket without reloading the shell).
+  assert.equal(ok.socketUrl, 'tcp://192.168.1.10:3001');
 
   const bad = parseAddress('192.168.1.10', { transport: 'tcp' });
   assert.equal(bad.ok, false);
@@ -61,7 +63,7 @@ test('parseAddress: TCP also takes the http:// spelling of the same host:port', 
   assert.equal(ok.transport, 'tcp');
   assert.equal(ok.address, '39.98.53.210:3001');
   assert.deepEqual(ok.endpoint, { host: '39.98.53.210', port: 3001 });
-  assert.equal(ok.socketUrl, undefined);
+  assert.equal(ok.socketUrl, 'tcp://39.98.53.210:3001');
 
   // a path or query in the web address never reaches the frame endpoint
   const path = parseAddress('http://game.example:3001/ws?room=ABCD', { transport: 'tcp' });
@@ -69,6 +71,7 @@ test('parseAddress: TCP also takes the http:// spelling of the same host:port', 
 
   const v6 = parseAddress('http://[::1]:3001', { transport: 'tcp' });
   assert.deepEqual(v6.endpoint, { host: '::1', port: 3001 });
+  assert.equal(v6.socketUrl, 'tcp://[::1]:3001');
 
   // no TLS on the native socket, and port 80 is the HTTP server, not the frame endpoint
   assert.equal(parseAddress('https://game.example:3001', { transport: 'tcp' }).error, 'tls_unsupported');
@@ -190,10 +193,42 @@ test('buildInviteLink shares the TCP endpoint in the native shells, never the sh
     buildInviteLink('PAAP', { transport: 'tcp', address: '[::1]:3001', loc: { origin: 'sp://localhost', pathname: '/' } }),
     'tcp://[::1]:3001/?room=PAAP',
   );
-  // tcp transport without a usable endpoint keeps the page URL rather than inventing one
+  // a shell without a server address shares nothing: its own origin is unreachable, and inventing an
+  // address would send the receiver somewhere the host never chose (the room screen asks for one instead)
   assert.equal(
     buildInviteLink('PAAP', { transport: 'tcp', address: '', loc: androidLoc }),
-    'https://appassets.androidplatform.net/index.html?room=PAAP',
+    '',
+  );
+  assert.equal(buildInviteLink('PAAP', { transport: 'tcp', address: '', loc: androidLoc, native: true }), '');
+});
+
+test('buildInviteLink shares the WebSocket server, never the shell origin', () => {
+  // Windows shell in WebSocket mode used to hand out `http://sp.localhost/?room=…`, which nobody can open
+  const tauriLoc = { origin: 'sp://localhost', pathname: '/' };
+  assert.equal(
+    buildInviteLink('PAAP', { transport: 'websocket', address: '39.98.53.210:3000', loc: tauriLoc }),
+    'http://39.98.53.210:3000/?room=PAAP',
+  );
+  assert.equal(
+    buildInviteLink('PAAP', { transport: 'websocket', address: 'wss://game.example/ws', loc: tauriLoc }),
+    'https://game.example/?room=PAAP',
+  );
+  // the receiver reads the web address back as a WebSocket server
+  assert.equal(inviteAddress('http://39.98.53.210:3000/?room=PAAP'), 'http://39.98.53.210:3000');
+  assert.equal(transportForAddress('http://39.98.53.210:3000'), 'websocket');
+  // and a browser pointing at another server shares that server rather than its own page
+  assert.equal(
+    buildInviteLink('PAAP', {
+      transport: 'websocket', address: '39.98.53.210:3000', loc: { origin: 'https://game.example', pathname: '/' },
+    }),
+    'http://39.98.53.210:3000/?room=PAAP',
+  );
+  // ... while a browser on its own server keeps its page URL
+  assert.equal(
+    buildInviteLink('PAAP', {
+      transport: 'websocket', address: 'game.example:3000', loc: { origin: 'http://game.example:3000', pathname: '/play/' },
+    }),
+    'http://game.example:3000/play/?room=PAAP',
   );
 });
 

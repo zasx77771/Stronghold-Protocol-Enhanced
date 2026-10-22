@@ -26,11 +26,12 @@ versionCode），写完后按上面同一套规则复校验。不带版本参数
 
 ## 待发布：连接方式切换与 TCP 地址（2026-10-22）
 
-本改动在 `feat/tcp-http-address` 分支，尚未打包、未升级版本号：
+本改动在 `feat/tcp-http-address` 分支（已合并进 `ds-enhanced-mode`，PR #68）与其后续 `feat/switch-and-invite` 分支，尚未打包、未升级版本号：
 
-- 标题卡在地址框上方恢复 `WebSocket / TCP` 分段切换（仅原生外壳显示；浏览器没有 TCP 桥，仍固定 WebSocket）。切换后点「应用」保存，传输方式变化时页面重新载入。
+- 标题卡在地址框上方恢复 `WebSocket / TCP` 分段切换（仅原生外壳显示；浏览器没有 TCP 桥，仍固定 WebSocket）。切换后点「应用」保存并立即重连，不再刷新页面（原生桥常驻、按 URL 分流，见 R-009）。
 - TCP 模式接受 `主机:端口`、`tcp://主机:端口`、`http://主机:端口`；`https://` 被拒绝（原生套接字没有 TLS），缺端口也被拒绝（端口 80 是 HTTP 服务，不是帧端点）。保存值统一规范化为 `主机:端口` 写入 `sp.server.address` 与 `sp.native.tcp`。
 - 粘贴的邀请链接若自带 `tcp://`，其传输方式覆盖切换按钮的选择。完整规则见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) R-008。
+- 原生外壳的「复制链接」不再分享壳自己的来源：TCP 给 `tcp://主机:端口/?room=`，WebSocket 给服务器网页地址 `http://主机:端口/?room=`；没有服务器地址时提示先填写（R-009）。
 
 ## 产物与命名
 

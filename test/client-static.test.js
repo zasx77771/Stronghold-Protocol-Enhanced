@@ -1131,7 +1131,17 @@ describe('screen helpers', () => {
     assert.equal(roomFacts(room, 'h').canStart, false, 'disconnected guest blocks start');
     assert.equal(roomFacts(room, 'g').canStart, false, 'guests cannot start');
     assert.equal(roomFacts(null, 'x').mine, null);
-    assert.match(inviteLink('ABCD'), /\?room=ABCD$/);
+    // Room code → shareable link. Node has no page origin, and the link now names the server the player is
+    // configured for; a browser page with no typed address still shares its own URL.
+    const page = { origin: 'https://game.example', pathname: '/' };
+    const savedLocation = globalThis.location;
+    globalThis.location = page;
+    try {
+      assert.match(inviteLink('ABCD'), /\?room=ABCD$/);
+    } finally {
+      if (savedLocation === undefined) delete globalThis.location;
+      else globalThis.location = savedLocation;
+    }
   });
 
   test('room: spectator seats (community report #26) — isSpectating; roomFacts never counts a spectator as a player', async () => {
