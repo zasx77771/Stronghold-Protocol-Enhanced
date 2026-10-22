@@ -15,14 +15,10 @@
   const hasAndroid = Boolean(android && typeof android.connect === 'function');
   if (!hasTauri && !hasAndroid) return;
 
-  // The page's transport choice (title screen → public/js/connection.js) decides whether the native
-  // socket replaces the host's WebSocket at all: `websocket` leaves it alone; `tcp`, or no choice at
-  // all (an upgraded install), installs the TCP facade below.
-  let transport = 'tcp';
-  try {
-    if (globalThis.localStorage?.getItem('sp.server.transport') === 'websocket') transport = 'websocket';
-  } catch { /* private mode */ }
-  if (transport === 'websocket') return;
+  // One facade serves both transports, chosen per connection by the URL the page hands it:
+  // `tcp://host:port` dials the native TCP channel, `ws://`/`wss://` passes through to the host's own
+  // WebSocket. Switching in the title screen therefore reconnects instead of reloading the shell, and a
+  // WebSocket-mode shell keeps its TCP facade installed (an upgraded install may still hold a tcp:// address).
 
   globalThis.__strongholdNativeBridgeInstalled = true;
   const NativeWebSocket = globalThis.WebSocket;
@@ -140,13 +136,24 @@
       this.onmessage = null;
       this.onerror = null;
       this.onclose = null;
-      this._id = `native-tcp-${Date.now().toString(36)}-${(++nextSocketId).toString(36)}`;
       this._native = true;
+      this._inner = null;
+      // `ws://` / `wss://` belong to the host's own WebSocket whenever it has one; the page asks for the
+      // native TCP channel by spelling the address `tcp://host:port`. A host without a WebSocket of its own
+      // (the test sandbox) keeps the old behaviour and treats every URL as the configured endpoint.
+      const scheme = (this.url.match(/^([a-z][a-z0-9+.-]*):/i) || [])[1]?.toLowerCase();
+      if ((scheme === 'ws' || scheme === 'wss') && typeof NativeWebSocket === 'function') {
+        this._attachNative();
+        return;
+      }
+      this._id = `native-tcp-${Date.now().toString(36)}-${(++nextSocketId).toString(36)}`;
       sockets.set(this._id, this);
-      // Only the address the player saved is dialled. A fresh install has none, so the socket fails
-      // immediately (the title screen then asks for one) instead of quietly connecting somewhere
-      // the player never chose.
-      const endpoint = configuredEndpoint();
+      // The URL names the endpoint when the page chose TCP; the address the player saved is the fallback for
+      // a shell that only kept the old `configuredEndpoint()`. A fresh install has neither, so the socket fails
+      // immediately (the title screen then asks for one) instead of quietly connecting somewhere the player
+      // never chose.
+      const named = scheme === 'tcp' ? endpointFrom(this.url.replace(/[?#].*$/, '').replace(/\/+$/, '')) : null;
+      const endpoint = named || configuredEndpoint();
       if (!endpoint) {
         this.readyState = CLOSED;
         sockets.delete(this._id);
@@ -159,7 +166,24 @@
       native.connect(this._id, endpoint.host, endpoint.port);
     }
 
+    // The host's own WebSocket, mirrored into this facade so callers see one class either way.
+    _attachNative() {
+      const inner = new NativeWebSocket(this.url);
+      this._inner = inner;
+      this.readyState = inner.readyState;
+      const mirror = (type) => inner.addEventListener(type, (ev) => {
+        if (type === 'open') this.readyState = OPEN;
+        else if (type === 'close') this.readyState = CLOSED;
+        this._emit(type, type === 'message' ? { data: ev.data }
+          : type === 'close' ? { code: ev.code, reason: ev.reason, wasClean: ev.wasClean }
+            : type === 'error' ? { message: ev.message }
+              : undefined);
+      });
+      ['open', 'message', 'close', 'error'].forEach(mirror);
+    }
+
     send(data) {
+      if (this._inner) { this._inner.send(data); return; }
       if (this.readyState !== OPEN) throw new Error('WebSocket is not open');
       const text = String(data);
       if (new TextEncoder().encode(text).byteLength > FRAME_LIMIT) throw new RangeError('TCP frame too large');
@@ -167,6 +191,7 @@
     }
 
     close(code = 1000, reason = '') {
+      if (this._inner) { this._inner.close(code, reason); return; }
       if (this.readyState === CLOSED || this.readyState === CLOSING) return;
       this.readyState = CLOSING;
       native.close(this._id, Number(code) || 1000, String(reason).slice(0, 120));

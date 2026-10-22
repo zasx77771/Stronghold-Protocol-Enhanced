@@ -213,8 +213,9 @@ export function TitleScreen() {
     enterSession(name);
   };
 
-  // Apply the address typed above. The native bridge decides its transport at load time, so a
-  // switch between TCP and WebSocket is saved first and then reloads the shell.
+  // Apply the address typed above. The native bridge keeps one socket facade installed and picks the transport
+  // from the URL it is handed (`tcp://…` or `ws(s)://…`), so switching reconnects in place instead of reloading
+  // the shell.
   const applyConnection = () => {
     const code = inviteCode(address);
     const linkedAddress = code ? inviteAddress(address) : null;
@@ -239,7 +240,6 @@ export function TitleScreen() {
     }
     saveSettings({ transport: parsed.transport, address: parsed.address });
     if (linkedAddress) setAddress(parsed.address);
-    if (parsed.transport !== connection.transport) { location.reload(); return; }
     if (parsed.socketUrl) net.setUrl(parsed.socketUrl);
     net.close();
     net.connect();

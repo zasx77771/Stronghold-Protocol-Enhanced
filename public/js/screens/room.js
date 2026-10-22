@@ -102,9 +102,10 @@ export function aiLastOption(room, myId) {
 /**
  * Invite text for a room code.
  *
- * A browser shares its own page URL (`…?room=CODE`); a native window shares the TCP endpoint it is connected to
- * (`tcp://host:port/?room=CODE`), because the shell's page URL is not reachable by anyone else — see
- * `buildInviteLink()` in ../connection.js.
+ * A browser shares its own page URL (`…?room=CODE`); a native window shares the server it is connected to —
+ * `tcp://host:port/?room=CODE` over TCP, `http://host:port/?room=CODE` over WebSocket — because the shell's own
+ * page origin (`sp://localhost`, `https://appassets.androidplatform.net`) is not reachable by anyone else. See
+ * `buildInviteLink()` in ../connection.js. Empty when the window has no server address to share yet.
  */
 export function inviteLink(code) {
   const settings = readSettings();
@@ -199,7 +200,11 @@ function InviteBox({ code, name, difficulty }) {
   const copy = async (what) => {
     // the copied link carries an invitation line (#103): 「{name}邀请你加入卫戍协议：盟约【{difficulty}】」
     const invite = t('{name}邀请你加入卫戍协议：盟约【{difficulty}】', { name: name ?? '', difficulty: DIFFICULTY_NAMES[difficulty] ? t(DIFFICULTY_NAMES[difficulty]) : '' });
-    const ok = await copyText(what === 'code' ? code : `${inviteLink(code)} ${invite}`);
+    const text = what === 'code' ? code : inviteLink(code);
+    // A native window without a server address has no link to share; copying the shell origin would hand out
+    // an address nobody can open (sp.localhost / appassets.androidplatform.net).
+    if (what === 'link' && !text) { toast(t('请先在标题界面填写服务器地址，再复制链接'), 'warn'); return; }
+    const ok = await copyText(what === 'code' ? code : `${text} ${invite}`);
     if (ok) toast(what === 'code' ? t('已复制同盟密钥 {code}', { code }) : t('已复制邀请链接'), 'success');
     else toast(t('复制失败，请手动复制'), 'warn');
   };
