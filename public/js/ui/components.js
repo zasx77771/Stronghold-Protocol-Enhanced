@@ -48,6 +48,8 @@ export const ICONS = {
   crown: { d: 'M3 7l4.6 4.2L12 4l4.4 7.2L21 7l-1.8 10H4.8zM5 19h14v2H5z' },
   robot: { d: 'M11 2h2v3h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h4zM8.5 9.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm7 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM9 15v1.6h6V15zM1 10h2v5H1zm20 0h2v5h-2z', eo: true },
   copy: { d: 'M8 3h11v13h-2V5H8zM5 7h10v14H5zm2 2v10h6V9z', eo: true },
+  // 读取剪贴板 (the address and alliance-key fields): a clipboard board with its clip, stroked like `globe`
+  paste: { stroke: true, width: 2, d: 'M8.5 5h-3a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3M9 3h6v3H9z' },
   link: { d: 'M9 7H6.5a5 5 0 0 0 0 10H9v-2H6.5a3 3 0 0 1 0-6H9zm6 0h2.5a5 5 0 0 1 0 10H15v-2h2.5a3 3 0 0 0 0-6H15zM8 11h8v2H8z' },
   // 服务器地址 (the address field): wireframe globe — ring + meridian + equator, stroked not filled.
   globe: { stroke: true, width: 2, d: 'M12 1.5a10.5 10.5 0 0 1 0 21 10.5 10.5 0 0 1 0-21zM12 1.5a5.4 10.5 0 0 1 0 21 5.4 10.5 0 0 1 0-21zM1.5 12h21' },
@@ -881,9 +883,10 @@ export function DifficultyTag({ difficulty, size = 'md', class: cls, code }) {
  * Bracketed text input.
  * @param {{ label?: any, micro?: string, value: string, onInput: (v: string) => void, onEnter?: Function,
  *   placeholder?: string, maxLength?: number, transform?: (v: string) => string, autoFocus?: boolean,
- *   disabled?: boolean, size?: 'md'|'lg'|'code', icon?: string, class?: string, inputRef?: any, name?: string }} props
+ *   disabled?: boolean, size?: 'md'|'lg'|'code', icon?: string, class?: string, inputRef?: any, name?: string,
+ *   trailing?: any }} props
  */
-export function TextField({ label, micro, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid }) {
+export function TextField({ label, micro, value, onInput, onEnter, placeholder, maxLength, transform, autoFocus, disabled, size = 'md', icon, class: cls, inputRef, name, hint, invalid, trailing }) {
   const localRef = useRef(null);
   const ref = inputRef || localRef;
   const composing = useRef(false);
@@ -899,7 +902,7 @@ export function TextField({ label, micro, value, onInput, onEnter, placeholder, 
     onInput?.(v);
   };
   const id = useMemo(() => `tf-${Math.random().toString(36).slice(2, 8)}`, []);
-  return html`<label class=${cx('field', `field--${size}`, disabled && 'is-disabled', invalid && 'is-invalid', cls)} for=${id}>
+  return html`<label class=${cx('field', `field--${size}`, disabled && 'is-disabled', invalid && 'is-invalid', trailing && 'field--trail', cls)} for=${id}>
     ${label || micro ? html`<span class="field__label">${label}${micro ? html`<span class="micro">${micro}</span>` : null}</span>` : null}
     <span class="field__box brackets">
       ${icon ? html`<${Icon} name=${icon} class="field__icon" />` : null}
@@ -909,6 +912,7 @@ export function TextField({ label, micro, value, onInput, onEnter, placeholder, 
         oncompositionstart=${() => { composing.current = true; }}
         oncompositionend=${(e) => { composing.current = false; handle(e); }}
         onKeyDown=${(e) => { if (e.key === 'Enter' && !e.isComposing && !composing.current) onEnter?.(e); }} />
+      ${trailing ? html`<span class="field__trail" onClick=${(e) => e.stopPropagation()}>${trailing}</span>` : null}
     </span>
     ${hint ? html`<span class="field__hint">${hint}</span>` : null}
   </label>`;

@@ -915,6 +915,26 @@
 .field__icon { width: .22rem; height: .22rem; color: var(--text-dim); }
 .field__box:focus-within .field__icon { color: var(--mint-500); }
 .field__hint { font-size: calc(.13 * var(--t)); color: var(--text-dim); }
+/* 输入框内的尾随动作（读取剪贴板）：一块跟 .field__box 同高的小方块，靠右侧内边距站位，不把外框撑宽；
+   触摸设备上与 .sp-coarse .btn--square 同一把尺子给到 40px 以上，命中区取整个框高。 */
+.field--trail .field__box { position: relative; }
+/* 浮层定位：图标压在框内右侧，不从输入区里切走一条通道，地址的可用宽度因此和没有这个按钮时一致。 */
+.field__trail { position: absolute; top: 0; bottom: 0; right: max(.02rem, 2px); display: flex; align-items: center; transition: opacity var(--t-fast); }
+.field__trail > .btn { --sq: max(.36rem, 30px); height: 100%; min-width: max(.36rem, 36px); padding: 0; justify-content: flex-end; border-color: transparent; background: transparent; color: var(--text-lo); }
+/* 输入区只给图标让出「图标宽度 + 6px」，文字不会跑到图标底下。
+   一旦聚焦（用户要看清/编辑地址），图标淡出、内边距归零，输入区拿回整条宽度。 */
+.field--trail .field__input { padding-right: calc(max(.32rem, 14px) + 6px); transition: padding-right var(--t-fast); }
+.field__box:focus-within .field__trail { opacity: 0; pointer-events: none; }
+.field--trail:focus-within .field__input { padding-right: 0; }
+/* 图标不跟按钮走、只跟字号走：.btn--square 给的是 50% 按钮尺寸，而触屏按钮有 40px 的绝对下限、字号却随 --t 缩到
+   10px 上下，手机上一半的按钮尺寸就比字大了一倍多。这里固定成 .32rem（桌面 32px / 手机 12.8px，下限 14px），
+   按钮的命中区仍是 40px 不动。 */
+.field__trail > .btn .btn__icon { width: max(.32rem, 14px); height: max(.32rem, 14px); }
+.field__trail > .btn:hover, .field__trail > .btn:focus-visible { color: var(--mint-400); border-color: var(--line-2); }
+@media (pointer: coarse), (any-pointer: coarse) {
+  /* 触摸设备把命中区抬到 40px（手指友好）；图标本身按上面的 rem 规则缩放，不跟着放大。 */
+  .field__trail > .btn { min-width: max(.36rem, 40px); }
+}
 .field--lg .field__box { height: .68rem; }
 .field--lg .field__input { font-size: calc(.26 * var(--t)); font-weight: 700; }
 .field--code .field__box { height: .64rem; }

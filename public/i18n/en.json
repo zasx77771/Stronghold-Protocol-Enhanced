@@ -2229,5 +2229,11 @@
   "TCP 直连只接受 主机:端口 或 http:// 地址": "A direct TCP connection takes host:port or an http:// address",
   "服务器地址必须以 ws:// 或 wss:// 开头": "The server address must start with ws:// or wss://",
   "服务器地址格式无效": "That server address is not valid.",
-  "请先填写服务器地址": "Enter the server address first"
+  "请先填写服务器地址": "Enter the server address first",
+  "读取剪贴板": "Read clipboard",
+  "无法读取剪贴板，请手动粘贴": "Couldn't read the clipboard — paste it by hand",
+  "剪贴板里没有地址或邀请链接": "No server address or invite link in the clipboard",
+  "剪贴板里没有同盟密钥": "No Alliance Key in the clipboard",
+  "已从剪贴板填入服务器地址": "Server address filled in from the clipboard",
+  "已从剪贴板填入同盟密钥": "Alliance Key filled in from the clipboard"
 }

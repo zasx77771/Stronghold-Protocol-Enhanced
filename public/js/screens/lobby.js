@@ -18,6 +18,8 @@ import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
 import { html, confirmDialog, Button, Icon, MicroLabel, Panel, TextField, PingPill, AvatarFrame, Tooltip, Spinner, DifficultyIcon, doctorNo } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
+import { readText } from '../ui/clipboard.js';
+import { clipboardCode } from '../connection.js';
 import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { SweepReport } from './sweep.js';
@@ -282,6 +284,20 @@ export function LobbyScreen() {
   const online = conn.status === 'online';
   const codeOk = CODE_RE.test(code);
 
+  // 读取剪贴板里的同盟密钥（或整条邀请链接）：只填进输入框，「加入同盟」仍由玩家点——和标题页读地址同一口径。
+  // 剪贴板不可读（浏览器明文 http 没有 Clipboard API）或读不出合法密钥时各给一句提示。
+  const fillKeyFromClipboard = async () => {
+    const clip = await readText();
+    if (!clip.ok) {
+      toast(clip.reason === 'empty' ? t('剪贴板里没有同盟密钥') : t('无法读取剪贴板，请手动粘贴'), 'warn');
+      return;
+    }
+    const pasted = clipboardCode(clip.text, ROOM_CODE_LEN);
+    if (!pasted) { toast(t('剪贴板里没有同盟密钥'), 'warn'); return; }
+    setCode(pasted);
+    toast(t('已从剪贴板填入同盟密钥'));
+  };
+
   const pickMode = (m) => { setRoomMode(m); savePref('lobby.mode', m); };
   const pickDifficulty = (d) => { setDifficulty(d); savePref('lobby.difficulty', d); };
 
@@ -380,6 +396,7 @@ export function LobbyScreen() {
             <//>
           </div>
           <div class="join-foot">
+            <${Button} variant="ghost" size="sm" icon="paste" class="join-read" title=${t('读取剪贴板')} onClick=${fillKeyFromClipboard}>${t('读取剪贴板')}<//>
             ${recent.length ? html`<span class="t-lo">${t('最近的同盟')}</span>
               ${recent.map((c) => html`<button key=${c} type="button" class="code-chip num" title=${t('填入密钥（不会直接加入）')}
                 onClick=${() => setCode(c)}>${c}${Array.isArray(marks) && marks.includes(c) ? html` <${TestMark} />` : null}</button>`)}`

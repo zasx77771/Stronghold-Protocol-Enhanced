@@ -142,6 +142,22 @@ export function inviteCode(text, codeLen = 4) {
 }
 
 /**
+ * The room code inside clipboard text (the 读取剪贴板 buttons), or null.
+ *
+ * Deliberately stricter than the lobby field's own `normalizeCode`, which clamps any text to its first `codeLen`
+ * alphanumerics: run on a stray URL that turns `http://host:3000` into the key `HTTP`, and the clipboard button
+ * would fill a room nobody is in. A bare key, `room: KEY` and `…?room=ABCD` all qualify, but only when the
+ * extracted key is exactly one room code long.
+ *
+ * @param {string} text @param {number} [codeLen] this client's room-code length
+ * @returns {string|null}
+ */
+export function clipboardCode(text, codeLen = 4) {
+  const code = inviteCode(text, codeLen);
+  return code && code.length === codeLen ? code : null;
+}
+
+/**
  * The transport address carried by a full invite URL, without its room query.
  * A bare room key deliberately returns null: it joins through the already configured server.
  */
