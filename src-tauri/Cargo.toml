@@ -1,6 +1,6 @@
 [package]
 name = "stronghold-protocol-native"
-version = "3.2.3"
+version = "3.2.4"
 edition = "2021"
 publish = false
 license = "GPL-3.0-or-later"

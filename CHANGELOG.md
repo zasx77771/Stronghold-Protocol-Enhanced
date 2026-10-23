@@ -1,3 +1,25 @@
+## 3.2.4 — 2026-10-22
+
+### 增强版客户端
+
+- 入口重新提供 WebSocket / TCP 手动切换（仅原生客户端显示）：以前只能靠地址格式猜传输，`http://主机:3001` 会被当成
+  WebSocket 去连只跑 TCP 的端口。现在选中 TCP 后，`主机:端口`、`tcp://主机:端口`、`http://主机:端口` 三种写法都走 TCP；
+  `https://` 直接提示 TCP 没有 TLS，端口 80 会被拒绝并提示改用 TCP 端口（PR #68）。
+- 客户端解析 `https://域名` 连接 WebSocket 时映射成 `wss://域名/ws`，可以直接填 Caddy 反代出来的 HTTPS 域名。
+- 切换 WebSocket / TCP 后点「应用」立即用新传输重连，不再刷新整个页面——原来会重新载入页面并丢掉已填的代号与地址（PR #69）。
+- 修复原生客户端「复制链接」仍然复制外壳来源的问题：现在按当前传输分享真实服务器地址，WebSocket 为 `http(s)://主机[:端口]/`，
+  TCP 为 `tcp://主机:端口/`；没有填写服务器地址时提示先在标题界面填写，不再复制一个别人打不开的 `sp.localhost` 链接（PR #69）。
+- 需要安装本版 Windows 客户端或 APK 才生效；网页版仍按地址格式自动识别传输。
+- 文档同步：`docs/NATIVE-RECONSTRUCTION.md` 新增 R-008（地址与传输规则）、R-009（切换免刷新、邀请链接不分享壳来源），
+  `docs/PLAYING.md` 第 15 节补充三种 TCP 写法与复制链接说明。
+
+### 打包与命名（3.2.3 起已生效，本次补记）
+
+- 客户端名称中文化：Android 桌面显示「卫戍协议：盟约」，Windows 窗口标题「卫戍协议：盟约 · Stronghold Protocol」；
+  exe 文件名保持 ASCII 的 `Stronghold Protocol.exe`。
+- Windows 客户端包内新增 `unblock.bat`，README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
+  「来自 Internet」标记就会被拦，双击包内解锁脚本即可，不需要关 Defender。
+
 ## 3.2.3 — 2026-10-21
 
 ### Android 客户端
@@ -25,20 +47,6 @@
   启动时 `server/update.js` 用玩家更新包那套机制复核清单、删掉旧版本不再使用的文件，核对不上就拒绝启动并提示改用完整包。
   完整包因此多带一份 `app\MANIFEST.json`；zip 由 `tools/server-update.mjs` 内置的写入器生成，不依赖 `zip` / `tar`。
   Node 运行时换版本（`NODE_PIN`）时只能发完整包，脚本会直接报错。
-
-## 未发布
-
-### 增强版客户端
-
-- 客户端名称中文化：Android 装到桌面后显示「卫戍协议：盟约」（`android/app/src/main/AndroidManifest.xml` 的
-  `android:label`），Windows 窗口标题改为「卫戍协议：盟约 · Stronghold Protocol」（`src-tauri/tauri.conf.json` 的
-  `app.windows[0].title`）。exe 文件名保持 ASCII 的 `Stronghold Protocol.exe`，避免中文名在批处理与快捷方式里出问题。
-
-### 打包
-
-- Windows 客户端包内新增 `unblock.bat`（ASCII 名，避免 zip 内中文名在部分解压工具里乱码），README 增加「被 SmartScreen 拦住」一节：没有代码签名的 exe 一旦带
-  「来自 Internet」标记就会被 SmartScreen 拦成「无法识别的应用」。双击包内的解锁脚本（或解压前对 zip 右键解除锁定）
-  即可，不需要关 Defender、也不需要管理员权限。生成脚本 `scripts/make-windows-client.mjs` 同步产出该文件。
 
 ## 3.2.1 — 2026-10-19
 
