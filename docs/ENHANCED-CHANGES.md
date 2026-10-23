@@ -27,11 +27,11 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 | 原生桥协议 | `native/bridge/*`、`native/web/*` | 页面与宿主之间的契约、隐私契约 |
 | 增强工具 | `tools/affected.mjs`、`tools/release-policy.mjs`、`tools/server-update.mjs`、`tools/check-native-compat.mjs`、`tools/check-embedded-assets.mjs` | 按改动挑测试、一处写版本号、服务端增量升级、原生契约检查 |
 | 打包脚本 | `scripts/make-windows-bundle.mjs`、`make-windows-client.mjs`、`make-server-lite.mjs`、`win-copy.mjs`、`rust-check.mjs`、`shots.mjs`、`package*.mjs` 相关新增 | 客户端/服务端产物、增量包、截图回归 |
-| 前端增强模块 | `public/js/lineups*.js`（本机配队）、`public/js/ui/*` 增强模块 | 配队保存/读取、入口页组件 |
-| 测试 | `test/native/**`、`test/ui/lineups.test.js`、`test/ui/title-layout.test.js`、`test/server-update.test.js`、`test/affected.test.js`、`test/shots.test.js` 等 | 原生契约、配队、增量包、工具自身 |
+| 前端增强模块 | `public/js/lineups*.js`（本机配队）、`public/js/connection.js`（连接方式/地址与邀请解析）、`public/js/ui/*` 增强模块 | 配队保存/读取、入口页组件、连接设置 |
+| 测试 | `test/native/**`、`test/ui/lineups.test.js`、`test/ui/title-layout.test.js`、`test/ui/clipboard-read.test.js`、`test/native/clipboard-bridge.test.js`、`test/server-update.test.js`、`test/affected.test.js`、`test/shots.test.js` 等 | 原生契约、配队、剪贴板读取、增量包、工具自身 |
 | 文档 | `docs/NATIVE-RECONSTRUCTION.md`、`docs/WINDOWS.md`（新增段落）等 | 原生客户端与打包说明 |
 
-## 2. 被修改的上游文件（37 个，冲突只可能出现在这里）
+## 2. 被修改的上游文件（41 个，冲突只可能出现在这里）
 
 标记说明：**改动量**为 `+行/−行`；**上游频次**是该文件在 `upstream/master` 自 2026-05-01 起被改动的提交数（越大越容易撞车）。
 
@@ -40,8 +40,11 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 | 文件 | 改动量 | 增强目的 | 上游频次 | 同步注意 |
 | --- | --- | --- | --- | --- |
 | `public/js/screens/title.js` | 102 / 31 | 服务器地址并入登录区、代号框与地址框等高、连接方式切换（TCP 也收 `http://` 地址） | 21 | **最大单点**：上游改标题页时逐段核对 |
-| `public/css/screens/title.css` | 51 / 4 | 同上，窄屏滚动与分栏 | 15 | 与 title.js 一起看 |
-| `public/js/ui/components.js` | 3 / 1 | 登录区组件复用 | — | 小改 |
+| `public/css/screens/title.css` | 53 / 4 | 同上，窄屏滚动与分栏；地址框内「读取剪贴板」图标的注释锚点 | 15 | 与 title.js 一起看 |
+| `public/js/ui/components.js` | 6 / 2 | 登录区组件复用；`TextField` 新增可选 `trailing` 槽（地址框内嵌按钮用） | 15 | 小改，槽位缺失时按原样渲染 |
+| `public/css/components.css` | 21 / 0 | `.field__trail`（框内浮层按钮）：绝对定位不占排版、聚焦时淡出并把宽度还给输入区 | 16 | 与 `components.js` 的 `trailing` 一起看 |
+| `public/js/ui/clipboard.js` | 35 / 0 | 新增 `readText()`：Windows 走 `sp_read_clipboard`、安卓走 `StrongholdAndroidClipboard`、浏览器走 Clipboard API；写剪贴板仍是原有 `copyText()` | 2 | 上游若改复制逻辑，读写两段各自保留 |
+| `public/js/screens/lobby.js` | 17 / 0 | 大厅「加入同盟」下方的「读取剪贴板」按钮，用 `clipboardCode()` 从剪贴板取 4 位密钥 | 18 | 上游改大厅加入区时对照 |
 | `public/js/ui/playerName.js` | 10 / 10 | 代号上限放宽到 16 字符（8 汉字） | — | 与 `shared/constants.js` 联动 |
 | `public/js/main.js` | 5 / 0 | 连接方式（WebSocket/TCP）初始化 | 37 | 上游常改，按块保留 |
 | `public/js/net.js` | 5 / 0 | 可编辑服务器地址、粘贴邀请 | — | 小改 |
@@ -53,6 +56,7 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 | --- | --- | --- | --- | --- |
 | `public/js/screens/loadout.js` | 83 / 0 | 本机配队保存/读取/删除 | 24 | **次大热点**：上游改调配界面时逐段核对 |
 | `public/css/screens/loadout.css` | 23 / 0 | 配队区样式 | — | 与 loadout.js 一起看 |
+| `public/css/screens/lobby.css` | 4 / 0 | 大厅「读取剪贴板」按钮样式（放在 `.join-foot` 行，不进 `.join-row`） | 4 | 上游改加入区布局时对照 |
 | `public/js/screens/briefing.js` | 8 / 1 | 进对局前预取干员立绘 | — | 小改 |
 
 ### 服务端与共享层
@@ -85,7 +89,7 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 | 文件 | 改动量 | 增强目的 | 同步注意 |
 | --- | --- | --- | --- |
 | `docs/WINDOWS.md` | 204 / 0 | 增强版打包与原生说明 | 纯文档，手动合并 |
-| `docs/PLAYING.md` | 9 / 0 | 入口页分栏、连接设置、邀请流程 | 上游改得最勤，冲突直接保留两侧 |
+| `docs/PLAYING.md` | 10 / 0 | 入口页分栏、连接设置、邀请流程 | 上游改得最勤，冲突直接保留两侧 |
 | `docs/DEPLOY.md` | 5 / 2 | 服务端增量升级 | 同上 |
 | `CHANGELOG.md` | 69 / 0 | 增强版条目 | 冲突时保留双方条目 |
 | `README.md` | 1 / 1 | 指向增强版说明 | 小改 |
@@ -96,12 +100,12 @@ git diff --numstat upstream/master...ds-enhanced-mode | sort -rn      # 谁改�
 
 | 文件 | 改动量 | 上游频次 |
 | --- | --- | --- |
-| `public/i18n/en.json` | 40 / 2 | 153 |
-| `public/i18n/ja.json` | 40 / 2 | 127 |
-| `public/i18n/ko.json` | 40 / 2 | 129 |
-| `public/i18n/zh-TW.json` | 40 / 2 | 127 |
+| `public/i18n/en.json` | 47 / 3 | 153 |
+| `public/i18n/ja.json` | 47 / 3 | 127 |
+| `public/i18n/ko.json` | 47 / 3 | 129 |
+| `public/i18n/zh-TW.json` | 47 / 3 | 127 |
 
-四个语言包各新增 40 条增强字符串（配队、入口页、连接设置）。**这是全仓最容易冲突的地方**：上游几乎每个版本都会动语言包。
+四个语言包各新增 47 条增强字符串（配队、入口页、连接设置、剪贴板读取）。**这是全仓最容易冲突的地方**：上游几乎每个版本都会动语言包。
 
 减负方案（**尚未实施，需单独分支**）：`public/js/ui/lang.js` 已支持 `uiOverlay`（主语言包之后再取一个覆盖文件），把增强字符串移进 `public/i18n/enhanced.<lang>.json`，并让 `tools/i18n.mjs` 的 `check --all --strict` 也认这个覆盖层，就能把这四个文件从差异集里永久摘掉。注意 i18n 的更新口径仍以上游为准。
 
@@ -118,7 +122,7 @@ git switch -c sync/upstream-<上游版本> origin/ds-enhanced-mode
 # 3. 合并上游
 git merge --no-ff upstream/master
 
-# 4. 只看被改过的 37 个文件有没有冲突
+# 4. 只看被改过的 41 个文件有没有冲突
 git diff --name-only --diff-filter=U
 
 # 5. 验证
@@ -131,7 +135,7 @@ node tools/i18n.mjs check --all --strict
 冲突处理原则：
 
 - 上游已有相同或相似实现时**保留上游实现**，只保留必要且经过测试的最小增强差异。
-- 新增的 93 个文件永远不冲突；冲突只可能出现在上面 37 个文件里，按表逐项对照即可。
+- 新增的 95 个文件永远不冲突；冲突只可能出现在上面 41 个文件里，按表逐项对照即可。
 - 文档类冲突（`docs/*`、`CHANGELOG.md`）保留两侧内容，不删任何一方。
 - 合并后如果某条增强的前提被上游改掉了（比如上游自己做了同功能），在本文档对应行标注「已被上游取代」并说明删除理由，不要留死代码。
 

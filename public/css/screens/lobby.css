@@ -119,6 +119,10 @@
 .join-row .field { flex: 1; }
 .join-row .btn { height: .64rem; }
 .join-foot { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; min-height: .32rem; font-size: calc(.14 * var(--t)); }
+/* 读取剪贴板：放在「最近的同盟」这一行里——.join-row 已经挤了密钥框、加入同盟、观战三个元素，窄屏再加第四个会把
+   密钥框压没。做成一枚小按钮，和 code-chip 同一高度带，自己换行不会碰到别的东西。 */
+.join-foot .join-read { height: max(.32rem, 32px); min-width: 0; padding: 0 .1rem; border-color: var(--line-2); font-size: calc(.13 * var(--t)); letter-spacing: .04em; }
+.join-foot .join-read .btn__icon { width: .16rem; height: .16rem; }
 .code-chip {
   padding: .03rem .12rem .03rem .16rem;
   border: 1px solid var(--line-2);

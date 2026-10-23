@@ -335,6 +335,8 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .title-connect__address { flex: 1 1 auto; min-width: 0; text-align: left; }
 /* 地址与代号是同一张表单：两块都走 .field--lg（.68rem 高、.26 号字），输入框与「应用」同高。 */
 .title-connect__endpoint > .btn { flex: 0 0 auto; align-self: flex-end; min-width: max(.64rem, var(--tap-min, 44px)); height: .68rem; min-height: .68rem; margin-bottom: 0; padding-inline: .12rem; border-color: rgba(255, 255, 255, .14); font-size: calc(.16 * var(--t)); letter-spacing: .12em; }
+/* 读取剪贴板就长在地址框里面（components.css 的 .field__trail）：外框宽度与改动前一致，只有输入区让出一枚图标的位置，
+   所以这里不再给「应用」旁边添第三个按钮。 */
 @media (max-width: 640px) {
   .title-connect__endpoint { gap: .06rem; }
   .title-connect__endpoint > .btn { min-width: var(--tap-min, 44px); padding-inline: .1rem; }

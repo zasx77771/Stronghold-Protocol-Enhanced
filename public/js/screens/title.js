@@ -29,6 +29,7 @@ import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/compo
 import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { toast } from '../ui/toasts.js';
+import { readText } from '../ui/clipboard.js';
 import { net, identity } from '../net.js';
 import { readSettings, parseAddress, saveSettings, inviteCode, inviteAddress, transportForAddress } from '../connection.js';
 import { store, useStore, shallowEqual } from '../store.js';
@@ -261,6 +262,19 @@ export function TitleScreen() {
     if (!store.get().session.entered) enterSession(name);
   };
 
+  // 读取剪贴板：把系统剪贴板里的服务器地址 / 邀请链接直接填进上面的地址框。只填不放行——「应用」仍由玩家点，
+  // 读取本身不改连接。Windows 外壳与安卓壳读原生剪贴板；浏览器在明文 http（非安全上下文）没有 Clipboard API，
+  // readText() 回 unsupported，这时提示手动粘贴。
+  const fillFromClipboard = async () => {
+    const clip = await readText();
+    if (!clip.ok) {
+      toast(clip.reason === 'empty' ? t('剪贴板里没有地址或邀请链接') : t('无法读取剪贴板，请手动粘贴'), 'warn');
+      return;
+    }
+    setAddress(clip.text.trim());
+    toast(t('已从剪贴板填入服务器地址'));
+  };
+
   const online = conn.status === 'online' || conn.status === 'connected';
   const dotClass = online ? 'is-on' : conn.status === 'reconnecting' || conn.status === 'connecting' || conn.status === 'handshaking' ? 'is-warn' : 'is-bad';
   // A native shell dials only the saved address (no built-in default), so an empty field means
@@ -330,7 +344,9 @@ export function TitleScreen() {
             <div class="title-connect__endpoint">
               <${TextField} class="title-connect__address" label=${t('服务器地址')} micro="SERVER" icon="globe" size="lg" value=${address}
                 placeholder=${transport === 'tcp' ? '192.168.1.10:3001' : '192.168.1.10:3000'}
-                onInput=${setAddress} onEnter=${applyConnection} />
+                onInput=${setAddress} onEnter=${applyConnection}
+                trailing=${html`<${Button} variant="ghost" size="sm" square icon="paste" class="title-connect__read"
+                  title=${t('读取剪贴板')} aria-label=${t('读取剪贴板')} onClick=${fillFromClipboard} />`} />
               <${Button} variant="ghost" size="sm" onClick=${applyConnection}>${t('应用')}<//>
             </div>
           </div>

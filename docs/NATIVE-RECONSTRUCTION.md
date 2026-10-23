@@ -388,3 +388,20 @@ node tools/assetPackages.mjs --verify-index .native-assets/packages/assets-index
 - 不改变既有接线：`开始` 仍是 `.title-login .btn--primary`，第一个输入框仍是博士代号，邀请粘贴与 `applyConnection` 逻辑未动；未重新引入任何下载/镜像入口。
 - 测试：`test/ui/title-layout.test.js` 8 项（左右分块与顺序、登录框单列、行列方向无堆叠、登录列滚动与子项不压缩、窄屏让位与 `--tap-min`、四个语言包已删的旧分组文案、无远程素材入口）；另用本机 Chrome（puppeteer-core）在 1280×800、915×412、700×500、640×360、568×320、412×915、360×640、320×568 八个视口实测：全部 `flex-direction: row`、登录列在标题右侧且完整落在视口内、`document.scrollWidth === innerWidth`（无横向滚动），915×412 与 700×500 下登录列 `scrollHeight > clientHeight`（可纵向滚动）。
 - 未验证：Windows/Android 真机观感（需要构建与设备）；上述几何由无头 Chrome 量取，真机触屏的 `pointer: coarse` 分支（44px 命中高度）未在设备上复测。
+
+## 阶段 E 实施记录：读取剪贴板（E3，2026-10-23）
+
+- 入口：标题画面服务器地址框内右侧、大厅「最近的同盟」行各一枚「读取剪贴板」按钮。只在用户点击时读一次，不在启动、切换焦点或粘贴时自动读取。
+- 通道（`public/js/ui/clipboard.js` 的 `readText()`，返回 `{ ok, text, reason? }`，`reason` ∈ `empty` / `denied` / `unsupported`，永不抛出）：
+
+| 宿主 | 走什么 | 说明 |
+| --- | --- | --- |
+| Windows（Tauri 外壳） | `invoke('sp_read_clipboard')` | 命令与 `src-tauri/capabilities/default.json` 的 `clipboard-manager:allow-read-text` 本来就在，本轮只是前端首次调用 |
+| Android 外壳 | `StrongholdAndroidClipboard.readText()` | `android/.../MainActivity.java` 的内部类 `ClipboardBridge` 同步返回 `String`：`ClipboardManager.getPrimaryClip()` 取第 0 项 `coerceToText`，为空或被系统拒绝一律返回空串 |
+| 普通浏览器 | `navigator.clipboard.readText()` | 仅 `isSecureContext` 下存在；`http://host:3000` 这类明文部署是非安全上下文，直接返回 `unsupported`，页面提示手动粘贴 |
+
+- 落点行为：标题画面只把文本填进地址框，不自动「应用」、不改连接方式；文本是邀请链接时也原样填入，之后照旧由 `applyConnection` 按 `parseAddress`/`inviteCode` 处理。大厅用 `public/js/connection.js` 的 `clipboardCode(text, codeLen)` 取 4 位密钥，识别裸码、`room: CODE`、`同盟密钥：CODE`、`tcp://…?room=CODE`、`http://…?room=CODE`；服务器地址这类文本返回 `null`，不会被截成 `HTTP` 填错房间。
+- 平台限制（如实标注）：Android 11+ 只有前台获得焦点的应用能读剪贴板，被系统拒绝时返回空串并提示手动粘贴；WebView 的 `navigator.clipboard.readText()` 需要瞬时用户激活加权限授予，实测不可靠，因此走外壳直读。只开读取，写入仍由页面原有 `copyText()`（`execCommand('copy')` 兜底）负责。
+- 样式：`TextField` 新增可选 `trailing` 槽（`public/js/ui/components.js`）；`public/css/components.css` 的 `.field__trail` 绝对定位、不参与 flex 排版，未聚焦时输入区只让出「图标宽 + 6px」，聚焦时图标淡出并把宽度还给输入区。地址框外宽与改动前逐像素一致：7 个视口（1920×1080 / 1440×900 / 1280×800 / 1024×768 / 844×390 / 740×360 / 390×844）用 `measure.mjs` 对基线 `cf82bd99` 逐项比对，field / input / 大厅 join-row 均无位移。
+- 测试：`test/ui/clipboard-read.test.js` 7 项（三宿主、优先级、空/拒绝/不支持）、`test/native/clipboard-bridge.test.js` 4 项（接线与权限的源码检查；删掉 `addJavascriptInterface(new ClipboardBridge(), "StrongholdAndroidClipboard")` 会转红）、`test/connection.test.js` 追加 `clipboardCode` 用例（18 项）；`node tools/i18n.mjs check --all --strict` 2186/2186。
+- 状态：布局与提示态用无头 Chrome 在桌面、平板、手机横竖屏实测；**Windows 打包客户端与 Android 真机上的剪贴板读取尚未实测（待复测）**。

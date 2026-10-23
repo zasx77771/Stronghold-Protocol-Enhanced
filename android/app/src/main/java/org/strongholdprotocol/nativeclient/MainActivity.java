@@ -1,6 +1,8 @@
 package org.strongholdprotocol.nativeclient;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -61,6 +63,7 @@ public final class MainActivity extends Activity {
     webView.getSettings().setAllowContentAccess(false);
     webView.addJavascriptInterface(new TcpBridge(), "StrongholdAndroidTcp");
     webView.addJavascriptInterface(new AssetBridge(), "StrongholdAndroidAssets");
+    webView.addJavascriptInterface(new ClipboardBridge(), "StrongholdAndroidClipboard");
     WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
         .addPathHandler("/", new NativeAssets())
         .build();
@@ -277,6 +280,30 @@ public final class MainActivity extends Activity {
   private static String mediaAssetPath(String rel) {
     String rest = stripHash(rel).substring("media/".length());
     return "assets/audio/" + rest;
+  }
+
+  /**
+   * 剪贴板读取（标题页的服务器地址、大厅的同盟密钥上那两颗「读取剪贴板」按钮）。
+   *
+   * 页面本身跑在 {@code https://appassets.androidplatform.net} 这个安全上下文里，但 WebView 的
+   * {@code navigator.clipboard.readText()} 要瞬时用户激活加权限授予，实测不可靠，所以由外壳直接读系统
+   * 剪贴板：页面调 {@code StrongholdAndroidClipboard.readText()}，拿到空串就表示没读到（空剪贴板或被系统
+   * 拒绝），页面据此提示手动粘贴。只开读取，写入仍走页面自己的 {@code copyText()}（execCommand 兜底）。
+   */
+  private final class ClipboardBridge {
+    @JavascriptInterface public String readText() {
+      try {
+        ClipboardManager manager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (manager == null) return "";
+        ClipData clip = manager.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) return "";
+        CharSequence text = clip.getItemAt(0).coerceToText(MainActivity.this);
+        return text == null ? "" : text.toString();
+      } catch (RuntimeException error) {
+        Log.w(TAG, "clipboard read failed", error);
+        return "";
+      }
+    }
   }
 
   private final class TcpBridge {

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   ADDRESS_KEY, TCP_ENDPOINT_KEY, TRANSPORT_KEY,
   parseEndpoint, parseAddress, defaultSocketUrl, readSettings, saveSettings, inviteCode, inviteAddress, nativePlatform, transportForAddress,
-  buildInviteLink,
+  buildInviteLink, clipboardCode,
 } from '../public/js/connection.js';
 
 /** Minimal localStorage stand-in. */
@@ -237,4 +237,23 @@ test('a shared TCP invite round-trips into address and room code', () => {
   assert.equal(text, 'tcp://192.168.1.10:3001/?room=PAAP');
   assert.equal(inviteAddress(text), '192.168.1.10:3001');
   assert.equal(inviteCode(text), 'PAAP');
+});
+
+test('clipboard text only yields a room code when it really is one', () => {
+  // what players actually paste: a bare key, `room: KEY`, a full invite link
+  assert.equal(clipboardCode('PAAP'), 'PAAP');
+  assert.equal(clipboardCode('  paap\n'), 'PAAP');
+  assert.equal(clipboardCode('room: PAAP'), 'PAAP');
+  assert.equal(clipboardCode('同盟密钥：PAAP'), 'PAAP');
+  assert.equal(clipboardCode('tcp://192.168.1.10:3001/?room=PAAP'), 'PAAP');
+  assert.equal(clipboardCode('http://39.98.53.210:3000/?room=PAAP'), 'PAAP');
+  // a server address is not a key: `normalizeCode` would clamp this to `HTTP` and fill a wrong room
+  assert.equal(clipboardCode('http://39.98.53.210:3000'), null);
+  assert.equal(clipboardCode('192.168.1.10:3001'), null);
+  // inviteCode tolerates 4..6 characters for the protocol's join limit; a room key is exactly one code long
+  assert.equal(clipboardCode('PAAPP'), null);
+  assert.equal(clipboardCode(''), null);
+  assert.equal(clipboardCode(undefined), null);
+  // the length is the caller's, so a 5-character deployment keeps working
+  assert.equal(clipboardCode('PAAPP', 5), 'PAAPP');
 });
