@@ -110,8 +110,10 @@ describe('the stylesheet side', () => {
   const EXEMPT = new Set(['font-size', 'line-height', 'letter-spacing', '--t']);
   const SIZE = new Set(['width', 'height', 'min-width', 'min-height', 'flex', 'flex-basis', 'grid-template-columns', 'grid-template-rows',
     'grid-auto-rows', 'grid-auto-columns', 'inline-size', 'block-size', 'min-inline-size', 'min-block-size']);
-  // Listed exemptions beyond the readability properties: none today. Add `file:property:argument` with a reason.
-  const LISTED = new Set([]);
+  // Listed exemptions beyond the readability properties. `--tap-min` (devices.css, 44 px) is the pointer's touch minimum:
+  // like the bare 32 px rule, 界面大小 scales the layout but never how small a target may get, so the enhanced
+  // 标题界面的「应用」按钮 keeps it inside its max(<rem>, var(--tap-min, 44px)).
+  const LISTED = new Set(['public/css/screens/title.css:min-width:var(--tap-min, 44px)']);
   function* cssFiles(dir) {
     for (const f of readdirSync(dir)) {
       const p = path.join(dir, f);
@@ -141,7 +143,8 @@ describe('the stylesheet side', () => {
         if (!args.some((a) => /(^|[^\w.-])[1-9][\d.]*px|0?\.\d*[1-9]\d*px/.test(a))) continue;
         const k = Math.max(s.lastIndexOf(';', m.index), s.lastIndexOf('{', m.index));
         const prop = s.slice(k + 1, m.index).split(':')[0].trim();
-        out.push({ file: path.relative(ROOT, file), line: s.slice(0, m.index).split('\n').length, prop, args });
+        // forward slashes on every platform: the LISTED keys are written by hand and CI runs Windows too
+        out.push({ file: path.relative(ROOT, file).split(path.sep).join('/'), line: s.slice(0, m.index).split('\n').length, prop, args });
       }
     }
     return out;

@@ -188,5 +188,12 @@ node tools/i18n.mjs check --all --strict
 同步时修掉的不兼容：`test/ui/lineups.test.js` 断言 `sp.pref.loadout` 是 v1 平面表，上游 0.3.3 改成 v2 按干员存
 （`{v:2, byChar, ops}`），断言改为 v2 形状。
 
+同步后的增强适配（上游新增的守卫会扫到增强侧的样式）：上游 0.3.2 起 `test/ui/ui-size.test.js` 要求 `public/css` 里每个
+`max(<rem>, <N>px)` 下限都乘 `--sp-ui`，增强侧 16 处没有——`loadout.css` 的本地配队块 13 处按上游口径补齐（非尺寸值写
+`max(<rem>, calc(Npx * var(--sp-ui, 1)))`，列表高度写 `max(3.2rem, 32px, calc(260px * var(--sp-ui, 1)))`），`title.css`
+的「应用」按钮按 `devices.css` 的 `.field--lg` 抄成同一把尺子；按钮的 `min-width: max(.64rem, var(--tap-min, 44px))` 保留
+不缩放（`--tap-min` 是触摸命中下限，与裸 32px 同理），登记为该守卫的 `LISTED` 豁免。守卫内部的 `path.relative` 统一转成
+正斜杠，否则手写的豁免键只在 Linux 生效、Windows 上照样红。
+
 已知工具缺陷（待单独修）：`tools/release-policy.mjs` 的 `versionLine()` 用带 `g` 的正则交给 `text.replace`，
 会替换 `package-lock.json` 里所有同版本号的依赖条目（本次把 `@puppeteer/browsers` 的 3.2.3 误写成 3.2.4），需要限定到根两处。
