@@ -1,3 +1,30 @@
+## 3.3.0 — 2026-10-25
+
+### 上游同步：0.3.3
+
+- 合并上游 0.3.3（房间与调配界面重写）：15 个冲突文件按「取上游新版 → 回贴增强小改动」处理（PR #74）。
+- 房间界面：上游重写了 `SeatCard` / `CardPicker` / `ProtocolSelect` 与「上抬」动画，增强侧的邀请链接
+  （`inviteLink()` 走当前传输的服务器地址）与「未填地址先提示」保留。
+- 调配界面：上游拆成卡片视图与经典视图两套。「本地配队」入口在卡片视图里迁进「更多」弹层
+  （`data-testid="loadout-presets-more"`），经典视图工具栏的按钮不变——默认就是卡片视图，不迁等于把该功能藏起来。
+- 简报界面：上游删掉 `MicroLabel` / `Img` / `RichText` 的用法，增强侧的干员立绘预热效果保留。
+- 服务端：TCP 监听在上游 `eventLoop?.start()` 之前启动，失败时 network / wss / http 整套回滚。
+
+### 增强适配
+
+- `sp.pref.loadout` 随上游升到 v2（`{v:2, byChar, ops}`）；本地配队的读写与 `test/ui/lineups.test.js` 的存储形状断言
+  按 v2 口径更新，`loadoutStore.get().entries` 仍是 chess 键视图。
+- 样式守卫：上游 `test/ui/ui-size.test.js` 要求 `public/css` 里每个 `max(<rem>, <N>px)` 的下限都乘 `--sp-ui`。
+  它扫的是全部样式表，于是扫到增强侧 16 处：`loadout.css` 的「本地配队」块 13 处按同一口径补齐，`title.css` 的
+  「应用」按钮抄 `devices.css` 的 `.field--lg` 同一把尺子；触摸命中下限 `--tap-min`（44px）保留不缩放，登记为豁免并写明理由。
+- 发布工具：`npm run release:sync` 不再把 `package-lock.json` 里恰好停在旧版本号上的依赖改掉
+  （3.2.3 → 3.2.4 曾把 `@puppeteer/browsers` 的 `version` 写成 3.2.4，而 `resolved` 仍指向 3.2.3 的 tarball，PR #75）。
+
+### 发布形态
+
+- Windows 客户端、Android APK、精简服务端完整包与服务端增量包（覆盖最近 2 个基线）全部重出；
+  客户端与 APK 需要装本版才生效。
+
 ## 3.2.4 — 2026-10-22
 
 ### 增强版客户端
