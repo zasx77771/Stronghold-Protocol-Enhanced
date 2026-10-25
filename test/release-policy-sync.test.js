@@ -20,6 +20,8 @@ const FILES = {
 };
 
 const synced = (version, androidVersionCode) => planVersionSync({ files: FILES, version, androidVersionCode }).files;
+// Same, with individual files swapped for the case under test.
+const syncedWith = (overrides, version) => planVersionSync({ files: { ...FILES, ...overrides }, version }).files;
 
 describe('planVersionSync', () => {
   test('writes the version into every file the validator compares', () => {
@@ -64,5 +66,40 @@ describe('planVersionSync', () => {
 
   test('rejects a version that is not X.Y.Z', () => {
     assert.throws(() => planVersionSync({ files: FILES, version: '3.2' }), /X\.Y\.Z/);
+  });
+
+  // A lockfile repeats `"version"` once per dependency. Replacing every copy also rewrote a
+  // dependency that happened to sit on the version being replaced: 3.2.3 → 3.2.4 turned
+  // `@puppeteer/browsers`' own `version` into 3.2.4 while its `resolved` URL still pointed at the
+  // 3.2.3 tarball, and `npm ci` refuses a tree whose version and tarball disagree.
+  const LOCK_WITH_DEPENDENCY = [
+    '{',
+    '  "name": "stronghold-protocol",',
+    '  "version": "3.2.3",',
+    '  "lockfileVersion": 3,',
+    '  "packages": {',
+    '    "": {',
+    '      "name": "stronghold-protocol",',
+    '      "version": "3.2.3"',
+    '    },',
+    '    "node_modules/@puppeteer/browsers": {',
+    '      "version": "3.2.3",',
+    '      "resolved": "https://registry.npmjs.org/@puppeteer/browsers/-/browsers-3.2.3.tgz"',
+    '    }',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  test('rewrites only the lockfile\'s own two version fields', () => {
+    const out = syncedWith({ 'package-lock.json': LOCK_WITH_DEPENDENCY }, '3.2.4')['package-lock.json'];
+    assert.match(out, /"version": "3\.2\.4",\n  "lockfileVersion"/);
+    assert.match(out, /"version": "3\.2\.4"\n    \}/);
+    assert.match(out, /"node_modules\/@puppeteer\/browsers": \{\n      "version": "3\.2\.3",\n      "resolved": "[^"]*browsers-3\.2\.3\.tgz"/);
+  });
+
+  test('refuses a lockfile whose two root version fields are not both present', () => {
+    const onlyTop = '{\n  "name": "stronghold-protocol",\n  "version": "3.2.3",\n  "packages": {\n    "": {\n      "name": "stronghold-protocol"\n    }\n  }\n}\n';
+    assert.throws(() => syncedWith({ 'package-lock.json': onlyTop }, '3.2.4'), /expected 2 version fields/);
   });
 });

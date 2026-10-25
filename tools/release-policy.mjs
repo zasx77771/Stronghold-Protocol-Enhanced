@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 function fail(message) { throw new Error(`Release policy violation: ${message}`); }
+function escapeRe(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function readJson(file) { return JSON.parse(readFileSync(resolve(ROOT, file), 'utf8')); }
 function versionParts(value, label) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value));
@@ -63,6 +64,33 @@ function replaceOnce(text, pattern, label, replacement) {
   return text.replace(pattern, replacement);
 }
 
+/// Rewrites at most `limit` `"version": "<current>"` fields, and only those starting before `before`
+/// (a character offset). Formatting and every other byte survive untouched.
+///
+/// The bounds exist because a lockfile repeats `"version"` once per dependency: replacing them all
+/// also rewrote any dependency that happened to sit on the version being replaced. Bumping 3.2.3 to
+/// 3.2.4 turned `@puppeteer/browsers`' own `version` into 3.2.4 while its `resolved` URL still
+/// pointed at the 3.2.3 tarball, and `npm ci` refuses a tree like that. A lockfile's own two copies
+/// are the only `"version"` fields before the dependency tree begins at `"node_modules"`.
+function replaceVersionFields(text, current, next, { limit, before, label }) {
+  const pattern = new RegExp(`("version"\\s*:\\s*")${escapeRe(current)}(")`, 'g');
+  let cursor = 0;
+  let seen = 0;
+  let replaced = 0;
+  let out = '';
+  for (const match of text.matchAll(pattern)) {
+    seen += 1;
+    if (replaced >= limit || match.index > before) continue;
+    out += `${text.slice(cursor, match.index)}${match[1]}${next}${match[2]}`;
+    cursor = match.index + match[0].length;
+    replaced += 1;
+  }
+  out += text.slice(cursor);
+  if (!seen) fail(`${label}: the expected version field was not found`);
+  if (Number.isFinite(limit) && replaced < limit) fail(`${label}: expected ${limit} version fields above the dependency tree, rewrote ${replaced}`);
+  return out;
+}
+
 /// Rewrites the seven places a release version lives, from one input.
 ///
 /// The validator below already refuses a build whose copies disagree, but the only way to fix them
@@ -72,14 +100,25 @@ function replaceOnce(text, pattern, label, replacement) {
 export function planVersionSync({ files, version, androidVersionCode }) {
   const [major, minor, revision] = versionParts(version, 'sync version');
   const out = { ...files };
-  const esc = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const versionLine = (file, label) => {
-    const current = /"version"\s*:\s*"([^"]+)"/.exec(files[file])?.[1];
+  const versionLine = (file, label, options = {}) => {
+    const text = files[file];
+    const current = /"version"\s*:\s*"([^"]+)"/.exec(text)?.[1];
     if (!current) fail(`${label}: a "version" field was not found`);
-    out[file] = replaceOnce(files[file], new RegExp(`("version"\\s*:\\s*")${esc(current)}(")`, 'g'), label, `$1${version}$2`);
+    out[file] = replaceVersionFields(text, current, version, {
+      limit: options.limit ?? Number.POSITIVE_INFINITY,
+      before: options.before ?? Number.POSITIVE_INFINITY,
+      label,
+    });
   };
   versionLine('package.json', 'package.json');
-  versionLine('package-lock.json', 'package-lock.json');
+  // Only the lockfile's own two copies (the top-level field and `packages[""]`); dependency versions
+  // come from the registry and must keep matching their `resolved` URLs.
+  const lockText = files['package-lock.json'];
+  const dependencyTree = lockText.indexOf('"node_modules"');
+  versionLine('package-lock.json', 'package-lock.json', {
+    limit: 2,
+    before: dependencyTree === -1 ? lockText.length : dependencyTree,
+  });
   out['shared/constants.js'] = replaceOnce(files['shared/constants.js'], /(export const APP_VERSION\s*=\s*['"])[^'"]+(['"])/, 'shared/constants.js APP_VERSION', `$1${version}$2`);
   out['src-tauri/Cargo.toml'] = replaceOnce(files['src-tauri/Cargo.toml'], /^(version\s*=\s*")[^"]+(")/m, 'src-tauri/Cargo.toml version', `$1${version}$2`);
   out['src-tauri/Cargo.lock'] = replaceOnce(files['src-tauri/Cargo.lock'], /(name = "stronghold-protocol-native"\s*\nversion = ")[^"]+(")/, 'src-tauri/Cargo.lock package version', `$1${version}$2`);
