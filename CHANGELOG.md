@@ -19,6 +19,9 @@
   「应用」按钮抄 `devices.css` 的 `.field--lg` 同一把尺子；触摸命中下限 `--tap-min`（44px）保留不缩放，登记为豁免并写明理由。
 - 发布工具：`npm run release:sync` 不再把 `package-lock.json` 里恰好停在旧版本号上的依赖改掉
   （3.2.3 → 3.2.4 曾把 `@puppeteer/browsers` 的 `version` 写成 3.2.4，而 `resolved` 仍指向 3.2.3 的 tarball，PR #75）。
+- CI：`test/version-assets.test.js` 的 add-only 贴图导出用例补上 Pillow 守卫（`fx.py` 的 `check_texture_format()`
+  要 import PIL），与 `test/fx-texture-format.test.js` 同一口径——没装 Pillow 的机器跳过而不是变红；
+  同一条上游缺陷已报 sganggs/Stronghold-Protocol#881。README 版本徽章随发版升到 3.3.0。
 
 ### 发布形态
 
