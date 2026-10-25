@@ -339,9 +339,9 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   .title-connect__endpoint { gap: .06rem; }
   .title-connect__endpoint > .btn { min-width: var(--tap-min, 44px); padding-inline: .1rem; }
 }
-/* 横屏矮屏 + 触摸：devices.css 把 .field--lg 的输入框抬到 max(.68rem, 40px)，按钮跟同一把尺子，才不会比框矮一截 */
+/* 横屏矮屏 + 触摸：devices.css 把 .field--lg 的输入框抬到 max(.68rem, 32px, calc(40px * var(--sp-ui, 1)))，按钮照抄同一把尺子（含 32px 与 --sp-ui），才不会比框矮一截 */
 @media (max-height: 600px) and (pointer: coarse), (max-height: 600px) and (any-pointer: coarse) {
-  .title-connect__endpoint > .btn { height: max(.68rem, 40px); min-height: max(.68rem, 40px); }
+  .title-connect__endpoint > .btn { height: max(.68rem, 32px, calc(40px * var(--sp-ui, 1))); min-height: max(.68rem, 32px, calc(40px * var(--sp-ui, 1))); }
 }
 
 .title-foot {

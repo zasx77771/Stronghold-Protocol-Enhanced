@@ -25,7 +25,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test \"test/**/*.test.js\" \"test/e2e/coop.e2e.mjs\" \"plugins/_template/**/*.test.js\"",
+    "test": "node tools/test-run.mjs",
+    "test:guards": "node --test test/ci.test.js test/ci-shards.test.js test/test-run.test.js",
     "test:affected": "node tools/affected.mjs",
     "golden": "node tools/golden.mjs",
     "golden:update": "node tools/golden.mjs --update",
@@ -41,6 +42,7 @@
     "typecheck": "tsc --noEmit --checkJs -p jsconfig.json",
     "check:imports": "node tools/check-imports.mjs",
     "ci": "node tools/ci.mjs",
+    "shards": "node tools/ci-shards.mjs",
     "package": "node tools/package.mjs",
     "package:lite": "node tools/package.mjs --lite",
     "package:server:lite": "node scripts/make-server-lite.mjs",
