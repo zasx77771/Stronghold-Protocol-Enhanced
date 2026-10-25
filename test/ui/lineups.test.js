@@ -302,7 +302,10 @@ test('reading a snapshot goes through applyLoadoutEntries: the storage the upstr
       assert.equal(res.dropped, 1);
       assert.equal(res.ops, 1);
       const stored = JSON.parse(ls.getItem('sp.pref.loadout'));
-      assert.deepEqual(stored, { v: 1, entries: { [INSIDE]: { skill: 0 } }, ops: { [INSIDE_CHAR]: { potential: 1 } } });
+      // 上游 0.3.3 起 `sp.pref.loadout` 是 v2、按干员（charId）存的：byChar + ops，只有这三个键——快照读回来走的是
+      // 同一条 applyLoadoutEntries，所以写出的正是同步平时写的那份，不夹带 v1 的 legacy `entries` 副本、也没有别的字段。
+      assert.deepEqual(stored, { v: 2, byChar: { [INSIDE_CHAR]: { skill: 0 } }, ops: { [INSIDE_CHAR]: { potential: 1 } } });
+      assert.deepEqual(Object.keys(stored).sort(), ['byChar', 'ops', 'v'], 'no extra fields besides upstream’s own');
       assert.deepEqual(loadoutStore.get().entries, { [INSIDE]: { skill: 0 } }, 'the store (and the sync) got the sanitiser’s output');
       // a snapshot saved with no settings restores the defaults, like an import that carries `ops: {}`
       const plain = saveLineup(loadLineups(), { name: 'B', entries: { [SWIRE]: { skill: 0 } } });

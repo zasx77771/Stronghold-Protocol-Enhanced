@@ -8,15 +8,15 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 上游基线 | `0.3.2`（`upstream/master` @ `c9d804f4`；上游尚未给 0.3.2 打标签） |
-| 增强版版本 | `3.2.2`（映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
+| 上游基线 | `0.3.3`（`upstream/master` @ `f07b8965`，本版由同步合并提交引入） |
+| 增强版版本 | `3.2.4`（已发布；同步 0.3.3 合入后尚未升版本，下一版按映射升到 `3.3.0`。映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
 | 版本事实来源 | `package.json`、`release-policy.json`（`upstreamMainlineVersion` / `androidVersionCode`） |
 | 集成分支 | `ds-enhanced-mode` |
-| 已发布标签 | `enhanced-v3.2.2`（在 `enhanced-v3.2.1` 之后） |
-| GitHub Release | `Stronghold Protocol Enhanced 3.2.2`：只发服务端包与说明，客户端/APK 维持 3.2.1，安装包留在本地成果目录 |
+| 已发布标签 | `enhanced-v3.2.4`（在 `enhanced-v3.2.3`、`enhanced-v3.2.2` 之后） |
+| GitHub Release | `Stronghold Protocol Enhanced 3.2.4`：连接方式切换与邀请链接修复（内容见 `CHANGELOG.md`） |
 
 版本校验：`node tools/release-policy.mjs` 必须输出
-`Release policy valid: upstream 0.3.2, local 3.2.2, Android versionCode 33.`（--mainline 只用于上游基线首次发布，3.2.2 的修订号不为 0，不加该开关）
+`Release policy valid: upstream 0.3.2, local 3.2.4, Android versionCode 35.`（`upstreamMainlineVersion` 在下次把上游基线升到 0.3.3 时一起改成 `0.3.3`，并按新基线首版规则加 `--mainline`）
 
 版本写入：`node tools/release-policy.mjs --sync 3.2.3 [--code 34]` 从一处写入 `package.json`、`package-lock.json`、
 `shared/constants.js`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、
@@ -24,14 +24,30 @@
 versionCode），写完后按上面同一套规则复校验。不带版本参数的 `--sync` 只把 `package.json` 的当前版本补齐到其余副本。
 `src-tauri/Cargo.lock` 里本包的那一行也纳入校验（3.2.2 曾出现 lock 仍写 3.2.1，下一次 `cargo build` 才被改写）。
 
-## 待发布：连接方式切换与 TCP 地址（2026-10-22）
+## 已发布：连接方式切换与 TCP 地址（3.2.4，2026-10-22）
 
-本改动在 `feat/tcp-http-address` 分支（已合并进 `ds-enhanced-mode`，PR #68）与其后续 `feat/switch-and-invite` 分支，尚未打包、未升级版本号：
+本改动在 `feat/tcp-http-address` 分支（已合并进 `ds-enhanced-mode`，PR #68）与后续 `feat/switch-and-invite` 分支（PR #69），
+随 `3.2.4` 发布（`enhanced-v3.2.4`）；Windows 客户端与 APK 需重装本版才生效：
 
 - 标题卡在地址框上方恢复 `WebSocket / TCP` 分段切换（仅原生外壳显示；浏览器没有 TCP 桥，仍固定 WebSocket）。切换后点「应用」保存并立即重连，不再刷新页面（原生桥常驻、按 URL 分流，见 R-009）。
 - TCP 模式接受 `主机:端口`、`tcp://主机:端口`、`http://主机:端口`；`https://` 被拒绝（原生套接字没有 TLS），缺端口也被拒绝（端口 80 是 HTTP 服务，不是帧端点）。保存值统一规范化为 `主机:端口` 写入 `sp.server.address` 与 `sp.native.tcp`。
 - 粘贴的邀请链接若自带 `tcp://`，其传输方式覆盖切换按钮的选择。完整规则见 [NATIVE-RECONSTRUCTION.md](NATIVE-RECONSTRUCTION.md) R-008。
 - 原生外壳的「复制链接」不再分享壳自己的来源：TCP 给 `tcp://主机:端口/?room=`，WebSocket 给服务器网页地址 `http://主机:端口/?room=`；没有服务器地址时提示先填写（R-009）。
+
+## 同步上游 0.3.3（2026-10-24，合并提交 `be43a420`）
+
+上游 v0.3.3 完整包对应的代码已合入同步分支 `sync/upstream-0.3.3`，15 个冲突文件全部按「取上游新版 → 回贴增强小改动」处理，
+细节见 [ENHANCED-CHANGES.md](ENHANCED-CHANGES.md) 第 6 节。增强侧需要注意的三处适配：
+
+- 上游重写了调配界面的卡片视图，「本地配队」入口从经典视图工具栏迁到卡片视图「更多」弹层内的
+  `data-testid="loadout-presets-more"` 菜单项；经典视图仍用 `loadout-presets`。
+- 上游把 `sp.pref.loadout` 从 v1 平面表改成 v2 按干员存（`{v:2, byChar, ops}`），`test/ui/lineups.test.js` 的
+  存储形状断言随之上移，读取接口 `loadoutStore.get().entries` 仍是 chess 键视图。
+- `server/index.js` 的 TCP 监听块必须在上游 `eventLoop?.start()` 之前启动，失败时整套（network / wss / http）回滚。
+
+验证范围（本机）：eslint 0 error / 145 warning、`tsc --noEmit --checkJs` 通过、`node tools/release-policy.mjs` 通过、
+定向 51 个调配/房间/服务端/版本用例通过（3 个依赖子进程的版本用例在本机 spawn EPERM 未跑）。
+完整测试矩阵以同一提交的 CI 四车道为准。尚未升级版本、未重打客户端与 APK、未做真机走查。
 
 ## 产物与命名
 
