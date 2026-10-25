@@ -9,6 +9,9 @@ import { fxFixture } from './helpers/fxFixtures.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const assets = JSON.parse(readFileSync(path.join(root, 'data/assets.json'), 'utf8'));
+// tools/local-extract/fx.py 的贴图导出走 check_texture_format()，要 import PIL 才能通过；没装 Pillow 的机器
+// （例如未装 Python 依赖的 CI）跳过这条用例，与 test/fx-texture-format.test.js 的守卫同一口径。
+const pillow = spawnSync('python3', ['-c', 'from PIL import Image, features; assert features.check("webp")'], { encoding: 'utf8' }).status === 0;
 
 test('every official version declares comparable pictures, models, clips, icons and scenes without installed art', () => {
   const result = assetCoverage({ root, local: { groups: {} } });
@@ -63,7 +66,7 @@ test('fx discovery includes each season even when their chess ids collide', (t) 
   assert.deepEqual(gd.skillOverrides, { char_9002_earlier: { sk_shared: 'skchr_earlier_1' } }, 'official art overrides stay scoped to their operator');
 });
 
-test('add-only FX extraction retains shared metadata and old files while crawling only new units', (t) => {
+test('add-only FX extraction retains shared metadata and old files while crawling only new units', { skip: !pillow && 'needs Pillow with WebP' }, (t) => {
   const f = fxFixture(t);
   const script = `import sys,json,pathlib
 from unittest.mock import patch

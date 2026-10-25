@@ -9,16 +9,16 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 上游基线 | `0.3.3`（`upstream/master` @ `f07b8965`，本版由同步合并提交引入） |
-| 增强版版本 | `3.2.4`（已发布；同步 0.3.3 合入后尚未升版本，下一版按映射升到 `3.3.0`。映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
+| 增强版版本 | `3.3.0`（已发布；按映射上游 `0.3.3` → `3.3.0`。映射规则：上游 `0.M.N` → 增强版 `M.N.<增强修订>`） |
 | 版本事实来源 | `package.json`、`release-policy.json`（`upstreamMainlineVersion` / `androidVersionCode`） |
 | 集成分支 | `ds-enhanced-mode` |
-| 已发布标签 | `enhanced-v3.2.4`（在 `enhanced-v3.2.3`、`enhanced-v3.2.2` 之后） |
-| GitHub Release | `Stronghold Protocol Enhanced 3.2.4`：连接方式切换与邀请链接修复（内容见 `CHANGELOG.md`） |
+| 已发布标签 | `enhanced-v3.3.0`（在 `enhanced-v3.2.4`、`enhanced-v3.2.3`、`enhanced-v3.2.2` 之后） |
+| GitHub Release | `Stronghold Protocol Enhanced 3.3.0`：同步上游 0.3.3（房间与调配界面重写，回贴全部增强改动）（内容见 `CHANGELOG.md`） |
 
 版本校验：`node tools/release-policy.mjs` 必须输出
-`Release policy valid: upstream 0.3.2, local 3.2.4, Android versionCode 35.`（`upstreamMainlineVersion` 在下次把上游基线升到 0.3.3 时一起改成 `0.3.3`，并按新基线首版规则加 `--mainline`）
+`Release policy valid: upstream 0.3.3, local 3.3.0, Android versionCode 36.`
 
-版本写入：`node tools/release-policy.mjs --sync 3.2.3 [--code 34]` 从一处写入 `package.json`、`package-lock.json`、
+版本写入：`node tools/release-policy.mjs --sync 3.3.0 [--code 37]` 从一处写入 `package.json`、`package-lock.json`、
 `shared/constants.js`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、
 `android/app/build.gradle` 的 `versionName` 与 `release-policy.json` 的 `androidVersionCode`（不给 `--code` 时不动
 versionCode），写完后按上面同一套规则复校验。不带版本参数的 `--sync` 只把 `package.json` 的当前版本补齐到其余副本。
